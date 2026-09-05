@@ -29,6 +29,11 @@ completion, native reasoning choices, delayed setting acknowledgment, failed and
 lost responses, exact-ID reconciliation, image/draft retention, and bounded
 model/command panels on portrait and landscape phones.
 
+Native-error checks distinguish current warnings from transcript history. They
+verify recovery on a follow-up's native start, output after an automatic retry,
+and a current active-status read after navigation missed the start. Historical
+error notices remain and a later failure displays a new warning.
+
 Passing screenshots and a manifest covering all UI source, dependency lockfile,
 font/license notices, and screenshot checksums are written under the ignored
 `receipts/browser/` directory. Failed runs retain diagnostic screenshots only.

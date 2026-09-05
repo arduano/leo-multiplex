@@ -205,8 +205,8 @@ Notifications for the same native thread/turn update one notice. Native
 the UI never retries the prompt or resumes the session automatically. A failed
 completion keeps the earlier message if Codex omits its replacement error.
 Root warnings survive switching sessions in the same tab and clear on observed
-successful completion. Child errors remain separate transcript notices. Idle or
-new-turn status alone does not erase an earlier failure. This is a bounded
+native recovery, as corrected below. Child errors remain separate transcript
+notices. Idle alone does not erase an earlier failure. This is a bounded
 observation cache in browser memory, not canonical state or browser storage.
 
 The released `0.2.0` Codex history endpoint only pages thread items; it omits
@@ -336,7 +336,7 @@ static-asset/authentication smoke tests. Runtime, control, provider, protocol,
 Nix, and dotfiles code are unchanged. All development checks used disposable
 state and no model calls.
 
-The current NAS UI image is
+The slash-command UI rollout used image
 `sha256:a8806b6ae9e3e61317db2b2777e9fcb436f6d2e55b917b138a52a0c8144381d6`,
 built from source `a7e74e1372b0a10bc9ea6f75b5f2cb983b04a714`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33967602801) passed,
@@ -350,3 +350,29 @@ and start times are unchanged. No production setting changes, prompts, launches,
 stops, resumes, or model calls were issued. No sudo rebuild is needed.
 The scrubbed, checksummed rollout receipt is
 `receipts/slash-commands-deployment/2026-09-05T13-01-00Z`.
+
+## Error banner recovery correction
+
+The previous warning cache deliberately retained a failed turn's banner until a
+later turn completed successfully. A follow-up could therefore be working in
+Terminal while the web workspace still claimed it had stopped with an error;
+refreshing discarded the stale observation.
+
+The banner now clears when Codex starts a new root turn. Native active-status
+reads also reconcile a cached terminal failure when selection missed the start;
+the old turn fence is discarded so failures from the new turn remain visible.
+Native assistant, plan, or reasoning output clears an automatic-retry warning
+when the provider recovers. Idle, settings changes, and command acknowledgments
+do not clear failures. Root/child, sequence, and generation fences prevent stale
+events or delayed reads from reviving the old warning. Existing transcript error
+notices remain, and any later native failure produces a fresh warning.
+
+Typechecking, all 264 tests in nineteen files, the production build, and isolated
+container authentication/static-asset smoke checks pass. Browser qualification
+passes 41 checks with the six viewport layouts inspected and no serious or
+critical accessibility findings. It covers recovery before turn completion,
+preserved transcript failures, a subsequent error, and recovery after navigation
+missed the native start. The final-source browser receipt is
+`receipts/browser/2026-09-05T13-38-54.421Z`.
+The change does not scan history or notify the composer for ordinary deltas;
+unit checks exercise 1,000 subsequent deltas for each recovery-output type.

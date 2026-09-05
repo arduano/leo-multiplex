@@ -26,7 +26,18 @@ export class SessionErrorState {
 
   observeStatus(status: unknown, generation: number): void {
     if (generation !== this.revision) return;
-    if (object(status)?.type === "systemError" && !this.failure) this.set(unavailableFailure);
+    const type = object(status)?.type;
+    if (type === "systemError" && !this.failure) {
+      this.revision += 1;
+      this.set(unavailableFailure);
+    }
+    // A current native active status also repairs a missed turn/started while
+    // this binding was not selected. Idle alone does not prove error recovery.
+    if (type === "active" && this.failure && !this.failure.willRetry) {
+      this.activeTurn = undefined;
+      this.revision += 1;
+      this.set(null);
+    }
   }
 
   observe(event: NativeEvent, vendorSessionId: string): void {
@@ -40,6 +51,10 @@ export class SessionErrorState {
     if (event.nativeType === "turn/started") {
       this.activeTurn = typeof turn?.id === "string" ? turn.id : undefined;
       this.revision += 1;
+      // Native acceptance of a new turn supersedes the previous turn's banner.
+      // Keep its transcript notice, and keep same-turn retry errors until work
+      // actually progresses. Command acknowledgments never clear this state.
+      if (this.activeTurn && this.activeTurn !== this.failure?.turnId) this.set(null);
       return;
     }
     if (event.nativeType === "turn/completed" && this.activeTurn && turn?.id !== this.activeTurn) return;
@@ -54,6 +69,22 @@ export class SessionErrorState {
       this.revision += 1;
       if (event.nativeType === "turn/completed") this.activeTurn = undefined;
       this.set(failure);
+      return;
+    }
+    if (event.harness === "codex" && this.failure &&
+      typeof payload?.turnId === "string" && payload.threadId === vendorSessionId &&
+      (!this.activeTurn || payload.turnId === this.activeTurn) &&
+      (this.failure.willRetry || !this.failure.turnId || payload.turnId !== this.failure.turnId) &&
+      (event.nativeType === "item/agentMessage/delta" ||
+        event.nativeType === "item/plan/delta" ||
+        event.nativeType === "item/reasoning/textDelta" ||
+        event.nativeType === "item/reasoning/summaryTextDelta") &&
+      typeof payload.delta === "string" && payload.delta.length > 0) {
+      // Output is positive recovery evidence even if turn/started was missed,
+      // or the provider recovered while retrying the same turn.
+      this.activeTurn = payload.turnId;
+      this.revision += 1;
+      this.set(null);
       return;
     }
     if (event.nativeType === "turn/completed" && turn?.status === "completed" ||
