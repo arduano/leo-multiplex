@@ -424,3 +424,15 @@ The final-source 50,000-turn / 100,001-item stress test passes with the
 p95 input-to-paint (90.4 ms maximum), 33.4 ms p95 frame interval, and no long
 tasks. Full history loading took 28.10 seconds on this run. The checksummed
 artifact manifest is `receipts/long-thread/2026-09-05T14-04-44.017Z`.
+
+The current NAS UI image is
+`sha256:e22446b199de3537b9d9293813189e513dbb6ab2c3e00d45bf69b68e7c9bd75b`,
+built from source `d686eb7d36333b6746ca3c6349afbdf0b11401b7`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33970820485) passed.
+Deployed entry and dynamic JavaScript/CSS assets match the tested build.
+Read-only desktop, reload, and mobile checks show native active work, the bottom
+working indicator, and no stale error banner or history/page errors. Host
+reachability and Origin rejection pass. Only the NAS web/gateway container was
+recreated; control/runtime process IDs and start times remain unchanged. No
+production mutations or model calls were issued. Checksummed rollout evidence is
+`receipts/transcript-layout-deployment/2026-09-05T14-07-00Z`.
