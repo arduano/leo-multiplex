@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { chromium } from "playwright-core";
 import AxeBuilder from "@axe-core/playwright";
@@ -9,6 +9,17 @@ import { createServer } from "vite";
 // Disposable browser-only fixture: all API/WS traffic is intercepted. No host,
 // Codex process, auth home, provider, or model endpoint is contacted.
 const root = resolve(import.meta.dirname, "../..");
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+async function sourceFiles(directory) {
+  const files = [];
+  for (const item of await readdir(join(root, directory), { withFileTypes: true })) {
+    if (item.isDirectory()) files.push(...await sourceFiles(join(directory, item.name)));
+    else files.push(join(directory, item.name));
+  }
+  return files;
+}
+const sources = [...await sourceFiles("apps/web"), "package.json", "package-lock.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "tests/browser/qualify.mjs"];
+const sourceHashes = Object.fromEntries(await Promise.all(sources.map(async (path) => [path, sha256(await readFile(join(root, path)))])));
 const output = join(root, "receipts/browser", new Date().toISOString().replaceAll(":", "-"));
 await mkdir(output, { recursive: true });
 const vite = await createServer({ configFile: join(root, "apps/web/vite.config.ts"), server: { host: "127.0.0.1", port: 0, strictPort: false } });
@@ -29,6 +40,9 @@ const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const authority = { realmId: id(1), controlNodeId: id(2), epochId: id(3) };
 const timestamp = "2026-09-05T00:00:00.000Z";
 const session = { sessionId: id(4), runtimeNodeId: id(5), metadataAuthority: authority, catalogState: "open", catalogRevision: 1, archivedAt: null, harness: "codex", adapterScopeId: "fixture-codex", vendorSessionId: "fixture-native", bindingRevision: 1, runtimeEpoch: id(6), cwd: "/work/disposable/browser-fixture", availability: "active", runtimeStatus: "idle", harnessSettings: { model: "fixture-model", mode: "default", effort: "medium" }, nativeSummary: { title: "Review reconnect behavior" }, launchProvenance: null, metadata: { revision: 1, values: { "agent.title": "Review reconnect behavior", "fixture.note": "Disposable browser data" }, keyRevisions: { "agent.title": 1, "fixture.note": 1 } }, createdAt: timestamp, updatedAt: timestamp, lastSeenAt: timestamp, lastActivityAt: timestamp };
+const other = { ...session, sessionId: id(14), vendorSessionId: "other-fixture-native", nativeSummary: { title: "Another disposable agent" }, metadata: { revision: 1, values: { "agent.title": "Another disposable agent" }, keyRevisions: { "agent.title": 1 } } };
+let showOther = false;
+const commands = [];
 const runtime = { runtimeNodeId: id(5), name: "Disposable test host", presence: "online", reachability: "reachable", runtimeNodeBootId: id(7), capabilities: [], harnesses: [{ harness: "codex", available: true, capabilities: [] }] };
 const source = { sourceId: "fixture", displayName: "Disposable test host", endpointId: "fixture", state: "selected", manifest: { coveredControlNodeIds: [id(2)] }, updatedAt: timestamp };
 const profile = { providerId: "leo.local", profileId: "workspace", contractVersion: 1, requestSchemaHash: "a".repeat(64), implementationVersion: "1.0.0", harnesses: ["codex"], available: true, capabilities: [] };
@@ -44,7 +58,10 @@ const screenshots = [];
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   if (message === "PING") return socket.send("PONG");
   for (const request of [JSON.parse(message)].flat()) {
-    if (request.method === "subscription") socket.send(JSON.stringify({ id: request.id, result: { type: "started" } }));
+    if (request.method === "subscription") {
+      socket.send(JSON.stringify({ id: request.id, result: { type: "started" } }));
+      socket.send(JSON.stringify({ id: request.id, result: { type: "data", data: { kind: "heartbeat", feedId: id(8), controlCursor: 0, authorityRefs: [authority] } } }));
+    }
   }
 }));
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
@@ -65,13 +82,23 @@ await page.route("**/trpc/**", async (route) => {
       case "sources.list": data = [{ ...source, state: online ? "selected" : "unavailable", manifest: online ? source.manifest : null }]; break;
       case "controlNodes.list": data = online ? [{ controlNodeId: id(2) }] : []; break;
       case "runtimeNodes.list": data = online ? [runtime] : []; break;
-      case "sessions.search": data = { sessions: online && !empty ? [session] : [], nextCursor: null }; break;
+      case "sessions.search": data = { sessions: online && !empty ? showOther ? [session, other] : [session] : [], nextCursor: null }; break;
       case "harness.models":
       case "launchProfiles.models": data = [{ harness: "codex", id: "fixture-model", name: "Fixture model" }]; break;
       case "launchProfiles.list": data = [profile]; break;
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
-      case "sessions.readNativeHistory": data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "turn-fixture", item: { type: "userMessage", id: "user-fixture", content: [{ type: "text", text: "Check that my draft survives a host reconnect." }] } }, { turnId: "turn-fixture", item: { type: "agentMessage", id: "assistant-fixture", text: "The conversation remains visible while the host reconnects.\n\n- Preserve your draft\n- Keep stale sessions labeled\n- Resume actions after reconnection\n\n```text\n/work/disposable/long-directory-name/verification/unchanged-operation-identity\n```" } }], nextCursor: null } } }; break;
+      case "sessions.readNativeHistory":
+        if (input.sessionId === other.sessionId) {
+          data = { harness: "codex", vendorSessionId: other.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "other-turn", item: { type: "agentMessage", id: "other-reply", phase: "final_answer", text: "A separate disposable conversation." } }], nextCursor: null } } };
+          break;
+        }
+        data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "turn-fixture", item: { type: "userMessage", id: "user-fixture", content: [{ type: "text", text: "Check that my draft survives a host reconnect." }] } }, { turnId: "turn-fixture", item: { type: "agentMessage", id: "assistant-fixture", text: "The conversation remains visible while the host reconnects.\n\n- Preserve your draft\n- Keep stale sessions labeled\n- Resume actions after reconnection\n\n```text\n/work/disposable/long-directory-name/verification/unchanged-operation-identity\n```" } }], nextCursor: null } } }; break;
+      case "sessions.execute":
+        commands.push(input);
+        if (commands.length === 1) return route.abort("failed");
+        data = { commandId: input.commandId, payloadHash: input.payloadHash, sessionId: input.sessionId, runtimeNodeId: input.runtimeNodeId, state: "succeeded", request: input.request, createdAt: timestamp, updatedAt: timestamp };
+        break;
       case "launches.create":
         launches.push(input);
         if (launches.length === 1) return route.abort("failed");
@@ -89,7 +116,7 @@ async function waitEnabled(testId, enabled) {
     return element && element.disabled === !enabled;
   }, { testId, enabled });
 }
-async function refresh() { await page.getByRole("button", { name: "Refresh gateway projection" }).click(); }
+async function refresh() { await page.getByTestId("refresh-workspace").click(); }
 async function screenshot(name) {
   const file = `${name}.png`;
   await page.screenshot({ path: join(output, file), fullPage: true });
@@ -104,6 +131,12 @@ async function axe(name) {
 try {
   await page.goto(`http://127.0.0.1:${port}`);
   await waitEnabled("prompt-input", true);
+  await page.locator('[data-entry-id="codex:user-fixture"]').filter({ hasText: "Check that my draft survives a host reconnect." }).waitFor();
+  await page.locator('[data-entry-id="codex:assistant-fixture"]').filter({ hasText: "The conversation remains visible while the host reconnects." }).waitFor();
+  assert.equal(await page.getByTestId("chat-message").count(), 2, "Initial native history must be visible before responsive qualification");
+  checks.push({ name: "initial native history renders both user and assistant messages", passed: true });
+  await page.waitForFunction(() => document.querySelector('[data-testid="session-health"]')?.textContent === "Live");
+  checks.push({ name: "native stream is live after the development lifecycle remount", passed: true });
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
   await page.locator('input[type="file"]').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove tailscale-http.png" }).waitFor();
@@ -121,15 +154,35 @@ try {
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Horizontal overflow at ${width}x${height}`);
     const prompt = await page.getByTestId("prompt-input").boundingBox();
     assert(prompt && prompt.y + prompt.height <= height, `Composer outside viewport at ${width}x${height}`);
+    const transcript = await page.getByTestId("chat-transcript").boundingBox();
+    assert(transcript && transcript.height >= 120, `Conversation has less than 120px at ${width}x${height}`);
+    assert(await page.getByTestId("chat-message").count() > 0, `Conversation is empty at ${width}x${height}`);
     await screenshot(`${width}x${height}`);
     await axe(`${width}x${height}`);
-    if (width < 768 || height < 500) {
+    if (width < 960 || (width < 1280 && height < 500)) {
       await page.getByTestId("agents-sheet-button").click();
       await page.getByTestId("session-card").waitFor();
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector('[data-testid="agents-sheet-button"]') === document.activeElement);
     }
   }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const originalDraft = await page.getByTestId("prompt-input").inputValue();
+  await page.getByTestId("prompt-input").fill("One line");
+  const oneLineHeight = (await page.getByTestId("prompt-input").boundingBox()).height;
+  const wrappedDraft = "A deliberately wrapped mobile draft should remain readable while the Send button stays below the text and every line is reachable without any overlay.";
+  await page.getByTestId("prompt-input").fill(wrappedDraft);
+  const wrappedBox = await page.getByTestId("prompt-input").boundingBox();
+  const sendBox = await page.getByTestId("send-button").boundingBox();
+  assert(wrappedBox.height > oneLineHeight, "Mobile draft does not expand for wrapped text");
+  assert(wrappedBox.y + wrappedBox.height <= sendBox.y + 1, "Mobile wrapped draft overlaps Send controls");
+  await page.getByTestId("prompt-input").press("Control+End");
+  const draftGeometry = await page.getByTestId("prompt-input").evaluate((element) => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop, caret: element.selectionEnd, length: element.value.length }));
+  assert.equal(draftGeometry.caret, wrappedDraft.length);
+  assert(draftGeometry.scrollHeight <= draftGeometry.clientHeight + draftGeometry.scrollTop + 2, "End of mobile wrapped draft is unreachable");
+  await screenshot("mobile-wrapped-draft");
+  checks.push({ name: "wrapped mobile draft expands without overlapping controls and its final line is reachable", oneLineHeight, wrappedHeight: wrappedBox.height });
+  await page.getByTestId("prompt-input").fill(originalDraft);
   await page.setViewportSize({ width: 1720, height: 1180 });
   online = false; await refresh();
   await page.getByTestId("stale-session-notice").waitFor();
@@ -137,6 +190,7 @@ try {
   assert.equal(await page.getByTestId("session-card").count(), 1);
   assert.equal(await page.getByTestId("session-card").getAttribute("data-stale"), "true");
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "A draft that must survive reconnects");
+  await page.getByTestId("right-pane-toggle").click();
   await page.getByTestId("metadata-json").fill('{"agent.title":"Unsaved stale draft"}');
   await waitEnabled("metadata-save", false);
   assert.equal(mutations.length, 0);
@@ -154,6 +208,46 @@ try {
   await page.getByText("Your sign-in expired.", { exact: false }).waitFor();
   await screenshot("expired-login");
   login = true; await refresh(); await waitEnabled("prompt-input", true);
+
+  showOther = true; await refresh();
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).waitFor();
+  await page.getByTestId("prompt-input").fill("Draft belonging to the first agent");
+  await page.locator('input[type="file"]').setInputFiles({ name: "retained-draft.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("button", { name: "Remove retained-draft.png" }).waitFor();
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
+  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "");
+  assert.equal(await page.getByTestId("image-attachments").count(), 0);
+  await page.getByTestId("prompt-input").fill("An independent second draft");
+  await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
+  await page.locator('[data-entry-id="codex:user-fixture"]').waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Draft belonging to the first agent");
+  await page.getByRole("button", { name: "Remove retained-draft.png" }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="image-attachments"] img')].some((image) => image.complete && image.naturalWidth > 0));
+  await page.getByRole("button", { name: "Remove retained-draft.png" }).click();
+  checks.push({ name: "switching bindings retains independent drafts and usable image previews", passed: true });
+  await page.getByTestId("prompt-input").fill("Dispatch this exact command once");
+  await page.getByTestId("send-button").evaluate((button) => { button.click(); button.click(); });
+  await page.getByTestId("reconcile-command").waitFor();
+  assert.equal(commands.length, 1, "Synchronous repeated submit dispatched duplicate commands");
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Dispatch this exact command once");
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
+  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "An independent second draft");
+  assert.equal(await page.getByTestId("reconcile-command").count(), 0);
+  await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
+  await page.getByTestId("reconcile-command").waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Dispatch this exact command once");
+  await waitEnabled("send-button", false);
+  assert.equal(commands.length, 1, "Switching retried an uncertain command automatically");
+  await page.getByTestId("reconcile-command").evaluate((button) => { button.click(); button.click(); });
+  await page.waitForFunction(() => document.querySelector('[data-testid="prompt-input"]')?.value === "");
+  assert.equal(commands.length, 2);
+  assert.deepEqual(commands[1], commands[0], "Reconciliation changed the original command envelope");
+  assert.equal(await page.getByTestId("reconcile-command").count(), 0);
+  checks.push({ name: "duplicate command dispatch is fenced and lost replies retain exact envelope across session switches", passed: true });
+  showOther = false; await refresh();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 1);
 
   await page.getByTestId("spawn-button").click();
   await page.getByTestId("spawn-cwd-input").fill("/work/disposable/new-session");
@@ -181,9 +275,9 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 0);
   checks.push({ name: "fresh authority removal clears stale row", passed: true });
   assert.deepEqual(errors, []);
-  const sources = ["apps/web/src/client/app.tsx", "apps/web/src/client/spawn-dialog.tsx", "apps/web/src/client/session-retention.ts", "apps/web/src/client/session-console.tsx", "apps/web/src/client/metadata-panel.tsx", "apps/web/src/client/image-media.tsx", "tests/browser/qualify.mjs"];
-  const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
-  const hashes = Object.fromEntries(await Promise.all([...sources, ...screenshots.map((name) => join(output, name))].map(async (path) => [path.startsWith(output) ? path.slice(output.length + 1) : path, sha256(await readFile(path))])));
+  for (const [path, hash] of Object.entries(sourceHashes)) assert.equal(sha256(await readFile(join(root, path))), hash, `Source changed during qualification: ${path}; rerun the suite`);
+  const screenshotHashes = Object.fromEntries(await Promise.all(screenshots.map(async (name) => [name, sha256(await readFile(join(output, name)))])));
+  const hashes = { ...sourceHashes, ...screenshotHashes };
   await writeFile(join(output, "manifest.json"), JSON.stringify({ status: "passed", fixture: "intercepted browser-only APIs", realModelCalls: 0, screenshots, checks, hashes }, null, 2) + "\n");
   console.log(`Browser checks passed: ${output}`);
 } catch (error) {

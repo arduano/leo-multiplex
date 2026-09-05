@@ -1,4 +1,6 @@
 import type { Harness, JsonValue, SessionRecord } from "@arduano/agent-multiplex-protocol";
+import type { AccessClient } from "@arduano/agent-multiplex-client/browser";
+import { entriesFromHistory, type TimelineEntry } from "./transcript.js";
 
 interface SessionBindingIdentityInput {
   readonly sessionId: string;
@@ -61,6 +63,9 @@ export function advanceNativeHistorySignal(
   const sameBinding = current?.bindingIdentity === bindingIdentity;
   const ready = cause === "lifecycle" || initiallyReady || (sameBinding && current.ready);
   if (!ready) return sameBinding ? current : null;
+  // Lifecycle establishes fresh-thread readiness once. Completed native items
+  // already arrive on the stream; rereading all history every turn is wasteful.
+  if (cause === "lifecycle" && (initiallyReady || (sameBinding && current.ready))) return current;
   return {
     bindingIdentity,
     generation: (sameBinding ? current.generation : 0) + 1,
@@ -132,6 +137,7 @@ export async function retryNativeHistory<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    if (!active()) throw new DOMException("History read cancelled", "AbortError");
     try {
       return await read();
     } catch (error) {
@@ -149,6 +155,58 @@ export async function retryNativeHistory<T>(
   // The loop always returns or throws. This keeps the invariant explicit if
   // its bounds are edited later.
   throw lastError;
+}
+
+export interface NativeHistoryPage {
+  readonly entries: readonly TimelineEntry[];
+  readonly complete: boolean;
+}
+
+/** Published v0.2.0 Codex items/list forces ascending order; Copilot pages
+ * getEvents() from offset zero. Cursors are opaque. There is no native tail
+ * request in this contract, so loading toward the latest is explicit. */
+export class NativeHistoryPager {
+  private cursor: string | undefined;
+  private terminalCursor: string | undefined;
+  private readonly seen = new Set<string>();
+  private offset = 0;
+  private complete = false;
+  private inFlight = false;
+  constructor(private readonly client: AccessClient, private readonly session: SessionRecord) {}
+
+  get done(): boolean { return this.complete; }
+  /** Re-read only the final native page after a gap, retaining all loaded rows. */
+  reconcile(): void {
+    if (this.complete) { this.cursor = this.terminalCursor; this.complete = false; this.seen.clear(); }
+  }
+  async next(signal: AbortSignal): Promise<NativeHistoryPage> {
+    signal.throwIfAborted();
+    if (this.inFlight) throw new Error("A native history page is already loading");
+    if (this.complete) return { entries: [], complete: true };
+    this.inFlight = true;
+    const cursor = this.cursor;
+    try {
+      const result = await retryNativeHistory(() => this.client.sessions.readNativeHistory.query({
+        sessionId: this.session.sessionId,
+        request: this.session.harness === "codex"
+          ? { harness: "codex", includeTurns: true, limit: 100, ...(cursor ? { cursor } : {}) }
+          : { harness: "copilot", limit: 100, ...(cursor ? { cursor } : {}) },
+      }, { signal }), { active: () => !signal.aborted });
+      signal.throwIfAborted();
+      if (result.complete === false && !result.nextCursor) throw new Error("Native history omitted its continuation cursor");
+      if (!result.complete && result.nextCursor && this.seen.has(result.nextCursor)) throw new Error("Native history repeated its cursor");
+      const entries = entriesFromHistory(result).map((entry, index) => ({ ...entry,
+        id: entry.id.startsWith("codex:history:") ? `${entry.id}:page:${cursor ?? "first"}` : entry.id,
+        sequence: this.offset + index,
+      }));
+      this.offset += entries.length;
+      this.complete = result.complete !== false && !result.nextCursor;
+      if (this.complete) this.terminalCursor = cursor;
+      if (result.nextCursor) this.seen.add(result.nextCursor);
+      this.cursor = result.nextCursor;
+      return { entries, complete: this.complete };
+    } finally { this.inFlight = false; }
+  }
 }
 
 function delay(delayMs: number): Promise<void> {

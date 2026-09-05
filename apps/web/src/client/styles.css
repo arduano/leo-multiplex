@@ -7,21 +7,21 @@
 
 :root {
   color-scheme: dark;
-  --surface-canvas: #0b0d10;
-  --surface-shell: #0f1216;
-  --surface-base: #14181e;
-  --surface-raised: #191e25;
-  --surface-hover: #20262e;
-  --border-subtle: #2a3039;
-  --border-strong: #3a424d;
-  --divider: #2a3039;
-  --text-primary: #f3f4f6;
-  --text-secondary: #a7afba;
-  --text-muted: #7f8996;
-  --accent: #46b8ff;
-  --accent-hover: #79cbff;
-  --accent-ink: #071018;
-  --status-live: #47c98b;
+  --surface-canvas: #141615;
+  --surface-shell: #191b1a;
+  --surface-base: #202321;
+  --surface-raised: #282c29;
+  --surface-hover: #303631;
+  --border-subtle: #343a35;
+  --border-strong: #515b53;
+  --divider: #343a35;
+  --text-primary: #eff1eb;
+  --text-secondary: #b6bdb3;
+  --text-muted: #929b90;
+  --accent: #a4c5ad;
+  --accent-hover: #c0ddc7;
+  --accent-ink: #17241b;
+  --status-live: #9ac4a5;
   --status-waiting: #e6ad52;
   --status-error: #f06e78;
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
@@ -55,7 +55,7 @@ button,
 input,
 select,
 textarea {
-  font: inherit;
+  font-family: inherit;
 }
 
 button,
@@ -72,12 +72,13 @@ samp {
 
 ::selection {
   color: var(--text-primary);
-  background: rgba(70, 184, 255, 0.3);
+  background: rgba(164, 197, 173, 0.24);
 }
 
-details[open] > summary svg:first-child {
-  transform: rotate(90deg);
-}
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .terminal-xterm > .xterm {
   height: 100%;

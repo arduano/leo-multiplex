@@ -331,6 +331,8 @@ License group 6
 Components:
 - @tanstack/query-core@5.102.8 (declared license: MIT)
 - @tanstack/react-query@5.102.8 (declared license: MIT)
+- @tanstack/react-virtual@3.14.10 (declared license: MIT)
+- @tanstack/virtual-core@3.17.8 (declared license: MIT)
 
 --- LICENSE ---
 

@@ -20,9 +20,9 @@ import {
 
 import { createPortal } from "react-dom";
 
-import { IconButton, classes } from "./ui.js";
+import { Button, IconButton, classes } from "./ui.js";
 
-const LAYOUT_STORAGE_KEY = "agent-multiplex.ui.layout.v1";
+const LAYOUT_STORAGE_KEY = "leo.ui.layout.v2";
 const LEFT_DEFAULT_PX = 288;
 const LEFT_MIN_PX = 240;
 const LEFT_MAX_PX = 420;
@@ -57,7 +57,7 @@ const DEFAULT_LAYOUT: LayoutPreferences = {
   leftPx: LEFT_DEFAULT_PX,
   rightPx: RIGHT_DEFAULT_PX,
   leftCollapsed: false,
-  rightCollapsed: false,
+  rightCollapsed: true,
 };
 
 export function WorkspaceShell({ left, center, inspector, selectedLabel }: WorkspaceShellProps) {
@@ -296,7 +296,7 @@ function CompactWorkspace({ layout, onLayout, left, center, inspector, selectedL
       </Group>
       <WorkspaceSheetContent
         side="right"
-        title="Inspector"
+        title="Details"
       >
         {inspector({ close: () => setInspectorOpen(false) })}
       </WorkspaceSheetContent>
@@ -313,33 +313,33 @@ function MobileWorkspace({ left, center, inspector, selectedLabel }: WorkspaceSh
       <main className="flex min-h-0 flex-1 flex-col bg-[var(--surface-canvas)]">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-2">
           <DialogPrimitive.Trigger asChild>
-            <IconButton
+            <Button
               icon={PanelLeftOpen}
-              label="Open agents and fleet"
+              aria-label="Open agents and hosts"
               tone="ghost"
-              className="min-h-10 min-w-10"
+              className="min-h-10 px-2 text-xs"
               data-testid="agents-sheet-button"
-            />
+            >Agents</Button>
           </DialogPrimitive.Trigger>
-          <span className="min-w-0 flex-1 truncate text-center text-xs text-[var(--text-secondary)]">{selectedLabel}</span>
+          <span className="flex-1" /><span className="sr-only">{selectedLabel}</span>
           <DialogPrimitive.Root open={inspectorOpen} onOpenChange={setInspectorOpen}>
             <DialogPrimitive.Trigger asChild>
-              <IconButton
+              <Button
                 icon={PanelRightOpen}
-                label="Open inspector"
+                aria-label="Open details"
                 tone="ghost"
-                className="min-h-10 min-w-10"
+                className="min-h-10 px-2 text-xs"
                 data-testid="inspector-sheet-button"
-              />
+              >Details</Button>
             </DialogPrimitive.Trigger>
-            <WorkspaceSheetContent side="right" title="Inspector">
+            <WorkspaceSheetContent side="right" title="Details">
               {inspector({ close: () => setInspectorOpen(false) })}
             </WorkspaceSheetContent>
           </DialogPrimitive.Root>
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{center}</div>
       </main>
-      <WorkspaceSheetContent side="left" title="Agents & fleet">
+      <WorkspaceSheetContent side="left" title="Agents & hosts">
         {left({ close: () => setAgentsOpen(false) })}
       </WorkspaceSheetContent>
     </DialogPrimitive.Root>
@@ -351,7 +351,7 @@ function CompactToolbar({ selectedLabel }: {
 }) {
   return (
     <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3">
-      <span className="truncate text-xs text-[var(--text-muted)]">{selectedLabel}</span>
+      <span className="sr-only">{selectedLabel}</span><span className="flex-1" />
       <DialogPrimitive.Trigger asChild>
         <button
           type="button"
@@ -359,7 +359,7 @@ function CompactToolbar({ selectedLabel }: {
           data-testid="inspector-sheet-button"
         >
           <PanelRightOpen aria-hidden="true" className="size-3.5" />
-          Inspector
+          Details
         </button>
       </DialogPrimitive.Trigger>
     </div>
@@ -378,14 +378,14 @@ function CollapsedRail({ side, onExpand }: {
     )}>
       <IconButton
         icon={isLeft ? PanelLeftOpen : PanelRightOpen}
-        label={isLeft ? "Expand agents pane" : "Expand inspector pane"}
+        label={isLeft ? "Expand agents pane" : "Expand details pane"}
         tone="ghost"
         className="size-9 min-h-9 px-0"
         onClick={onExpand}
         data-testid={isLeft ? "left-pane-toggle" : "right-pane-toggle"}
       />
       <span className="mt-3 text-xs font-medium text-[var(--text-muted)] [writing-mode:vertical-rl]">
-        {isLeft ? "Agents" : "Inspector"}
+        {isLeft ? "Agents" : "Details"}
       </span>
     </div>
   );
@@ -407,10 +407,10 @@ function WorkspaceSheetContent({ side, title, children }: {
 }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/65 backdrop-blur-[2px]" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/60" />
       <DialogPrimitive.Content
         className={classes(
-          "fixed inset-y-0 z-50 flex w-[min(92vw,420px)] flex-col border-[var(--border-subtle)] bg-[var(--surface-shell)] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-2xl outline-none",
+          "fixed inset-y-0 z-50 flex w-[min(92vw,420px)] flex-col border-[var(--border-subtle)] bg-[var(--surface-shell)] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] outline-none",
           side === "left"
             ? "left-0 border-r pl-[env(safe-area-inset-left)]"
             : "right-0 border-l pr-[env(safe-area-inset-right)]",
@@ -445,7 +445,7 @@ function useViewportMode(): ViewportMode {
 
 function viewportMode(): ViewportMode {
   if (typeof window === "undefined") return "desktop";
-  if (window.innerWidth < 768 || (window.innerWidth < 960 && window.innerHeight < 500)) {
+  if (window.innerWidth < 960 || (window.innerWidth < 1280 && window.innerHeight < 500)) {
     return "mobile";
   }
   return window.innerWidth < 1280 ? "compact" : "desktop";
@@ -482,7 +482,7 @@ function validateLayout(value: Partial<Record<keyof LayoutPreferences, unknown>>
     leftPx: finiteBetween(value.leftPx, LEFT_MIN_PX, LEFT_MAX_PX, LEFT_DEFAULT_PX),
     rightPx: finiteBetween(value.rightPx, RIGHT_MIN_PX, RIGHT_MAX_PX, RIGHT_DEFAULT_PX),
     leftCollapsed: typeof value.leftCollapsed === "boolean" ? value.leftCollapsed : false,
-    rightCollapsed: typeof value.rightCollapsed === "boolean" ? value.rightCollapsed : false,
+    rightCollapsed: typeof value.rightCollapsed === "boolean" ? value.rightCollapsed : true,
   };
 }
 

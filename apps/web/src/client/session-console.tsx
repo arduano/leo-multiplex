@@ -1,24 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
-  ArrowDown,
-  Bot,
-  BrainCircuit,
-  CheckCircle2,
-  ChevronRight,
   CircleStop,
-  Code2,
   CornerDownRight,
-  History,
   ImagePlus,
   LoaderCircle,
   MessageSquareText,
-  Radio,
   Send,
   Settings2,
-  Sparkles,
   TerminalSquare,
-  UserRound,
   X,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
@@ -27,15 +16,12 @@ import {
   lazy,
   Suspense,
   useEffect,
-  useMemo,
+  useCallback,
   useRef,
   useState,
   type KeyboardEvent,
-  type UIEvent,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
 import { v4 as randomUUID } from "uuid";
-import remarkGfm from "remark-gfm";
 
 import {
   sessionCommand,
@@ -43,10 +29,9 @@ import {
   imageTarget,
   uploadImage,
   watchAccess,
-  type AccessClient,
 } from "@arduano/agent-multiplex-client/browser";
 import type {
-  AccessStreamItem,
+  NativeEvent,
   CommandRecord,
   CommandEnvelope,
   ImageDescriptor,
@@ -65,22 +50,20 @@ import {
   type SettingDraft,
 } from "./agent-settings.js";
 import { errorMessage, useApi } from "./api.js";
-import { ImageSessionProvider, TranscriptImagePreview, prepareImageFile, isLocalImagePath, modelImageLimits } from "./image-media.js";
+import { ImageSessionProvider, prepareImageFile, modelImageLimits } from "./image-media.js";
 import { pendingInteractionRefetchInterval } from "./interaction-refresh.js";
 import { InteractionCards } from "./interactions.js";
 import {
   advanceNativeHistorySignal,
   nativeHistoryInitiallyReady,
-  retryNativeHistory,
+  NativeHistoryPager,
   sessionBindingIdentity,
   type NativeHistorySignal,
 } from "./native-history.js";
-import {
-  applyNativeEvent,
-  entriesFromHistory,
-  mergeTimeline,
-  type TimelineEntry,
-} from "./transcript.js";
+import type { TimelineEntry } from "./transcript.js";
+import { TranscriptStore } from "./transcript-store.js";
+import { VirtualTranscript, type TranscriptHandle } from "./virtual-transcript.js";
+import { useSessionDraft } from "./session-drafts.js";
 import type { TerminalSideChannelCapability } from "./terminal-state.js";
 import { Badge, Button, EmptyState, Select, Textarea, classes } from "./ui.js";
 
@@ -96,8 +79,6 @@ interface CommandAction {
   readonly images?: CommandEnvelope["images"];
   readonly envelope?: CommandEnvelope;
 }
-
-interface DraftImage { id: string; file: File; url: string; descriptor?: ImageDescriptor; }
 
 export function SessionConsole({ session, terminalCapability, readOnly = false }: {
   readonly session: SessionRecord | null;
@@ -125,32 +106,36 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 }) {
   const { client, connectionKey } = useApi();
   const queryClient = useQueryClient();
-  const [history, setHistory] = useState<TimelineEntry[]>([]);
-  const [live, setLive] = useState<TimelineEntry[]>([]);
-  const [local, setLocal] = useState<TimelineEntry[]>([]);
+  const [store] = useState(() => new TranscriptStore());
+  const [pager] = useState(() => session ? new NativeHistoryPager(client, session) : null);
+  const historyRead = useRef<AbortController | null>(null);
+  const reconcilePending = useRef(false);
+  const [historyDone, setHistoryDone] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [historyCount, setHistoryCount] = useState(0);
+  const transcript = useRef<TranscriptHandle>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [streamState, setStreamState] = useState("stopped");
   const [historyState, setHistoryState] = useState(
     session ? (nativeHistoryInitiallyReady(session) ? "loading" : "waiting") : "idle",
   );
   const [historyError, setHistoryError] = useState("");
   const [historySignal, setHistorySignal] = useState<NativeHistorySignal | null>(null);
-  const [recentEvents, setRecentEvents] = useState<AccessStreamItem[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [draftImages, setDraftImages] = useState<DraftImage[]>([]);
+  const [recentEvents, setRecentEvents] = useState<readonly { kind: string; type: string; sequence?: number }[]>([]);
+  const { prompt, setPrompt, images: draftImages, setImages: setDraftImages, uncertain, setUncertain } = useSessionDraft(`${connectionKey}:${bindingIdentity}`);
   const draftsRef = useRef(draftImages);
   draftsRef.current = draftImages;
   const mounted = useRef(true);
   const preparing = useRef(false);
+  const dispatching = useRef(false);
   const [preparingImages, setPreparingImages] = useState(false);
   const imagePicker = useRef<HTMLInputElement>(null);
   const imageUpload = useRef<AbortController | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uncertain, setUncertain] = useState<CommandEnvelope | null>(null);
   useEffect(() => { if (readOnly) imageUpload.current?.abort(); }, [readOnly]);
   useEffect(() => { mounted.current = true; return () => {
     mounted.current = false;
     imageUpload.current?.abort();
-    for (const image of draftsRef.current) URL.revokeObjectURL(image.url);
   }; }, []);
   const [actionStatus, setActionStatus] = useState("");
   const [modelDraft, setModelDraft] = useState<SettingDraft>(() =>
@@ -166,13 +151,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     createSettingDraft(session?.harnessSettings?.effort ?? "", "medium")
   );
   const [workspaceView, setWorkspaceView] = useState<"chat" | "terminal">("chat");
-  const [unreadCount, setUnreadCount] = useState(0);
-  const transcript = useRef<HTMLDivElement>(null);
-  const transcriptEnd = useRef<HTMLDivElement>(null);
-  const nearTranscriptEnd = useRef(true);
-  const forceFollow = useRef(true);
-  const previousTimelineLength = useRef(0);
-  const previousTailSignature = useRef("");
   const historyGeneration = session && historySignal?.bindingIdentity === bindingIdentity
     ? historySignal.generation
     : 0;
@@ -207,9 +185,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   });
 
   useEffect(() => {
-    setHistory([]);
-    setLive([]);
-    setLocal([]);
     setRecentEvents([]);
     setHistorySignal(null);
     setHistoryState(
@@ -217,14 +192,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     );
     setHistoryError("");
     setStreamState(session ? "connecting" : "stopped");
-    setPrompt("");
     setActionStatus("");
     setWorkspaceView("chat");
-    setUnreadCount(0);
-    nearTranscriptEnd.current = true;
-    forceFollow.current = true;
-    previousTimelineLength.current = 0;
-    previousTailSignature.current = "";
     setModelDraft(createSettingDraft(session?.harnessSettings?.model ?? ""));
     setModeDraft(createSettingDraft(
       session?.harnessSettings?.mode ?? "",
@@ -241,6 +210,23 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     const watchedRuntimeEpoch = session.runtimeEpoch;
     const initiallyReady = nativeHistoryInitiallyReady(session);
     let active = true;
+    let frame = 0;
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    let releaseBackpressure: (() => void) | undefined;
+    let queued: NativeEvent[] = [];
+    const flush = () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(flushTimer);
+      frame = 0;
+      flushTimer = undefined;
+      releaseBackpressure?.();
+      releaseBackpressure = undefined;
+      if (!active) return;
+      const events = queued;
+      queued = [];
+      store.applyEvents(events);
+      setRecentEvents((current) => [...current, ...events.slice(-10).map((event) => ({ kind: event.kind, type: event.nativeType, sequence: event.sequence }))].slice(-40));
+    };
     const signalHistory = (cause: "lifecycle" | "reconcile") => {
       if (!active) return;
       setHistorySignal((current) => advanceNativeHistorySignal(
@@ -265,14 +251,20 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           // A logical session may retain its ID across native runtime epochs.
           // Ignore buffered events belonging to another concrete binding.
           if (watchedRuntimeEpoch == null || item.runtimeEpoch !== watchedRuntimeEpoch) return;
-          setLive((current) => applyNativeEvent(current, item));
-          setRecentEvents((current) => [...current, item].slice(-40));
+          queued.push(item);
+          if (!frame) {
+            frame = requestAnimationFrame(flush);
+            // rAF is suspended in background tabs. Keep our buffer bounded and
+            // let watchAccess provide upstream backpressure after 64 events.
+            flushTimer = setTimeout(flush, 32);
+          }
           // A just-spawned Codex thread cannot provide turn history until its
           // first turn completes. Reconcile at native lifecycle boundaries
           // instead of polling an API that truthfully rejects that window.
           if (item.nativeType === "turn/completed" || item.nativeType === "session.idle") {
             signalHistory("lifecycle");
           }
+          if (queued.length >= 64) return new Promise<void>((resolve) => { releaseBackpressure = resolve; });
           return;
         }
         if (item.kind === "nativeGap" && item.sessionId === watchedSessionId) {
@@ -280,7 +272,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           return;
         }
         if (item.kind === "control") {
-          setRecentEvents((current) => [...current, item].slice(-40));
+          setRecentEvents((current) => [...current, { kind: item.kind, type: item.change.type }].slice(-40));
           const change = item.change;
           if (change.type.startsWith("session.")) {
             void queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -300,34 +292,58 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     return () => {
       active = false;
       watcher.stop();
+      cancelAnimationFrame(frame);
+      clearTimeout(flushTimer);
+      releaseBackpressure?.();
+      queued = [];
     };
   }, [bindingIdentity, client, connectionKey, queryClient]);
 
-  useEffect(() => {
-    if (!session) return;
-    if (!nativeHistoryReady) {
-      setHistoryState("waiting");
-      return;
-    }
-    let current = true;
+  const readHistory = useCallback(async (all = false, reconcile = false) => {
+    if (!pager) return;
+    if (historyRead.current) { if (reconcile) reconcilePending.current = true; return; }
+    const controller = new AbortController();
+    historyRead.current = controller;
+    if (reconcile) pager.reconcile();
     setHistoryState("loading");
-    void retryNativeHistory(
-      () => loadNativeHistory(client, session),
-      { active: () => current },
-    )
-      .then((entries) => {
-        if (!current) return;
-        setHistory(entries);
-        setHistoryState("loaded");
-        setHistoryError("");
-      })
-      .catch((error: unknown) => {
-        if (!current) return;
-        setHistoryState("failed");
-        setHistoryError(`Native history unavailable: ${errorMessage(error)}`);
-      });
-    return () => { current = false; };
-  }, [bindingIdentity, client, connectionKey, historyGeneration, nativeHistoryReady]);
+    setLoadingAll(all);
+    try {
+      do {
+        const page = await pager.next(controller.signal);
+        if (!mounted.current || controller.signal.aborted) return;
+        store.appendHistory(page.entries);
+        setHistoryCount(store.historyCount);
+        setHistoryDone(page.complete);
+        if (!all || page.complete) break;
+        // Yield between bounded native pages so input and paints remain usable.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        controller.signal.throwIfAborted();
+      } while (!pager.done);
+      setHistoryState(pager.done ? "loaded" : "partial");
+      setHistoryError("");
+    } catch (error) {
+      if (!mounted.current) return;
+      if (controller.signal.aborted) setHistoryState(pager.done ? "loaded" : "partial");
+      else { setHistoryState("failed"); setHistoryError(`History unavailable: ${errorMessage(error)}`); }
+    } finally {
+      if (historyRead.current === controller) historyRead.current = null;
+      if (mounted.current) setLoadingAll(false);
+      if (mounted.current && reconcilePending.current && !controller.signal.aborted) {
+        reconcilePending.current = false;
+        void readHistory(false, true);
+      }
+    }
+  }, [pager, store]);
+
+  useEffect(() => {
+    if (!nativeHistoryReady) { setHistoryState(session ? "waiting" : "idle"); return; }
+    // Let the effect commit before issuing a request. StrictMode's setup /
+    // cleanup probe otherwise aborts the first read and leaves its replacement
+    // waiting behind that same in-flight promise.
+    const start = setTimeout(() => { void readHistory(false, historyGeneration > 0); }, 0);
+    return () => { clearTimeout(start); };
+  }, [historyGeneration, nativeHistoryReady, readHistory]);
+  useEffect(() => () => { historyRead.current?.abort(); }, []);
 
   useEffect(() => {
     setModelDraft((current) => reconcileSettingDraft(
@@ -352,13 +368,14 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 
   const mutation = useMutation({
     retry: false,
+    onSettled: () => { dispatching.current = false; },
     mutationFn: async (action: CommandAction) => {
       if (!session) throw new Error("Select a session first");
       if (readOnly) throw new Error("Reconnect the host before changing this session");
       const envelope = action.envelope ?? await sessionCommand(session, action.request, action.images);
       setUncertain(envelope);
       if (action.optimistic && !action.envelope) {
-        setLocal((current) => [...current, { ...action.optimistic!, id: `local:${envelope.commandId}` }]);
+        store.addLocal({ ...action.optimistic!, id: `local:${envelope.commandId}` });
       }
       const record = await client.sessions.execute.mutate(envelope);
       if (record.state !== "outcomeUnknown" && record.state !== "received" && record.state !== "started") setUncertain(null);
@@ -376,39 +393,11 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     onError: (error) => setActionStatus(errorMessage(error)),
   });
 
-  const nativeTimeline = useMemo(() => mergeTimeline(history, live), [history, live]);
-  const timeline = useMemo(() => {
-    const unreconciled = local.filter((candidate) => !nativeTimeline.some((entry) =>
-      entry.kind === candidate.kind && entry.body === candidate.body &&
-      (candidate.images ?? []).length === (entry.images ?? []).length &&
-      (candidate.images ?? []).every((image, index) => image.image && !("unavailable" in image.image) &&
-        entry.images?.[index]?.image && !("unavailable" in entry.images[index]!.image!) &&
-        image.image.sha256 === (entry.images[index]!.image as ImageDescriptor).sha256),
-    ));
-    return mergeTimeline(nativeTimeline, unreconciled);
-  }, [local, nativeTimeline]);
-
-  useEffect(() => {
-    const tail = timeline.at(-1);
-    const tailSignature = tail
-      ? `${tail.id}:${tail.body.length}:${tail.status ?? ""}:${tail.pending ? "pending" : "settled"}`
-      : "";
-    const added = Math.max(0, timeline.length - previousTimelineLength.current);
-    const tailChanged = Boolean(previousTailSignature.current) && previousTailSignature.current !== tailSignature;
-    previousTimelineLength.current = timeline.length;
-    previousTailSignature.current = tailSignature;
-    if (forceFollow.current || nearTranscriptEnd.current) {
-      const frame = requestAnimationFrame(() => {
-        transcriptEnd.current?.scrollIntoView({ block: "end" });
-        nearTranscriptEnd.current = true;
-        forceFollow.current = false;
-        setUnreadCount(0);
-      });
-      return () => cancelAnimationFrame(frame);
-    }
-    const unreadAdded = added || (tailChanged ? 1 : 0);
-    if (unreadAdded > 0) setUnreadCount((current) => current + unreadAdded);
-  }, [timeline.length, timeline.at(-1)?.body]);
+  function executeAction(action: CommandAction): void {
+    if (dispatching.current) return;
+    dispatching.current = true;
+    mutation.mutate(action);
+  }
 
   if (!session) {
     return (
@@ -437,9 +426,9 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     : preferredModel(models.data ?? []));
 
   function dispatch(request: HarnessCommand, success: string, optimistic?: TimelineEntry): void {
-    if (uncertain || uploading || mutation.isPending) return;
+    if (uncertain || uploading || mutation.isPending || dispatching.current) return;
     setActionStatus("Dispatching command once…");
-    mutation.mutate({ request, success, ...(optimistic ? { optimistic } : {}) });
+    executeAction({ request, success, ...(optimistic ? { optimistic } : {}) });
   }
 
   async function attachImages(files: readonly File[]): Promise<void> {
@@ -457,20 +446,19 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       const next = [...draftsRef.current, ...prepared.map((file) => ({ id: randomUUID(), file, url: URL.createObjectURL(file) }))];
       draftsRef.current = next;
       setDraftImages(next);
-      setActionStatus(imageLimits.support === "unknown" ? "Image support is unreported for this model" : "");
+      setActionStatus("");
     } catch (error) { if (mounted.current) setActionStatus(errorMessage(error)); }
     finally { preparing.current = false; if (mounted.current) setPreparingImages(false); }
   }
 
   async function send(kind: "send" | "steer"): Promise<void> {
-    if (!session || (!prompt.trim() && !draftImages.length) || uploading || uncertain || preparing.current) return;
+    if (!session || !active || (!prompt.trim() && !draftImages.length) || uploading || imageUpload.current || uncertain || preparing.current || dispatching.current) return;
     if (draftImages.length && (imageLimits.support === "unsupported" || draftImages.length > imageLimits.count ||
       draftImages.some((image) => image.file.size > imageLimits.bytes || imageLimits.mediaTypes && !imageLimits.mediaTypes.includes(image.file.type)))) {
       setActionStatus("Attachments exceed the applied model's image capabilities");
       return;
     }
-    forceFollow.current = true;
-    setUnreadCount(0);
+    transcript.current?.followLatest();
     const body = prompt.trim();
     let request: HarnessCommand = session.harness === "codex"
       ? kind === "send"
@@ -509,7 +497,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (!mounted.current) return;
     }
     setActionStatus("Dispatching command once…");
-    mutation.mutate({ request, images, success: kind === "send" ? "Message sent" : "Steering message sent", optimistic: {
+    executeAction({ request, images, success: kind === "send" ? "Message sent" : "Steering message sent", optimistic: {
       id: "local:pending",
       kind: "user",
       title: kind === "send" ? "You" : "You · steer",
@@ -528,20 +516,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     if (!mutation.isPending && !uploading && active && (prompt.trim() || draftImages.length)) void send("send");
   }
 
-  function trackTranscriptPosition(event: UIEvent<HTMLDivElement>): void {
-    const element = event.currentTarget;
-    const isNearEnd = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
-    nearTranscriptEnd.current = isNearEnd;
-    if (isNearEnd) setUnreadCount(0);
-  }
-
-  function jumpToLatest(): void {
-    forceFollow.current = false;
-    nearTranscriptEnd.current = true;
-    setUnreadCount(0);
-    transcriptEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }
-
   return (
     <ImageSessionProvider session={session} readOnly={readOnly}><Tabs.Root
       className="flex min-h-0 flex-1 flex-col"
@@ -549,7 +523,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       onValueChange={(value) => setWorkspaceView(value as "chat" | "terminal")}
       data-testid="session-console"
     >
-      <header className="flex min-h-[72px] flex-col items-stretch justify-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5 [@media(max-height:500px)]:min-h-12 [@media(max-height:500px)]:py-1">
+      <header className="session-header flex min-h-[72px] flex-col items-stretch justify-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5 [@media(max-height:500px)]:min-h-12 [@media(max-height:500px)]:py-0">
         <div className="min-w-0 sm:flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate text-sm font-semibold text-[var(--text-primary)]" title={title}>{title}</h1>
@@ -557,8 +531,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:hidden">
             <span className="truncate font-mono" title={session.cwd ?? undefined}>{session.cwd ?? "Workspace unavailable"}</span>
-            <span aria-hidden="true">·</span>
-            <span className="max-w-40 shrink truncate font-mono" title={session.sessionId} data-testid="selected-session-id">{session.sessionId}</span>
+            <span className="sr-only" data-testid="selected-session-id">{session.sessionId}</span>
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 text-xs text-[var(--text-secondary)] sm:justify-end">
@@ -585,14 +558,15 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
             </Tabs.Trigger>
           </Tabs.List>
           <StatusLabel tone={runtimeTone(session.runtimeStatus)}>{humanizeStatus(session.runtimeStatus)}</StatusLabel>
-          <span className="inline-flex items-center gap-1.5" title="Live event stream">
-            <Radio aria-hidden="true" className={classes("size-3", !readOnly && streamState === "live" ? "text-[var(--status-live)]" : "text-[var(--text-muted)]")} />
-            <span data-testid="stream-status">{readOnly ? "stale" : streamState}</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5" title="Harness-native history">
-            <History aria-hidden="true" className="size-3.5 text-[var(--text-muted)]" />
-            <span data-testid="history-status">{historyState}</span>
-          </span>
+          <Popover.Root open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
+            <Popover.Trigger asChild><button className="min-h-9 text-xs text-[var(--text-secondary)]" title="Connection and history details" data-testid="session-health">{readOnly ? "Offline" : streamState === "live" ? "Live" : "Connecting"}</button></Popover.Trigger>
+            <Popover.Portal><Popover.Content sideOffset={8} collisionPadding={12} className="z-50 w-72 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-xs text-[var(--text-secondary)]">
+              <p>Stream: <span data-testid="stream-status">{readOnly ? "stale" : streamState}</span></p>
+              <p className="mt-2">History: <span data-testid="history-status">{historyState}</span></p>
+              <p className="mt-2 break-all font-mono">{session.sessionId}</p>
+              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap" data-testid="native-events">{diagnosticsOpen ? JSON.stringify(recentEvents, null, 2) : ""}</pre>
+            </Popover.Content></Popover.Portal>
+          </Popover.Root>
           {running ? (
             <Button
               className="h-8 min-h-8 px-2.5 py-1 text-xs"
@@ -624,40 +598,14 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         </p>
       ) : null}
 
-      <div className="relative min-h-0 flex-1">
-        <div
-          ref={transcript}
-          className="h-full overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--surface-canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
-          onScroll={trackTranscriptPosition}
-          role="region"
-          aria-label="Agent conversation"
-          tabIndex={0}
-          data-testid="chat-transcript"
-        >
-          {timeline.length === 0 && historyState !== "loading" ? (
-            <EmptyState
-              icon={Sparkles}
-              title="Ready for a prompt"
-              body="Messages and native tool activity will appear here as the harness streams them."
-            />
-          ) : (
-            <div className="mx-auto grid w-full min-w-0 max-w-[76ch] grid-cols-[minmax(0,1fr)] gap-5 px-4 py-6 sm:px-6">
-              {timeline.map((entry) => <TimelineItem entry={entry} key={entry.id} />)}
-              <div ref={transcriptEnd} />
-            </div>
-          )}
-        </div>
-        {unreadCount > 0 ? (
-          <Button
-            className="absolute bottom-3 left-1/2 min-h-8 -translate-x-1/2 rounded-full bg-[var(--surface-raised)] px-3 py-1 text-xs shadow-lg"
-            icon={ArrowDown}
-            onClick={jumpToLatest}
-            data-testid="jump-to-latest"
-          >
-            Jump to latest · {unreadCount} new
-          </Button>
-        ) : null}
-      </div>
+      {!historyDone && nativeHistoryReady || historyState === "failed" ? <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-subtle)] px-4 py-1.5 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:py-0" data-testid="history-pagination">
+        <span>{historyCount.toLocaleString()} items loaded · Oldest first</span>
+        {historyState === "loading" ? <button className="min-h-9 text-[var(--accent)]" onClick={() => historyRead.current?.abort()} data-testid="cancel-history-load">{loadingAll ? "Stop loading" : "Cancel"}</button> : <>
+          <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory()} data-testid="load-more-history">{historyState === "failed" ? "Retry history" : "Next 100"}</button>
+          <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory(true)} data-testid="load-all-history">Load to latest</button>
+        </>}
+      </div> : null}
+      <VirtualTranscript ref={transcript} store={store} loading={historyState === "loading"} />
 
       {pendingInteractions.length > 0 ? (
         <div
@@ -670,7 +618,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         </div>
       ) : null}
 
-      <div className="border-t border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 py-3 sm:px-5 [@media(max-height:500px)]:py-2"
+      <div className="session-composer border-t border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 py-3 sm:px-5 [@media(max-height:500px)]:py-1"
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
         onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void attachImages([...event.dataTransfer.files]); } }}>
         <div className={classes("mx-auto max-w-[76ch]", draftImages.length > 0 && "[@media(max-height:500px)]:grid [@media(max-height:500px)]:grid-cols-[auto_minmax(0,1fr)] [@media(max-height:500px)]:items-end [@media(max-height:500px)]:gap-x-3")}>
@@ -682,7 +630,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           </div> : null}
           <div className="relative rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] transition focus-within:border-[var(--accent)]/40 focus-within:ring-2 focus-within:ring-[var(--accent)]/[0.08]">
             <Textarea
-              className="min-h-20 [@media(max-height:500px)]:min-h-16 max-h-48 border-0 bg-transparent pb-11 text-sm leading-6 focus:ring-0"
+              className="block min-h-10 max-h-48 resize-none [field-sizing:content] [@media(max-height:500px)]:max-h-16 [@media(max-height:500px)]:leading-5 border-0 bg-transparent text-sm leading-6 focus:ring-0"
               rows={1}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
@@ -692,7 +640,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
               data-testid="prompt-input"
             />
-            <div className="absolute inset-x-2 bottom-2 flex items-center gap-2">
+            <div className="flex items-center gap-2 px-2 pb-2">
               <input ref={imagePicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" multiple className="hidden" onChange={(event) => { void attachImages([...(event.target.files ?? [])]); event.target.value = ""; }} data-testid="image-file-input" />
               <Button icon={ImagePlus} disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain) || imageLimits.support === "unsupported"} aria-label="Attach images" title={imageLimits.support === "unsupported" ? "The applied model does not accept images" : "Attach images"} onClick={() => imagePicker.current?.click()} data-testid="attach-images-button" />
               <AgentSettings
@@ -740,6 +688,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               </span>
               <div className="ml-auto flex gap-1.5">
                 <Button
+                  className={running ? undefined : "hidden"}
                   icon={CornerDownRight}
                   disabled={!active || !running || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
                   onClick={() => send("steer")}
@@ -761,18 +710,12 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
             </div>
           </div>
           {uploading ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => imageUpload.current?.abort()}>Cancel upload</button> : null}
-          {uncertain && !mutation.isPending ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => mutation.mutate({ request: uncertain.request, envelope: uncertain, success: "Command reconciled" })} disabled={readOnly} data-testid="reconcile-command">Check the original command</button> : null}
-          <div className="col-span-full mt-1.5 flex min-h-6 items-center justify-between gap-3 [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:min-h-0">
+          {uncertain && !mutation.isPending ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => executeAction({ request: uncertain.request, envelope: uncertain, success: "Command reconciled" })} disabled={readOnly} data-testid="reconcile-command">Check the original command</button> : null}
+          <div className={classes(!actionStatus && "hidden sm:flex", "col-span-full mt-1.5 flex min-h-6 items-center justify-between gap-3 [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:min-h-0")}>
             <p className="min-w-0 truncate text-xs text-[var(--text-secondary)]" role="status" title={actionStatus} data-testid="action-status">{actionStatus}</p>
             <span className="hidden shrink-0 text-xs text-[var(--text-secondary)] sm:inline [@media(max-height:500px)]:hidden">Enter to send · Shift+Enter for newline</span>
           </div>
-          <details className="group mt-0.5 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:hidden">
-            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 py-1 hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/60">
-              <ChevronRight aria-hidden="true" className="size-3 transition group-open:rotate-90" />
-              Activity diagnostics · {recentEvents.length} recent events
-            </summary>
-            <pre tabIndex={0} className="mt-1 max-h-64 overflow-auto rounded-md border border-[var(--border-subtle)] bg-[var(--surface-canvas)] p-3 font-mono text-xs leading-4 text-[var(--text-secondary)]" data-testid="native-events">{JSON.stringify(recentEvents, null, 2)}</pre>
-          </details>
+
         </div>
       </div>
       </Tabs.Content>
@@ -782,91 +725,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         </Suspense>
       </Tabs.Content>
     </Tabs.Root></ImageSessionProvider>
-  );
-}
-
-function TimelineItem({ entry }: { readonly entry: TimelineEntry }) {
-  const Icon = entry.kind === "user"
-    ? UserRound
-    : entry.kind === "assistant"
-      ? Bot
-      : entry.kind === "reasoning" || entry.kind === "plan"
-        ? BrainCircuit
-        : entry.kind === "tool"
-          ? TerminalSquare
-          : entry.kind === "subagent"
-            ? Activity
-            : Code2;
-  const isConversation = entry.kind === "user" || entry.kind === "assistant";
-  const isExecution = entry.kind === "reasoning" || entry.kind === "tool" || entry.kind === "subagent" || entry.kind === "raw";
-  const isFailed = entry.status === "failed" || entry.status === "error";
-  if (isExecution) {
-    return (
-      <article
-        className="relative ml-3 min-w-0 max-w-full border-l border-[var(--border-subtle)] pl-5"
-        data-testid="chat-message"
-        data-role={entry.kind}
-        data-entry-id={entry.id}
-      >
-        <span className={classes(
-          "absolute -left-1 top-3 size-2 rounded-full border border-[var(--surface-canvas)]",
-          entry.pending ? "animate-pulse bg-[var(--accent)]" : isFailed ? "bg-[var(--status-error)]" : "bg-[var(--text-muted)]",
-        )} />
-        <details className="group min-w-0 max-w-full overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--surface-shell)]" open={entry.pending || isFailed}>
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/60">
-            <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-[var(--text-muted)] transition group-open:rotate-90" />
-            <Icon aria-hidden="true" className="size-3.5 shrink-0 text-[var(--text-muted)]" />
-            <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-            {entry.status ? <ExecutionStatus status={entry.status} /> : entry.pending ? <ExecutionStatus status="running" /> : <CheckCircle2 aria-label="Completed" className="size-3.5 text-[var(--text-muted)]" />}
-          </summary>
-          {entry.kind === "tool" || entry.kind === "raw" ? (
-            <pre tabIndex={0} className="max-h-72 max-w-full overflow-auto border-t border-[var(--border-subtle)] px-3 py-2 font-mono text-xs leading-5 text-[var(--text-secondary)]" data-testid={entry.kind === "tool" ? "command-output" : undefined}>{entry.body || "No output"}</pre>
-          ) : (
-            <div className="whitespace-pre-wrap break-words border-t border-[var(--border-subtle)] px-3 py-2 text-xs leading-5 text-[var(--text-secondary)]">{entry.body || "No details"}</div>
-          )}
-        </details>
-        {entry.images?.map((image, index) => <TranscriptImagePreview key={index} {...image} sourceKey={`${entry.id}:image:${index}`} />)}
-      </article>
-    );
-  }
-  return (
-    <article
-      className={classes(
-        "group flex min-w-0 max-w-full gap-3",
-        entry.kind === "user" && "justify-end",
-      )}
-      data-testid="chat-message"
-      data-role={entry.kind}
-      data-entry-id={entry.id}
-    >
-      <div className={classes("min-w-0", isConversation ? "max-w-[88%]" : "flex-1")}>
-        <div className={classes("mb-1 flex items-center gap-2", entry.kind === "user" && "justify-end")}>
-          {entry.kind !== "user" ? <Icon aria-hidden="true" className="size-3.5 text-[var(--text-muted)]" /> : null}
-          <span className="text-xs font-medium text-[var(--text-secondary)]">{entry.title}</span>
-          {entry.status ? <Badge tone={entry.status === "failed" ? "bad" : entry.pending ? "warn" : "neutral"}>{entry.status}</Badge> : null}
-          {entry.pending ? <span className="size-1.5 animate-pulse rounded-full bg-[var(--accent)]" title="Streaming" /> : null}
-        </div>
-        <div className={classes(
-          "min-w-0 break-words text-sm leading-6",
-          entry.kind === "user"
-            ? "rounded-lg bg-[var(--accent)]/10 px-3.5 py-2.5 text-[var(--text-primary)]"
-            : entry.kind === "assistant"
-              ? "text-[var(--text-primary)]"
-              : entry.kind === "plan"
-                ? "rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] px-3.5 py-3 text-[var(--text-primary)]"
-                : entry.status === "failed"
-                  ? "rounded-md border border-[var(--status-error)]/20 bg-[var(--status-error)]/[0.06] px-3 py-2 text-[var(--status-error)]"
-                  : "rounded-md border border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 py-2 text-[var(--text-secondary)]",
-        )}>
-          {entry.kind === "user" ? (
-            <div className="whitespace-pre-wrap">{entry.body || (entry.images?.length ? "" : "…")}</div>
-          ) : (
-            <MarkdownBody body={entry.body || (entry.images?.length ? "" : "…")} sourceKey={entry.id} />
-          )}
-          {entry.images?.map((image, index) => <TranscriptImagePreview key={index} {...image} sourceKey={`${entry.id}:image:${index}`} />)}
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -1020,45 +878,6 @@ function SettingDraftLabel({ label, changed }: { readonly label: string; readonl
   );
 }
 
-function MarkdownBody({ body, sourceKey }: { readonly body: string; readonly sourceKey: string }) {
-  // ReactMarkdown uses these functions as component types. Keep their identity
-  // stable so transcript refreshes preserve image dialogs, blobs, and focus.
-  const components = useMemo<Components>(() => ({
-    pre: ({ node: _node, ...props }) => <pre {...props} tabIndex={0} aria-label="Code block" />,
-    table: ({ node: _node, ...props }) => <table {...props} tabIndex={0} />,
-    a: ({ node: _node, ...props }) => <a {...props} rel="noreferrer" target="_blank" />,
-    img: ({ node, alt, src }) => src && isLocalImagePath(src)
-      ? <TranscriptImagePreview path={decodeMarkdownImagePath(src)} alt={alt || "Image"} sourceKey={`${sourceKey}:markdown:${node?.position?.start.offset ?? 0}`} />
-      : <span className="inline-flex rounded border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--text-secondary)]">{src && /^https?:\/\//i.test(src) ? <a href={src} rel="noreferrer" target="_blank">{alt || "External image"}</a> : alt || "Unsupported image reference"}</span>,
-  }), [sourceKey]);
-  return (
-    <div className="space-y-2 [&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--border-subtle)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--text-secondary)] [&_code]:rounded [&_code]:bg-[var(--surface-canvas)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-inherit [&_h1]:mt-4 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-4 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-3 [&_h3]:font-semibold [&_li]:ml-5 [&_li]:pl-1 [&_ol]:list-decimal [&_p]:whitespace-pre-wrap [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:border-[var(--border-subtle)] [&_pre]:bg-[var(--surface-canvas)] [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-xs [&_td]:border [&_td]:border-[var(--border-subtle)] [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-[var(--border-subtle)] [&_th]:px-2 [&_th]:py-1 [&_ul]:list-disc">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        components={components}
-      >
-        {body}
-      </ReactMarkdown>
-    </div>
-  );
-}
-
-function decodeMarkdownImagePath(path: string): string {
-  try { return decodeURIComponent(path); } catch { return path; }
-}
-
-function ExecutionStatus({ status }: { readonly status: string }) {
-  const failed = status === "failed" || status === "error";
-  const running = status === "running" || status === "inProgress";
-  return (
-    <span className={classes(
-      "shrink-0 text-xs",
-      failed ? "text-[var(--status-error)]" : running ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
-    )}>{humanizeStatus(status)}</span>
-  );
-}
-
 function StatusLabel({ tone, children }: { readonly tone: ReturnType<typeof runtimeTone>; readonly children: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -1075,27 +894,6 @@ function StatusLabel({ tone, children }: { readonly tone: ReturnType<typeof runt
       {children}
     </span>
   );
-}
-
-export async function loadNativeHistory(client: AccessClient, session: SessionRecord): Promise<TimelineEntry[]> {
-  let cursor: string | undefined;
-  let entries: TimelineEntry[] = [];
-  const seen = new Set<string>();
-  for (let pageIndex = 0; pageIndex < 100; pageIndex += 1) {
-    const result = await client.sessions.readNativeHistory.query({
-      sessionId: session.sessionId,
-      request: session.harness === "codex"
-        ? { harness: "codex", includeTurns: true, limit: 100, ...(cursor ? { cursor } : {}) }
-        : { harness: "copilot", limit: 100, ...(cursor ? { cursor } : {}) },
-    });
-    const page = entriesFromHistory(result).map((entry, index) => ({ ...entry, sequence: entries.length + index }));
-    entries = mergeTimeline(entries, page);
-    if (result.complete || !result.nextCursor) return entries;
-    if (seen.has(result.nextCursor)) throw new Error("Native history repeated its cursor");
-    seen.add(result.nextCursor);
-    cursor = result.nextCursor;
-  }
-  throw new Error("Native history exceeded the 100-page UI safety limit");
 }
 
 function commandStatus(success: string, record: CommandRecord): string {

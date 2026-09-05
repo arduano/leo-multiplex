@@ -32,6 +32,19 @@ Codex history, streaming, images, questions, settings, lifecycle operations, and
 managed terminal attachment. SVG interpretation remains client-side. Third-party
 browser notices are included in `apps/web/THIRD_PARTY_LICENSES.txt`.
 
+The personal interface keeps the conversation prominent, with hosts in the left
+rail and details collapsed initially. Text drafts, image attachments, and uncertain
+command IDs survive switching agents in the same tab. They remain in memory and
+do not survive a page reload.
+
+Long conversations render only a measured window of messages. Native updates
+touch individual items and are batched before painting; large message bodies use
+bounded parts. The pinned native history API pages oldest first. Opening a thread
+reads 100 items; **Load to latest** incrementally reads the remaining pages and
+can be stopped. Live messages remain available while history loads. See the
+[browser qualification](tests/browser/README.md) for the 50,000-turn fixture and
+the measured performance limits.
+
 ## Host
 
 The Home Manager module exports `services.leo-host`. The Nix package pins its own

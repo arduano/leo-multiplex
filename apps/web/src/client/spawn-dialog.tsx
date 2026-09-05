@@ -242,8 +242,8 @@ export function SpawnDialog({
 
   return (
     <Dialog
-      title="Launch an agent"
-      description="Start Codex in an existing directory on your host, with full access."
+      title="New agent"
+      description="Choose a folder and start a Codex session. Full access, no approval prompts."
       testId="spawn-dialog"
     >
       <form className="grid gap-5 p-4 sm:p-6" onSubmit={submit} data-testid="spawn-form">
@@ -252,7 +252,7 @@ export function SpawnDialog({
             Your host is offline. Reconnect it to start a session.
           </div>
         ) : null}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4">
           <Field label="Host">
             <span className="relative">
               <Server className="pointer-events-none absolute left-3 top-2.5 size-4 text-[var(--text-muted)]" aria-hidden="true" />
@@ -276,13 +276,14 @@ export function SpawnDialog({
             </span>
           </Field>
         </div>
-        <Field label="Working directory" hint="absolute path on the selected host">
+        <Field label="Working directory" hint="an existing folder on this host">
           <span className="relative">
             <FolderOpen className="pointer-events-none absolute left-3 top-2.5 size-4 text-[var(--text-muted)]" aria-hidden="true" />
             <Input
               required
               disabled={launchPending}
-              className="pl-9 font-mono text-xs"
+              className="pl-9 font-mono text-sm"
+              placeholder="/home/arduano/programming/…"
               value={cwd}
               onChange={(event) => setCwd(event.target.value)}
               list="allowed-roots"
@@ -326,20 +327,20 @@ export function SpawnDialog({
         </div>
         {models.isError ? (
           <p className="text-xs text-[var(--status-error)]" role="alert">
-            Models could not be loaded. You can still launch with the harness default.
+            Models are unavailable. You can still start with your host default.
           </p>
         ) : null}
         {launchProfiles.isError ? (
           <p className="text-xs text-[var(--status-error)]" role="alert">
-            Launch profiles could not be loaded. Check the runtime connection, then try again.
+            This host is not ready to start an agent. Refresh and try again.
           </p>
         ) : null}
-        <Field label="Display title" hint="optional agent.title metadata">
+        <Field label="Name" hint="optional">
           <Input
             disabled={launchPending}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            placeholder="Investigate flaky CI"
+            placeholder="What are you working on?"
             data-testid="spawn-title-input"
           />
         </Field>
@@ -351,7 +352,7 @@ export function SpawnDialog({
             type="submit"
             tone="primary"
             icon={mutation.isPending ? LoaderCircle : Plus}
-            disabled={!runtime || !profile || launchPending}
+            disabled={!runtime || !profile || !cwd.trim() || launchPending}
             className={launchPending ? "[&_svg]:animate-spin" : undefined}
             data-testid="spawn-submit"
           >

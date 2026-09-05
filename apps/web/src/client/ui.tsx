@@ -70,7 +70,7 @@ export function Badge({ children, tone = "neutral", className }: PropsWithChildr
 }>) {
   return (
     <span className={classes(
-      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-5",
+      "inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs font-medium leading-5",
       tone === "neutral" && "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
       tone === "good" && "border-[var(--status-live)]/25 bg-[var(--status-live)]/10 text-[var(--status-live)]",
       tone === "warn" && "border-[var(--status-waiting)]/25 bg-[var(--status-waiting)]/10 text-[var(--status-waiting)]",
@@ -88,7 +88,7 @@ export function Field({ label, hint, children, className }: PropsWithChildren<{
 }>) {
   return (
     <label className={classes("grid gap-1.5 text-sm", className)}>
-      <span className="flex items-baseline justify-between gap-3 font-medium text-[var(--text-primary)]">
+      <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 font-medium text-[var(--text-primary)]">
         {label}
         {hint ? <span className="text-xs font-normal text-[var(--text-muted)]">{hint}</span> : null}
       </span>
@@ -123,7 +123,7 @@ export function Panel({ children, className, ...props }: PropsWithChildren<HTMLA
 }
 
 export function EmptyState({ icon: Icon, title, body, action }: {
-  readonly icon: LucideIcon;
+  readonly icon?: LucideIcon;
   readonly title: string;
   readonly body: string;
   readonly action?: ReactNode;
@@ -131,9 +131,7 @@ export function EmptyState({ icon: Icon, title, body, action }: {
   return (
     <div className="grid min-h-52 place-items-center px-8 py-12 text-center">
       <div className="max-w-sm">
-        <span className="mx-auto mb-4 grid size-10 place-items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-base)] text-[var(--text-muted)]">
-          <Icon aria-hidden="true" className="size-4.5" />
-        </span>
+        {Icon ? <Icon aria-hidden="true" className="mx-auto mb-4 size-5 text-[var(--text-muted)]" /> : null}
         <h3 className="font-medium text-[var(--text-primary)]">{title}</h3>
         <p className="mt-1.5 text-sm leading-6 text-[var(--text-muted)]">{body}</p>
         {action ? <div className="mt-5">{action}</div> : null}
@@ -149,9 +147,9 @@ export function Dialog({ title, description, children, testId }: PropsWithChildr
 }>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px]" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
       <DialogPrimitive.Content
-        className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-shell)] shadow-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+        className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-shell)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
         data-testid={testId}
         {...(!description ? { "aria-describedby": undefined } : {})}
       >

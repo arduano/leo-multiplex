@@ -4,20 +4,15 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
-  Bot,
-  Cable,
   ChevronDown,
   CircleDot,
   GitBranch,
-  Layers3,
   PanelLeftClose,
   PanelRightClose,
   Plus,
   RefreshCw,
   Search,
   Server,
-  ShieldCheck,
-  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
@@ -202,7 +197,7 @@ function Dashboard() {
             />
           )}
           center={<div className="flex h-full min-h-0 flex-col">
-            {selectedStale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host connection unavailable. Showing stale session details; actions resume after reconnecting.</p> : null}
+            {selectedStale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
             <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} />
           </div>}
           inspector={(actions) => (
@@ -236,14 +231,10 @@ function AppHeader({ connected, globalStatus, onRefresh }: {
   readonly onRefresh: () => void;
 }) {
   return (
-    <header className="z-30 flex h-13 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 sm:px-4">
+    <header className="z-30 flex h-13 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 sm:px-4 [@media(max-height:500px)]:h-11">
       <div className="mr-auto flex min-w-0 items-center gap-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--border-subtle)] bg-[var(--surface-base)] text-[var(--accent)]">
-          <Layers3 className="size-4" aria-hidden="true" />
-        </span>
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold tracking-tight">Leo Multiplex</h1>
-          <p className="hidden text-xs text-[var(--text-muted)] sm:block">Your agents, on your machines</p>
+          <h1 className="whitespace-nowrap text-base font-semibold tracking-tight">leo<span className="ml-2 font-normal text-[var(--text-muted)]">/ agents</span></h1>
         </div>
       </div>
 
@@ -252,7 +243,7 @@ function AppHeader({ connected, globalStatus, onRefresh }: {
           <ConnectionMenu status={globalStatus} />
           <IconButton
             icon={RefreshCw}
-            label="Refresh gateway projection"
+            label="Refresh workspace" data-testid="refresh-workspace"
             tone="ghost"
             onClick={onRefresh}
           />
@@ -287,8 +278,8 @@ function ConnectionMenu({ status }: { readonly status: string }) {
     <Popover.Root>
       <Popover.Trigger asChild>
         <button type="button" aria-label="Account and connection" data-testid="connection-menu-button"
-          className="inline-flex min-h-9 items-center gap-2 rounded-md border border-[var(--border-subtle)] px-2.5 text-xs text-[var(--text-secondary)]">
-          <ShieldCheck className="size-3.5" aria-hidden="true" />
+          className="inline-flex min-h-9 items-center gap-2 rounded-md px-2.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-base)]">
+          <span className={classes("size-1.5 rounded-full", status === "connected" ? "bg-[var(--status-live)]" : "bg-[var(--status-waiting)]")} aria-hidden="true" />
           <span data-testid="global-status">{status}</span><ChevronDown className="size-3.5" aria-hidden="true" />
         </button>
       </Popover.Trigger>
@@ -312,12 +303,11 @@ function ConnectionPanel({ onConnect, status, pending, error }: {
   return (
     <main className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-4">
       <div className="w-full max-w-md space-y-4">
-        <ShieldCheck className="size-6 text-[var(--accent)]" aria-hidden="true" />
         <h2 className="text-base font-semibold">{pending ? "Opening your workspace…" : "Workspace unavailable"}</h2>
         <p className="text-sm text-[var(--text-secondary)]">{pending ? "Connecting to your hosts." : "Retry the connection, or sign in again if your login has expired."}</p>
         {error ? <p className="text-sm text-[var(--status-error)]" role="alert">{error}</p> : null}
         <div className="flex gap-3">
-          <Button icon={pending ? RefreshCw : Cable} onClick={onConnect} disabled={pending} data-testid="connect-button">Retry connection</Button>
+          <Button icon={RefreshCw} onClick={onConnect} disabled={pending} data-testid="connect-button">Retry connection</Button>
           {!pending ? <a className="inline-flex min-h-9 items-center text-sm text-[var(--accent)] underline" href="/" target="_blank" rel="noopener">Sign in again</a> : null}
         </div>
         <p className="text-xs text-[var(--text-muted)]" data-testid="connection-panel-status">{status}</p>
@@ -361,10 +351,10 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
         <label className="relative block">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-[var(--text-muted)]" />
           <Input
-            className="h-9 pl-8 text-xs"
+            className="h-9 pl-8 text-sm"
             value={search}
             onChange={(event) => onSearch(event.target.value)}
-            placeholder="Search agents, folders, hosts…"
+            placeholder="Find an agent…"
             aria-label="Search agents"
           />
         </label>
@@ -391,19 +381,19 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
             />
           ))}
           {connected && !loading && rows.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">No sessions match this view.</p>
+            <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">No agents here yet.</p>
           ) : null}
         </div>
       </div>
       <section className="flex max-h-[38%] min-h-0 shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--surface-shell)]">
         <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 py-2.5">
-          <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Fleet</h3>
-          <span className="text-xs tabular-nums text-[var(--text-muted)]">{runtimeNodes.length} runtimes</span>
+          <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Hosts</h3>
+          <span className="text-xs tabular-nums text-[var(--text-muted)]">{runtimeNodes.filter((node) => node.presence === "online" && node.reachability === "reachable").length} online</span>
         </div>
         <div
           className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-2 pb-2"
           role="region"
-          aria-label={`Fleet runtimes, ${runtimeNodes.length} shown`}
+          aria-label={`Hosts, ${runtimeNodes.length} shown`}
           tabIndex={0}
           data-testid="fleet-list"
         >
@@ -447,13 +437,11 @@ function SessionRow({ session, stale, runtime, selected, onSelect }: {
               session.runtimeStatus === "error" ? "bg-[var(--status-error)]" : "bg-[var(--text-muted)]",
         )} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium leading-5 text-[var(--text-primary)]" title={title}>{title}</span>
+          <span className="block truncate text-sm font-medium leading-5 text-[var(--text-primary)]" title={title}>{title}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-[var(--text-muted)]">
             <span className="shrink-0">{session.harness}</span>
             <span aria-hidden="true">·</span>
-            <span className="shrink-0">{stale ? "stale" : session.availability}</span>
-            <span aria-hidden="true">·</span>
-            <span className="shrink-0">{session.runtimeStatus}</span>
+            <span className="shrink-0">{sessionStatus(session, stale)}</span>
             <span aria-hidden="true">·</span>
             <span className="truncate">{runtime?.name ?? shortId(session.runtimeNodeId)}</span>
           </span>
@@ -479,7 +467,7 @@ function RuntimeRow({ node }: { readonly node: RuntimeNodeDescriptor }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium text-[var(--text-secondary)]">{node.name}</p>
         <p className="truncate text-xs text-[var(--text-muted)]">
-          {available.map((entry) => entry.harness).join(" · ") || "No harnesses"} · {node.presence} · {node.reachability}
+          {online ? "Online" : "Offline"}{available.length ? ` · ${available.map((entry) => entry.harness).join(", ")}` : ""}
         </p>
       </div>
       <span className={classes("size-1.5 shrink-0 rounded-full", online ? "bg-[var(--status-live)]" : "bg-[var(--status-error)]")} />
@@ -500,24 +488,23 @@ function InspectorPane({ actions, session, readOnly, runtime, sources, controls,
     <aside className="flex h-full min-h-0 flex-col bg-[var(--surface-shell)]">
       <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <SlidersHorizontal className="size-3.5 text-[var(--text-muted)]" aria-hidden="true" />
-          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">Inspector</h2>
+          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">Details</h2>
         </div>
         {actions.collapse ? (
           <IconButton
             icon={PanelRightClose}
-            label="Collapse inspector pane"
+            label="Hide details"
             tone="ghost"
             className="size-8 min-h-8"
             onClick={actions.collapse}
             data-testid="right-pane-toggle"
           />
         ) : actions.close ? (
-          <IconButton icon={X} label="Close inspector pane" tone="ghost" className="size-8 min-h-8" onClick={actions.close} />
+          <IconButton icon={X} label="Close details" tone="ghost" className="size-8 min-h-8" onClick={actions.close} />
         ) : null}
       </header>
       <Tabs.Root defaultValue="metadata" className="flex min-h-0 flex-1 flex-col">
-        <Tabs.List className="grid h-10 shrink-0 grid-cols-3 border-b border-[var(--border-subtle)] px-2" aria-label="Inspector sections">
+        <Tabs.List className="grid h-10 shrink-0 grid-cols-3 border-b border-[var(--border-subtle)] px-2" aria-label="Agent details">
           <InspectorTab value="metadata">Metadata</InspectorTab>
           <InspectorTab value="session">Session</InspectorTab>
           <InspectorTab value="activity">Activity</InspectorTab>
@@ -529,7 +516,7 @@ function InspectorPane({ actions, session, readOnly, runtime, sources, controls,
           {session ? (
             <SessionDetails session={session} runtime={runtime} />
           ) : (
-            <InspectorEmpty icon={Bot} title="No agent selected" body="Choose a session to inspect its binding and workspace." />
+            <InspectorEmpty title="No agent selected" body="Open an agent to see its details." />
           )}
         </Tabs.Content>
         <Tabs.Content
@@ -602,8 +589,8 @@ function TopologySummary({ sources, controls, runtimes }: {
   const selectedSources = sources.filter((source) => source.state === "selected").length;
   return (
     <div className="p-4">
-      <h3 className="text-sm font-semibold text-[var(--text-primary)]">Gateway projection</h3>
-      <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">Observed topology and source-selection state.</p>
+      <h3 className="text-sm font-semibold text-[var(--text-primary)]">Connections</h3>
+      <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">How this workspace reaches your hosts.</p>
 
       <dl className="mt-4 grid grid-cols-3 divide-x divide-[var(--border-subtle)] border-y border-[var(--border-subtle)] py-3 text-center">
         <Metric icon={GitBranch} value={selectedSources} label="Sources" />
@@ -651,7 +638,7 @@ function TopologySummary({ sources, controls, runtimes }: {
 }
 
 function Metric({ icon: Icon, value, label }: {
-  readonly icon: typeof Bot;
+  readonly icon: typeof Server;
   readonly value: number;
   readonly label: string;
 }) {
@@ -664,15 +651,13 @@ function Metric({ icon: Icon, value, label }: {
   );
 }
 
-function InspectorEmpty({ icon: Icon, title, body }: {
-  readonly icon: typeof Bot;
+function InspectorEmpty({ title, body }: {
   readonly title: string;
   readonly body: string;
 }) {
   return (
     <div className="grid min-h-52 place-items-center p-6 text-center">
       <div>
-        <Icon className="mx-auto size-5 text-[var(--text-muted)]" aria-hidden="true" />
         <h3 className="mt-3 text-sm font-medium text-[var(--text-secondary)]">{title}</h3>
         <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">{body}</p>
       </div>
@@ -695,6 +680,12 @@ function sessionSearchText(session: SessionRecord): string {
     .filter(Boolean)
     .join(" ")
     .toLocaleLowerCase();
+}
+
+function sessionStatus(session: SessionRecord, stale: boolean): string {
+  if (stale) return "Offline";
+  if (session.availability !== "active") return "Stopped";
+  return ({ running: "Working", idle: "Ready", waitingForInput: "Needs you", error: "Error", stopped: "Stopped" } as Record<string, string>)[session.runtimeStatus] ?? session.runtimeStatus;
 }
 
 function sessionRank(session: SessionRecord): number {

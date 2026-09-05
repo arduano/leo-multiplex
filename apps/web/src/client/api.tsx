@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from "react";
 
@@ -25,22 +26,29 @@ export interface ApiProviderProps extends PropsWithChildren {
 }
 
 export function ApiProvider({ connectionKey, enableWebSocket = true, children }: ApiProviderProps) {
-  const handle = useMemo<AccessClientHandle>(() => {
+  const [binding, setBinding] = useState<{
+    handle: AccessClientHandle; connectionKey: number; enableWebSocket: boolean;
+  } | null>(null);
+  useEffect(() => {
     const httpUrl = new URL("/trpc", window.location.href).toString();
     const wsUrl = new URL(httpUrl);
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    return createAccessClient({
+    const handle = createAccessClient({
       httpUrl,
       ...(enableWebSocket ? { wsUrl: wsUrl.toString() } : {}),
     });
+    setBinding({ handle, connectionKey, enableWebSocket });
+    return () => { handle.close(); };
   }, [connectionKey, enableWebSocket]);
 
-  useEffect(() => () => handle.close(), [handle]);
-
   const value = useMemo(
-    () => ({ client: handle.client, connectionKey }),
-    [handle.client, connectionKey],
+    () => binding && binding.connectionKey === connectionKey && binding.enableWebSocket === enableWebSocket
+      ? { client: binding.handle.client, connectionKey } : null,
+    [binding, connectionKey, enableWebSocket],
   );
+  // Own the connection in an effect. A render can be discarded, and development
+  // StrictMode probes setup/cleanup; neither may leak or reuse a closed client.
+  if (!value) return <p className="p-4 text-sm text-[var(--text-secondary)]" role="status">Opening workspace…</p>;
   return <ApiContext.Provider value={value}>{children}</ApiContext.Provider>;
 }
 

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Braces, Check, RotateCcw, Save } from "lucide-react";
+import { Check, RotateCcw, Save } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -155,7 +155,7 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
   });
 
   if (!session) {
-    return <EmptyState icon={Braces} title="No metadata selected" body="Choose a session to inspect its canonical key/value document." />;
+    return <EmptyState title="Nothing selected" body="Open an agent to see its saved details." />;
   }
 
   return (
@@ -163,12 +163,12 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Session metadata</h3>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">Namespaced keys with JSON values.</p>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">Extra fields saved with this session.</p>
         </div>
         <Badge tone="brand">revision {snapshot?.revision ?? "…"}</Badge>
       </div>
       <Textarea
-        className="min-h-80 resize-y overflow-auto whitespace-pre font-mono text-xs leading-5 [tab-size:2]"
+        className="min-h-56 resize-y overflow-auto whitespace-pre font-mono text-sm leading-5 [tab-size:2]"
         value={text}
         wrap="off"
         spellCheck={false}
@@ -196,7 +196,7 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
           <p className="text-xs text-[var(--status-error)]">{validationError}</p>
         ) : canonicalAdvanced ? (
           <p className="text-xs text-[var(--status-waiting)]">
-            Canonical metadata changed while you were editing. Save will use your original key revisions and report any conflicts.
+            These fields changed elsewhere. Your draft is preserved; saving will check for conflicts.
           </p>
         ) : dirty ? (
           <p className="text-xs text-[var(--text-muted)]">Unsaved changes</p>
@@ -218,9 +218,9 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
               </Button>
             </DialogPrimitive.Trigger>
             <DialogPrimitive.Portal>
-              <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-[2px]" />
+              <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
               <DialogPrimitive.Content
-                className="fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-shell)] p-5 shadow-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-shell)] p-5 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 aria-describedby="metadata-reset-description"
                 data-testid="metadata-reset-dialog"
               >
@@ -228,7 +228,7 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
                   Discard this metadata draft?
                 </DialogPrimitive.Title>
                 <DialogPrimitive.Description id="metadata-reset-description" className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                  Your unsaved changes for this session will be replaced with the latest canonical values.
+                  Replace your unsaved edits with the latest saved values.
                 </DialogPrimitive.Description>
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
                   <DialogPrimitive.Close asChild>
@@ -243,7 +243,7 @@ export function MetadataPanel({ session, readOnly = false }: { readonly session:
                       setDirty(false);
                       setEditBase(null);
                       setResetOpen(false);
-                      setStatus("Restored canonical values");
+                      setStatus("Restored saved values");
                     }}
                     data-testid="metadata-reset-confirm"
                   >

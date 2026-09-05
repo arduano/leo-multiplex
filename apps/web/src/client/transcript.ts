@@ -37,40 +37,26 @@ export function entriesFromHistory(result: NativeHistoryResult): TimelineEntry[]
   return linkCopilotAssets(withImages(entries, result.payload));
 }
 
-export function mergeTimeline(
-  history: readonly TimelineEntry[],
-  live: readonly TimelineEntry[],
-): TimelineEntry[] {
-  const merged = new Map<string, TimelineEntry>();
-  for (const entry of [...history, ...live]) {
-    const previous = merged.get(entry.id);
-    if (!previous) {
-      merged.set(entry.id, entry);
-      continue;
-    }
-    // A stale streaming fragment must not replace a terminal item recovered
-    // through the harness-native history API after a stream gap.
-    const current = previous.pending === false && entry.pending === true
-      ? { ...entry, ...previous }
-      : { ...previous, ...entry };
-    merged.set(entry.id, {
-      ...current,
-      body: current.body || previous.body,
-      raw: current.raw ?? previous.raw,
-      pending: current.pending ?? previous.pending,
-    });
-  }
-  return linkCopilotAssets([...merged.values()].sort(compareEntries));
-}
-
-export function applyNativeEvent(
-  entries: readonly TimelineEntry[],
+/** Projects only the affected native item; callers need not copy the transcript. */
+export function projectNativeEvent(
   event: NativeEvent,
+  lookup: (id: string) => TimelineEntry | undefined,
 ): TimelineEntry[] {
-  const next = new Map(entries.map((entry) => [entry.id, entry]));
-  if (event.harness === "codex") applyCodexLive(next, event);
-  else applyCopilotLive(next, event);
-  return linkCopilotAssets(withImages([...next.values()], event.payload).sort(compareEntries).slice(-1_000));
+  const payload = record(event.payload.json);
+  const data = record(payload?.data);
+  const nativeId = event.harness === "codex"
+    ? string(record(payload?.item)?.id) ?? string(payload?.itemId)
+    : string(data?.messageId) ?? string(data?.toolCallId) ?? string(payload?.id);
+  const id = nativeId ? `${event.harness}:${nativeId}` : undefined;
+  const previous = id ? lookup(id) : undefined;
+  // A replayed delta/start cannot undo a terminal history item.
+  if (previous?.pending === false && (event.nativeType.toLowerCase().endsWith("delta") ||
+    event.nativeType.endsWith("_delta") || event.nativeType === "item/started")) return [];
+  const changed = new Map<string, TimelineEntry>();
+  if (previous) changed.set(previous.id, previous);
+  if (event.harness === "codex") applyCodexLive(changed, event);
+  else applyCopilotLive(changed, event);
+  return withImages([...changed.values()].filter((entry) => entry !== previous), event.payload);
 }
 
 function codexHistory(payload: unknown): TimelineEntry[] {
@@ -78,7 +64,7 @@ function codexHistory(payload: unknown): TimelineEntry[] {
   if (items.length > 0) return items.map((entry, index) => {
     const item = record(entry);
     const projected = codexItem(item?.item, undefined, `history:${index}`);
-    return projected ? { ...projected, sequence: index, pending: false } : null;
+    return projected ? { ...projected, sequence: index, pending: projected.kind === "assistant" && projected.pending ? undefined : projected.pending ?? false } : null;
   }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
   const thread = record(payload)?.thread;
   const turns = array(record(thread)?.turns);
@@ -207,11 +193,11 @@ function copilotEvent(rawEvent: unknown, sequence?: number): TimelineEntry | nul
   };
   switch (type) {
     case "user.message":
-      return { ...base, kind: "user", title: "You", body: string(data?.content) ?? "" };
+      return { ...base, kind: "user", title: "You", body: string(data?.content) ?? "", pending: false };
     case "assistant.message": {
       const content = string(data?.content) ?? "";
       if (!content && array(data?.toolRequests).length > 0) return null;
-      return { ...base, kind: "assistant", title: "Copilot", body: content };
+      return { ...base, kind: "assistant", title: "Copilot", body: content, pending: false };
     }
     case "assistant.reasoning":
     case "assistant.intent":
@@ -287,8 +273,9 @@ function applyCodexLive(entries: Map<string, TimelineEntry>, event: NativeEvent)
     const previous = entries.get(id);
     const isCommand = event.nativeType.includes("commandExecution");
     entries.set(id, {
+      ...previous,
       id,
-      kind: isCommand ? "tool" : event.nativeType.includes("plan") ? "plan" : "assistant",
+      kind: previous?.kind ?? (isCommand ? "tool" : event.nativeType.includes("reasoning") ? "reasoning" : event.nativeType.includes("plan") ? "plan" : "assistant"),
       title: previous?.title ?? (isCommand ? "Command output" : event.nativeType.includes("plan") ? "Plan" : "Codex"),
       body: `${previous?.body ?? ""}${delta}`,
       raw: event.payload,
@@ -320,6 +307,7 @@ function applyCopilotLive(entries: Map<string, TimelineEntry>, event: NativeEven
       const id = `copilot:${messageId}`;
       const previous = entries.get(id);
       entries.set(id, {
+        ...previous,
         id,
         kind: "assistant",
         title: "Copilot",
@@ -388,14 +376,6 @@ function linkCopilotAssets(entries: TimelineEntry[]): TimelineEntry[] {
   return entries.map((entry) => entry.images?.some((image) => image.nativeAssetId && assets.has(image.nativeAssetId))
     ? { ...entry, images: entry.images.map((image) => image.nativeAssetId && assets.has(image.nativeAssetId) ? { ...image, image: assets.get(image.nativeAssetId)!.image! } : image) }
     : entry);
-}
-
-function compareEntries(left: TimelineEntry, right: TimelineEntry): number {
-  if (left.timestamp && right.timestamp) {
-    const byTime = left.timestamp.localeCompare(right.timestamp);
-    if (byTime !== 0) return byTime;
-  }
-  return (left.sequence ?? 0) - (right.sequence ?? 0) || left.id.localeCompare(right.id);
 }
 
 function toolResult(value: unknown): string {

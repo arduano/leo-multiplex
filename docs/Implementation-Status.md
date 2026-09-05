@@ -27,7 +27,7 @@ Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Verification and its limits
 
-The implementation passed application typechecking, 70 tests in ten files, and
+The implementation passed application typechecking, 78 tests in eleven files, and
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
@@ -113,3 +113,50 @@ outside this application's ownership.
 The IP route uses owner identity supplied by Tailscale Serve and encryption from
 WireGuard. Its backend stays on NAS loopback. HTTPS/MagicDNS and Cloudflare can
 be configured later; no unauthenticated LAN or public access is enabled.
+
+## Personal conversation interface
+
+The UI now uses a muted neutral/green palette, simple author labels, a compact
+host rail, and details collapsed initially. Responsive sheets preserve the mounted
+conversation, while per-binding drafts retain text, attached images, and uncertain
+command envelopes in the same tab. Closing/reloading the page still clears these
+in-memory drafts. Repeated submit events are guarded synchronously; an uncertain
+command remains an explicit retry of its original ID after switching sessions.
+
+The transcript uses an indexed store and measured virtual rows. Composer edits
+and live deltas no longer merge, sort, or render all loaded history. Native events
+are batched with bounded backpressure and a background-tab timer; diagnostics
+retain summaries instead of serializing full native payloads. Long bodies render
+one 16 KiB part at a time, preserving local Markdown image resolution and the
+operator's tool expansion/part selection through virtual unmounts.
+
+The pinned native API reads oldest-first pages of at most 100 items. Initial
+opening reads one page; **Load to latest** scans forward incrementally and is
+cancellable. Partial history is explicitly labelled, all cursors remain native,
+and the former 100-page ceiling is gone. Turn completion no longer replays the
+entire conversation. A stream gap reconciles from the loaded terminal cursor,
+with additional pages exposed through the same loading controls.
+
+The UI pass changes neither host code nor its Nix pin. A gateway/container update
+leaves the running control, runtime, and managed Codex processes in place. Browser
+and performance fixtures use only disposable intercepted APIs and no model calls.
+
+Final UI verification passed all 78 tests, typechecking, production build, and
+network-disabled Docker authentication/static-asset smoke checks. The viewport
+suite passes 20 checks with populated transcripts, preserved per-agent drafts and
+image previews, and exact-ID command reconciliation after a lost reply. All six
+viewport screenshots were inspected; no serious or critical axe violations remain.
+
+The production-build stress fixture loads 50,000 turns / 100,001 native items
+through exactly 1,001 native pages. At most 17 messages were mounted. On the
+qualification Chromium/machine, loading took 11.01 seconds, p95 input-to-next-paint
+was 14.1 ms while streaming and 17.7 ms while simultaneously streaming, scrolling,
+and typing (34.7 ms maximum). No main-thread long tasks were recorded in loading or
+these interaction phases. A 2.2 MB output remains accessible through bounded parts.
+These are measured fixture results, not an unlimited memory or every-device
+latency guarantee; loaded native content still occupies memory and oldest-first
+network paging determines how quickly recent history can be reached.
+
+Final local receipts are `receipts/browser/2026-09-05T10-50-40.496Z` and
+`receipts/long-thread/2026-09-05T10-50-03.478Z`. Their source/lockfile hashes match the
+reviewed source. No production transcript or model interaction was used.
