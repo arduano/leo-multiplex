@@ -1,0 +1,36 @@
+name: leo-multiplex
+services:
+  web:
+    image: ${LEO_IMAGE:?Set the immutable Leo Multiplex image reference}
+    container_name: leo-multiplex-web
+    restart: unless-stopped
+    init: true
+    user: "1000:100"
+    env_file: .env
+    environment:
+      LEO_PAIRING_FILE: /config/gateway-pairing.json
+      LEO_GATEWAY_STATE_DIR: /data
+      LEO_HTTP_BIND: 0.0.0.0
+      LEO_HTTP_PORT: "4318"
+    volumes:
+      - ./state:/data
+      - ./config:/config:ro
+    ports:
+      - "127.0.0.1:4328:4318"
+    networks: [access]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4318/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+networks:
+  access:
+    name: leo-multiplex-access

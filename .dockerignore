@@ -1,0 +1,8 @@
+.git
+.cache
+node_modules
+dist
+receipts
+result*
+.env*
+deploy/nas/.env

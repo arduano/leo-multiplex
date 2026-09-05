@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  application:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install pinned toolchain and public dependencies
+        run: |
+          npm install --global --ignore-scripts npm@11.17.0
+          npm ci --strict-allow-scripts
+      - run: npm run typecheck && npm test && npm run build
+      - name: Build deployment container
+        run: docker build --tag leo-multiplex:ci .
+      - name: Exercise shipped assets and fail-closed authentication
+        run: |
+          docker run --rm --network none --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --mount type=bind,src="$PWD/scripts",dst=/app/scripts,readonly \
+            leo-multiplex:ci node scripts/container-smoke.mjs

@@ -1,0 +1,40 @@
+--- a/flake.nix
++++ b/flake.nix
+@@ -43,6 +43,9 @@
+     };
+ 
+     nix-openclaw.url = "github:openclaw/nix-openclaw";
++
++    # Personal Codex control/runtime; flake.lock pins the published revision.
++    leo-multiplex.url = "github:arduano/leo-multiplex";
+ 
+     # Standalone declarative Makera Studio/Wine integration owned by Leo.
+     makera-studio-nix.url = "github:arduano/makera-studio-nix";
+--- a/main-pc/home/default.nix
++++ b/main-pc/home/default.nix
+@@ -14,10 +14,24 @@
+ in
+ 
+ {
+-  imports = [ inputs.makera-studio-nix.homeManagerModules.default ];
++  imports = [
++    inputs.makera-studio-nix.homeManagerModules.default
++    inputs.leo-multiplex.homeManagerModules.default
++  ];
+ 
+   home.username = "arduano";
+   home.homeDirectory = "/home/arduano";
++
++  services.leo-host = {
++    enable = true;
++    hostName = "main-pc";
++    stateDirectory = "/home/arduano/.local/state/leo-multiplex";
++    codexConfigFile = "/home/arduano/.codex/config.toml";
++    controlPort = 4327;
++    p2pBind = "0.0.0.0:49117";
++    enrollGateways = false;
++    enrollRuntimes = false;
++  };
+ 
+   nixpkgs.config.allowUnfree = true;
+ 

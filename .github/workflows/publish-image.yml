@@ -1,0 +1,34 @@
+name: Publish NAS image
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and verify exact deployment image
+        run: |
+          docker build --tag "ghcr.io/arduano/leo-multiplex:sha-$GITHUB_SHA" .
+          docker run --rm --network none --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --mount type=bind,src="$PWD/scripts",dst=/app/scripts,readonly \
+            "ghcr.io/arduano/leo-multiplex:sha-$GITHUB_SHA" node scripts/container-smoke.mjs
+      - name: Publish image and record immutable digest
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          docker push "ghcr.io/arduano/leo-multiplex:sha-$GITHUB_SHA"
+          docker inspect --format '{{join .RepoDigests "\n"}}' "ghcr.io/arduano/leo-multiplex:sha-$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

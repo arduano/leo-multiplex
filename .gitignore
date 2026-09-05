@@ -1,0 +1,12 @@
+node_modules
+dist/
+.cache/
+receipts/
+result
+result-*
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.sqlite*
+*.identity
