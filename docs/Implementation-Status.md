@@ -31,8 +31,8 @@ The implementation passed application typechecking, 78 tests in eleven files, an
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
-expiry. Browser qualification covers six viewport screenshots and 15 checks,
-with no serious or critical axe findings. These checks do not prove real-model
+expiry. Browser qualification covers six viewports and the conversation regressions
+described below, with no serious or critical axe findings. These checks do not prove real-model
 behavior through the new deployment.
 
 The Docker image passes a network-disabled smoke run using disposable signing
@@ -123,7 +123,8 @@ command envelopes in the same tab. Closing/reloading the page still clears these
 in-memory drafts. Repeated submit events are guarded synchronously; an uncertain
 command remains an explicit retry of its original ID after switching sessions.
 
-The transcript uses an indexed store and measured virtual rows. Composer edits
+The transcript uses an indexed store and a 200-message virtual window. Rich
+Markdown and height measurements stay near the visible rows. Composer edits
 and live deltas no longer merge, sort, or render all loaded history. Native events
 are batched with bounded backpressure and a background-tab timer; diagnostics
 retain summaries instead of serializing full native payloads. Long bodies render
@@ -141,26 +142,39 @@ The UI pass changes neither host code nor its Nix pin. A gateway/container updat
 leaves the running control, runtime, and managed Codex processes in place. Browser
 and performance fixtures use only disposable intercepted APIs and no model calls.
 
-Final UI verification passed all 78 tests, typechecking, production build, and
-network-disabled Docker authentication/static-asset smoke checks. The viewport
-suite passes 20 checks with populated transcripts, preserved per-agent drafts and
-image previews, and exact-ID command reconciliation after a lost reply. All six
-viewport screenshots were inspected; no serious or critical axe violations remain.
+Selecting a session now requests native history directly. The optional catalog
+`nativeSummary` can be absent even when a launched Codex session already has
+messages; it no longer prevents the initial read. A failed read shows an explicit
+unavailable state with a retry control and retries at a native lifecycle boundary.
+Once a page succeeds, ordinary turn completion does not replay loaded history.
+
+Current UI verification passed all 78 tests, typechecking, and a production build.
+The viewport suite passes 22 checks with populated transcripts, including initial
+selection/reload without a catalog summary and recovery after unavailable initial
+history. Per-agent drafts, images, and exact-ID uncertain-command reconciliation
+remain covered. All six viewport screenshots were inspected; no serious or
+critical axe violations remain.
 
 The production-build stress fixture loads 50,000 turns / 100,001 native items
-through exactly 1,001 native pages. At most 17 messages were mounted. On the
-qualification Chromium/machine, loading took 11.01 seconds, p95 input-to-next-paint
-was 14.1 ms while streaming and 17.7 ms while simultaneously streaming, scrolling,
-and typing (34.7 ms maximum). No main-thread long tasks were recorded in loading or
-these interaction phases. A 2.2 MB output remains accessible through bounded parts.
-These are measured fixture results, not an unlimited memory or every-device
-latency guarantee; loaded native content still occupies memory and oldest-first
-network paging determines how quickly recent history can be reached.
+through exactly 1,001 native pages. Exactly 200 messages are mounted once enough
+history is loaded. On the qualification Chromium/machine, loading took 13.22
+seconds; p95 input-to-next-paint was 13.5 ms while streaming and 16.0 ms while
+simultaneously streaming, scrolling, and typing (20.1 ms maximum). Concurrent
+frame interval p95 was 33.3 ms. No main-thread long tasks were recorded in loading
+or these interaction phases. A 2.2 MB output remains accessible through bounded
+parts. Loaded native content still occupies memory, and oldest-first network
+paging determines how quickly recent history can be reached; these measurements
+qualify this fixture and machine rather than guarantee every-device latency.
 
-Final local receipts are `receipts/browser/2026-09-05T10-50-40.496Z` and
-`receipts/long-thread/2026-09-05T10-50-03.478Z`. Their source/lockfile hashes match the
-reviewed source. No production transcript or model interaction was used.
+Current local receipts are `receipts/browser/2026-09-05T11-04-08.959Z` and
+`receipts/long-thread/2026-09-05T11-06-34.700Z`. Their source/lockfile hashes match
+the reviewed source. Both use disposable fixtures with no model interaction. They
+supersede the previous 17-row-window measurements. The operator's blank transcript
+was separately diagnosed through a read-only native API request, recording only
+aggregate status/counts.
 
+The preceding deployment passed network-disabled Docker authentication/static-asset
+smoke checks and remains the rollout baseline until this correction is deployed.
 The NAS gateway/UI now runs the tested image with local immutable identity
 `sha256:852840c106a35a6fddc10935bd4e0df63b8dbfdd91fc4416dbb74e914f2b97e5`,
 built from UI source commit `85e9618f15c8c887ecae05dd5ddbb84c8545886c`.

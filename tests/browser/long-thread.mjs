@@ -138,7 +138,7 @@ async function waitCount(expected, timeout = 15_000) {
 }
 async function boundedDOM(name) {
   const result = await page.evaluate(() => ({ mountedMessages: document.querySelectorAll('[data-testid="chat-message"]').length, allElements: document.querySelectorAll("*").length, totalItems: Number(document.querySelector('[data-testid="chat-transcript"]')?.getAttribute("data-total-entries")) }));
-  assert(result.mountedMessages > 0 && result.mountedMessages <= 80, `${name}: ${JSON.stringify(result)}`);
+  assert.equal(result.mountedMessages, Math.min(200, result.totalItems), `${name}: expected the full bounded 200-message window: ${JSON.stringify(result)}`);
   assert(result.allElements < 3_000, `${name}: total DOM grew with history: ${JSON.stringify(result)}`);
   checks.push({ name, ...result });
 }

@@ -49,7 +49,9 @@ frame intervals, input-to-next-paint latency, and main-thread long tasks. It
 rejects source changes during the run. During the streaming phase, p95 input
 to next paint must remain below 100 ms (maximum 250 ms), p95 frame interval below
 50 ms, and individual long tasks below 250 ms. Mounted transcript messages stay
-at or below 80 regardless of loaded history. These are repeatable qualification
+at 200 (or every loaded message for shorter threads), regardless of loaded
+history. All window messages contain readable text; rich Markdown is parsed near
+the viewport to keep deep scrolling responsive. These are repeatable qualification
 bounds on the recorded machine/browser, not a guarantee that every device or
 arbitrary native payload can never pause. Native loading still requires network
 round trips, and the current API makes reaching recent history in an existing

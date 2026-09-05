@@ -1,5 +1,5 @@
 import { memo, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { ArrowDown, ChevronRight } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,10 +10,18 @@ import { Badge, Button, classes } from "./ui.js";
 
 export interface TranscriptHandle { followLatest(): void; }
 
-/** Composer edits do not traverse history. Markdown sees measured rows only. */
+const TRANSCRIPT_WINDOW = 200;
+/** Keep a full readable window around the viewport, shifting it at either end. */
+function transcriptRange({ startIndex, endIndex, count }: Range): number[] {
+  const size = Math.min(count, TRANSCRIPT_WINDOW);
+  const start = Math.max(0, Math.min(count - size, Math.floor((startIndex + endIndex + 1 - size) / 2)));
+  return Array.from({ length: size }, (_, index) => start + index);
+}
+
+/** Composer edits do not traverse history. Rich Markdown stays near the viewport. */
 export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
-  readonly store: TranscriptStore; readonly loading: boolean;
-}>(function VirtualTranscript({ store, loading }, ref) {
+  readonly store: TranscriptStore; readonly loading: boolean; readonly unavailable?: boolean;
+}>(function VirtualTranscript({ store, loading, unavailable = false }, ref) {
   const version = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -30,7 +38,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
       const entry = store.at(index)!;
       return entry.kind === "tool" || entry.kind === "reasoning" || entry.kind === "subagent" ? 68 : 160;
     },
-    overscan: 5, paddingStart: 24, paddingEnd: 24,
+    rangeExtractor: transcriptRange, paddingStart: 24, paddingEnd: 24,
     // Batch height measurements from one commit; flushing each row separately
     // repeatedly recalculates offsets during a jump deep into a long thread.
     useFlushSync: false,
@@ -74,14 +82,17 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
         if (following.current) setUnread(0);
       }} role="region" aria-label="Agent conversation" tabIndex={0} data-testid="chat-transcript" data-total-entries={store.count}>
       {store.count === 0 ? <div className="mx-auto grid h-full max-w-[72ch] content-center px-6 pb-12 text-sm text-[var(--text-secondary)]">
-        <p className="mb-2 text-lg font-medium text-[var(--text-primary)]">{loading ? "Opening conversation…" : "Start a conversation"}</p>
-        <p>{loading ? "Reading native history." : "Send a message to begin working with this agent."}</p>
+        <p className="mb-2 text-lg font-medium text-[var(--text-primary)]">{loading ? "Opening conversation…" : unavailable ? "History is unavailable" : "Start a conversation"}</p>
+        <p>{loading ? "Reading native history." : unavailable ? "Retry loading above. Your session is still selected." : "Send a message to begin working with this agent."}</p>
       </div> : <div className="relative mx-auto w-full min-w-0 max-w-[80ch]" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((row) => <div key={row.key} data-index={row.index}
-          ref={virtualizer.measureElement} className="absolute left-0 top-0 w-full min-w-0 px-4 pb-6 sm:px-8"
-          style={{ transform: `translateY(${row.start}px)` }}>
-          <TimelineItem entry={store.at(row.index)!} store={store} />
-        </div>)}
+        {virtualizer.getVirtualItems().map((row) => {
+          const rich = row.index >= (virtualizer.range?.startIndex ?? 0) - 5 && row.index <= (virtualizer.range?.endIndex ?? 0) + 5;
+          return <div key={row.key} data-index={row.index}
+            ref={rich ? virtualizer.measureElement : undefined} className="absolute left-0 top-0 w-full min-w-0 px-4 pb-6 sm:px-8"
+            style={{ transform: `translateY(${row.start}px)`, contentVisibility: rich ? "visible" : "auto", containIntrinsicBlockSize: `${Math.max(0, row.size - 24)}px` }}>
+            <TimelineItem entry={store.at(row.index)!} store={store} rich={rich} />
+          </div>;
+        })}
       </div>}
     </div>
     {unread > 0 ? <Button className="absolute bottom-3 left-1/2 min-h-9 -translate-x-1/2 bg-[var(--surface-raised)] px-3 py-1 text-xs" icon={ArrowDown} onClick={jump} data-testid="jump-to-latest">Latest · {unread} new</Button> : null}
@@ -90,8 +101,8 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
 
 const BODY_PAGE_SIZE = 16_384;
 /** Parse at most one bounded Markdown segment; tool output stays literal. */
-function BoundedBody({ body, sourceKey, store, plain = false, code = false, pending }: {
-  readonly body: string; readonly sourceKey: string; readonly store: TranscriptStore; readonly plain?: boolean; readonly code?: boolean; readonly pending?: boolean | undefined;
+function BoundedBody({ body, sourceKey, store, rich = true, plain = false, code = false, pending }: {
+  readonly body: string; readonly sourceKey: string; readonly store: TranscriptStore; readonly rich?: boolean; readonly plain?: boolean; readonly code?: boolean; readonly pending?: boolean | undefined;
 }) {
   const pages = Math.max(1, Math.ceil(body.length / BODY_PAGE_SIZE));
   const [selectedPage, setSelectedPage] = useState<number | null>(() => store.view(sourceKey)?.page ?? null);
@@ -107,11 +118,14 @@ function BoundedBody({ body, sourceKey, store, plain = false, code = false, pend
     </div> : null}
     {code ? <pre tabIndex={0} className="max-h-80 max-w-full overflow-auto px-3 py-2 font-mono text-xs leading-5 text-[var(--text-secondary)]" data-testid="command-output">{text}</pre>
       : plain ? <div className="max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words">{text}</div>
+      // All 200 rows contain readable text. Parse Markdown only near the
+      // viewport so a jump does not synchronously parse 200 complex messages.
+      : !rich ? <div className="whitespace-pre-wrap break-words">{text}</div>
       : <MarkdownBody body={text} sourceKey={sourceKey} offset={page * BODY_PAGE_SIZE} />}
   </>;
 }
 
-const TimelineItem = memo(function TimelineItem({ entry, store }: { readonly entry: TimelineEntry; readonly store: TranscriptStore }) {
+const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readonly entry: TimelineEntry; readonly store: TranscriptStore; readonly rich: boolean }) {
   const isExecution = entry.kind === "reasoning" || entry.kind === "tool" || entry.kind === "subagent" || entry.kind === "raw";
   const isFailed = entry.status === "failed" || entry.status === "error";
   const [expanded, setExpanded] = useState(() => store.view(entry.id)?.expanded ?? Boolean(entry.pending || isFailed));
@@ -175,7 +189,7 @@ const TimelineItem = memo(function TimelineItem({ entry, store }: { readonly ent
                   ? "rounded-md border border-[var(--status-error)]/20 bg-[var(--status-error)]/[0.06] px-3 py-2 text-[var(--status-error)]"
                   : "rounded-md border border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 py-2 text-[var(--text-secondary)]",
         )}>
-          <BoundedBody body={entry.body || (entry.images?.length ? "" : "…")} sourceKey={entry.id} store={store} plain={entry.kind === "user"} pending={entry.pending} />
+          <BoundedBody body={entry.body || (entry.images?.length ? "" : "…")} sourceKey={entry.id} store={store} rich={rich} plain={entry.kind === "user"} pending={entry.pending} />
           {entry.images?.map((image, index) => <TranscriptImagePreview key={index} {...image} sourceKey={`${entry.id}:image:${index}`} />)}
         </div>
       </div>

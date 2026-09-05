@@ -1,4 +1,4 @@
-import type { Harness, JsonValue, SessionRecord } from "@arduano/agent-multiplex-protocol";
+import type { Harness, SessionRecord } from "@arduano/agent-multiplex-protocol";
 import type { AccessClient } from "@arduano/agent-multiplex-client/browser";
 import { entriesFromHistory, type TimelineEntry } from "./transcript.js";
 
@@ -12,15 +12,9 @@ interface SessionBindingIdentityInput {
   readonly vendorSessionId: string;
 }
 
-interface NativeHistoryReadinessInput {
-  readonly harness: Harness;
-  readonly nativeSummary?: JsonValue | undefined;
-}
-
 export interface NativeHistorySignal {
   readonly bindingIdentity: string;
   readonly generation: number;
-  readonly ready: boolean;
 }
 
 export type NativeHistorySignalCause = "lifecycle" | "reconcile";
@@ -41,35 +35,19 @@ export function sessionBindingIdentity(session: SessionBindingIdentityInput): st
   ]);
 }
 
-/**
- * Copilot can read an empty session. A newly started Codex thread cannot be
- * read reliably until inventory has observed it or a native lifecycle event
- * proves that its first turn has reached a history boundary.
- */
-export function nativeHistoryInitiallyReady(session: NativeHistoryReadinessInput): boolean {
-  return session.harness !== "codex" || session.nativeSummary != null;
-}
-
-/**
- * Requests a history reconciliation without allowing generic stream recovery
- * signals to bypass the fresh-Codex readiness gate.
- */
+/** A lifecycle boundary retries an unavailable initial history read. Once a
+ * page succeeds, ordinary turn completion does not replay loaded history. */
 export function advanceNativeHistorySignal(
   current: NativeHistorySignal | null,
   bindingIdentity: string,
-  initiallyReady: boolean,
+  historyLoaded: boolean,
   cause: NativeHistorySignalCause,
 ): NativeHistorySignal | null {
   const sameBinding = current?.bindingIdentity === bindingIdentity;
-  const ready = cause === "lifecycle" || initiallyReady || (sameBinding && current.ready);
-  if (!ready) return sameBinding ? current : null;
-  // Lifecycle establishes fresh-thread readiness once. Completed native items
-  // already arrive on the stream; rereading all history every turn is wasteful.
-  if (cause === "lifecycle" && (initiallyReady || (sameBinding && current.ready))) return current;
+  if (cause === "lifecycle" && historyLoaded) return current;
   return {
     bindingIdentity,
     generation: (sameBinding ? current.generation : 0) + 1,
-    ready: true,
   };
 }
 
@@ -126,7 +104,7 @@ export function isRetryableNativeHistoryError(error: unknown): boolean {
   return false;
 }
 
-/** A bounded, read-only retry window, invoked only after positive readiness. */
+/** A bounded, read-only retry window for explicit transient failures. */
 export async function retryNativeHistory<T>(
   read: () => Promise<T>,
   options: RetryNativeHistoryOptions = {},

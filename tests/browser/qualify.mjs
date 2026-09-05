@@ -39,7 +39,7 @@ page.on("pageerror", (error) => errors.push(error.message));
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const authority = { realmId: id(1), controlNodeId: id(2), epochId: id(3) };
 const timestamp = "2026-09-05T00:00:00.000Z";
-const session = { sessionId: id(4), runtimeNodeId: id(5), metadataAuthority: authority, catalogState: "open", catalogRevision: 1, archivedAt: null, harness: "codex", adapterScopeId: "fixture-codex", vendorSessionId: "fixture-native", bindingRevision: 1, runtimeEpoch: id(6), cwd: "/work/disposable/browser-fixture", availability: "active", runtimeStatus: "idle", harnessSettings: { model: "fixture-model", mode: "default", effort: "medium" }, nativeSummary: { title: "Review reconnect behavior" }, launchProvenance: null, metadata: { revision: 1, values: { "agent.title": "Review reconnect behavior", "fixture.note": "Disposable browser data" }, keyRevisions: { "agent.title": 1, "fixture.note": 1 } }, createdAt: timestamp, updatedAt: timestamp, lastSeenAt: timestamp, lastActivityAt: timestamp };
+const session = { sessionId: id(4), runtimeNodeId: id(5), metadataAuthority: authority, catalogState: "open", catalogRevision: 1, archivedAt: null, harness: "codex", adapterScopeId: "fixture-codex", vendorSessionId: "fixture-native", bindingRevision: 1, runtimeEpoch: id(6), cwd: "/work/disposable/browser-fixture", availability: "active", runtimeStatus: "idle", harnessSettings: { model: "fixture-model", mode: "default", effort: "medium" }, nativeSummary: null, launchProvenance: null, metadata: { revision: 1, values: { "agent.title": "Review reconnect behavior", "fixture.note": "Disposable browser data" }, keyRevisions: { "agent.title": 1, "fixture.note": 1 } }, createdAt: timestamp, updatedAt: timestamp, lastSeenAt: timestamp, lastActivityAt: timestamp };
 const other = { ...session, sessionId: id(14), vendorSessionId: "other-fixture-native", nativeSummary: { title: "Another disposable agent" }, metadata: { revision: 1, values: { "agent.title": "Another disposable agent" }, keyRevisions: { "agent.title": 1 } } };
 let showOther = false;
 const commands = [];
@@ -55,15 +55,26 @@ const launches = [];
 const mutations = [];
 const checks = [];
 const screenshots = [];
+let historyUnavailable = false;
+let historyRequests = 0;
+let nativeSequence = 0;
+const subscriptions = new Set();
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   if (message === "PING") return socket.send("PONG");
   for (const request of [JSON.parse(message)].flat()) {
     if (request.method === "subscription") {
+      subscriptions.add({ socket, id: request.id, input: request.params?.input });
       socket.send(JSON.stringify({ id: request.id, result: { type: "started" } }));
       socket.send(JSON.stringify({ id: request.id, result: { type: "data", data: { kind: "heartbeat", feedId: id(8), controlCursor: 0, authorityRefs: [authority] } } }));
+    } else if (request.method === "subscription.stop") {
+      for (const subscription of subscriptions) if (subscription.socket === socket && subscription.id === request.id) subscriptions.delete(subscription);
     }
   }
 }));
+function completeFixtureTurn() {
+  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType: "turn/completed", ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { turn: { id: "fixture-completed", status: "completed", items: [] } } } };
+  for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
+}
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
 await page.route("**/auth/session", (route) => route.fulfill({ status: login ? 200 : 401, contentType: "application/json", body: JSON.stringify({ method: "tailscale" }) }));
 await page.route("**/trpc/**", async (route) => {
@@ -89,6 +100,8 @@ await page.route("**/trpc/**", async (route) => {
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
       case "sessions.readNativeHistory":
+        historyRequests += 1;
+        if (historyUnavailable && input.sessionId === session.sessionId) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify([{ error: { message: "Disposable new thread has no stored history yet", code: -32603, data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 } } }]) });
         if (input.sessionId === other.sessionId) {
           data = { harness: "codex", vendorSessionId: other.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "other-turn", item: { type: "agentMessage", id: "other-reply", phase: "final_answer", text: "A separate disposable conversation." } }], nextCursor: null } } };
           break;
@@ -134,9 +147,13 @@ try {
   await page.locator('[data-entry-id="codex:user-fixture"]').filter({ hasText: "Check that my draft survives a host reconnect." }).waitFor();
   await page.locator('[data-entry-id="codex:assistant-fixture"]').filter({ hasText: "The conversation remains visible while the host reconnects." }).waitFor();
   assert.equal(await page.getByTestId("chat-message").count(), 2, "Initial native history must be visible before responsive qualification");
-  checks.push({ name: "initial native history renders both user and assistant messages", passed: true });
+  checks.push({ name: "missing catalog summary still loads native history on initial selection", passed: true });
   await page.waitForFunction(() => document.querySelector('[data-testid="session-health"]')?.textContent === "Live");
   checks.push({ name: "native stream is live after the development lifecycle remount", passed: true });
+  subscriptions.clear();
+  await page.reload();
+  await page.locator('[data-entry-id="codex:assistant-fixture"]').waitFor();
+  checks.push({ name: "reloading a created session with no catalog summary restores its history", passed: true });
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
   await page.locator('input[type="file"]').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove tailscale-http.png" }).waitFor();
@@ -246,6 +263,21 @@ try {
   assert.deepEqual(commands[1], commands[0], "Reconciliation changed the original command envelope");
   assert.equal(await page.getByTestId("reconcile-command").count(), 0);
   checks.push({ name: "duplicate command dispatch is fenced and lost replies retain exact envelope across session switches", passed: true });
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
+  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  historyUnavailable = true;
+  await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
+  await page.getByTestId("history-error").waitFor();
+  await page.getByText("Retry loading above. Your session is still selected.", { exact: true }).waitFor();
+  historyUnavailable = false;
+  completeFixtureTurn();
+  await page.locator('[data-entry-id="codex:assistant-fixture"]').waitFor();
+  assert.equal(await page.getByTestId("history-error").count(), 0);
+  const settledHistoryRequests = historyRequests;
+  completeFixtureTurn();
+  await page.waitForTimeout(150);
+  assert.equal(historyRequests, settledHistoryRequests, "A successful history read must not repeat on every completed turn");
+  checks.push({ name: "unavailable initial history recovers on native lifecycle without repeated full reads", passed: true });
   showOther = false; await refresh();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 1);
 

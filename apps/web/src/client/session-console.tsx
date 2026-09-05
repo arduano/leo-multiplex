@@ -55,7 +55,6 @@ import { pendingInteractionRefetchInterval } from "./interaction-refresh.js";
 import { InteractionCards } from "./interactions.js";
 import {
   advanceNativeHistorySignal,
-  nativeHistoryInitiallyReady,
   NativeHistoryPager,
   sessionBindingIdentity,
   type NativeHistorySignal,
@@ -109,6 +108,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const [store] = useState(() => new TranscriptStore());
   const [pager] = useState(() => session ? new NativeHistoryPager(client, session) : null);
   const historyRead = useRef<AbortController | null>(null);
+  const historyLoaded = useRef(false);
   const reconcilePending = useRef(false);
   const [historyDone, setHistoryDone] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
@@ -117,7 +117,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [streamState, setStreamState] = useState("stopped");
   const [historyState, setHistoryState] = useState(
-    session ? (nativeHistoryInitiallyReady(session) ? "loading" : "waiting") : "idle",
+    session ? "loading" : "idle",
   );
   const [historyError, setHistoryError] = useState("");
   const [historySignal, setHistorySignal] = useState<NativeHistorySignal | null>(null);
@@ -154,13 +154,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const historyGeneration = session && historySignal?.bindingIdentity === bindingIdentity
     ? historySignal.generation
     : 0;
-  // Codex projects a new logical session slightly before `thread/read` can
-  // read that new thread. A summary or terminal native lifecycle event is the
-  // first positive signal that the native history endpoint is ready.
-  const nativeHistoryReady = Boolean(session) && (
-    nativeHistoryInitiallyReady(session!) ||
-    (historySignal?.bindingIdentity === bindingIdentity && historySignal.ready)
-  );
 
   const models = useQuery({
     queryKey: ["models", connectionKey, session?.runtimeNodeId, session?.harness],
@@ -188,7 +181,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     setRecentEvents([]);
     setHistorySignal(null);
     setHistoryState(
-      session ? (nativeHistoryInitiallyReady(session) ? "loading" : "waiting") : "idle",
+      session ? "loading" : "idle",
     );
     setHistoryError("");
     setStreamState(session ? "connecting" : "stopped");
@@ -208,7 +201,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     if (!session) return;
     const watchedSessionId = session.sessionId;
     const watchedRuntimeEpoch = session.runtimeEpoch;
-    const initiallyReady = nativeHistoryInitiallyReady(session);
     let active = true;
     let frame = 0;
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -232,7 +224,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       setHistorySignal((current) => advanceNativeHistorySignal(
         current,
         bindingIdentity,
-        initiallyReady,
+        historyLoaded.current,
         cause,
       ));
     };
@@ -258,9 +250,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
             // let watchAccess provide upstream backpressure after 64 events.
             flushTimer = setTimeout(flush, 32);
           }
-          // A just-spawned Codex thread cannot provide turn history until its
-          // first turn completes. Reconcile at native lifecycle boundaries
-          // instead of polling an API that truthfully rejects that window.
+          // A new thread may initially reject history. Retry at a native
+          // lifecycle boundary, without rereading successful history each turn.
           if (item.nativeType === "turn/completed" || item.nativeType === "session.idle") {
             signalHistory("lifecycle");
           }
@@ -312,6 +303,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         const page = await pager.next(controller.signal);
         if (!mounted.current || controller.signal.aborted) return;
         store.appendHistory(page.entries);
+        historyLoaded.current = true;
         setHistoryCount(store.historyCount);
         setHistoryDone(page.complete);
         if (!all || page.complete) break;
@@ -336,13 +328,15 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }, [pager, store]);
 
   useEffect(() => {
-    if (!nativeHistoryReady) { setHistoryState(session ? "waiting" : "idle"); return; }
+    if (!session) return;
+    // Catalog summaries are optional and can remain absent for launched
+    // sessions with existing messages. Ask the native history API directly.
     // Let the effect commit before issuing a request. StrictMode's setup /
     // cleanup probe otherwise aborts the first read and leaves its replacement
     // waiting behind that same in-flight promise.
     const start = setTimeout(() => { void readHistory(false, historyGeneration > 0); }, 0);
     return () => { clearTimeout(start); };
-  }, [historyGeneration, nativeHistoryReady, readHistory]);
+  }, [historyGeneration, bindingIdentity, readHistory]);
   useEffect(() => () => { historyRead.current?.abort(); }, []);
 
   useEffect(() => {
@@ -598,14 +592,14 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         </p>
       ) : null}
 
-      {!historyDone && nativeHistoryReady || historyState === "failed" ? <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-subtle)] px-4 py-1.5 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:py-0" data-testid="history-pagination">
+      {!historyDone || historyState === "failed" ? <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-subtle)] px-4 py-1.5 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:py-0" data-testid="history-pagination">
         <span>{historyCount.toLocaleString()} items loaded · Oldest first</span>
         {historyState === "loading" ? <button className="min-h-9 text-[var(--accent)]" onClick={() => historyRead.current?.abort()} data-testid="cancel-history-load">{loadingAll ? "Stop loading" : "Cancel"}</button> : <>
           <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory()} data-testid="load-more-history">{historyState === "failed" ? "Retry history" : "Next 100"}</button>
           <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory(true)} data-testid="load-all-history">Load to latest</button>
         </>}
       </div> : null}
-      <VirtualTranscript ref={transcript} store={store} loading={historyState === "loading"} />
+      <VirtualTranscript ref={transcript} store={store} loading={historyState === "loading"} unavailable={historyState === "failed"} />
 
       {pendingInteractions.length > 0 ? (
         <div

@@ -102,10 +102,11 @@ describe("native history pages", () => {
     expect(read).not.toHaveBeenCalled();
   });
 
-  it("opens fresh Codex history at its first lifecycle boundary without reloading each turn", () => {
+  it("retries unavailable initial history at lifecycle boundaries without replaying successful reads", () => {
     const initial = advanceNativeHistorySignal(null, "binding", false, "lifecycle");
-    expect(initial?.ready).toBe(true);
-    expect(advanceNativeHistorySignal(initial, "binding", false, "lifecycle")).toBe(initial);
-    expect(advanceNativeHistorySignal(initial, "binding", false, "reconcile")?.generation).toBe(2);
+    expect(initial?.generation).toBe(1);
+    expect(advanceNativeHistorySignal(initial, "binding", false, "lifecycle")?.generation).toBe(2);
+    expect(advanceNativeHistorySignal(initial, "binding", true, "lifecycle")).toBe(initial);
+    expect(advanceNativeHistorySignal(initial, "binding", true, "reconcile")?.generation).toBe(2);
   });
 });

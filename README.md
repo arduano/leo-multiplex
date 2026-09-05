@@ -37,7 +37,7 @@ rail and details collapsed initially. Text drafts, image attachments, and uncert
 command IDs survive switching agents in the same tab. They remain in memory and
 do not survive a page reload.
 
-Long conversations render only a measured window of messages. Native updates
+Long conversations render a measured window of up to 200 messages. Native updates
 touch individual items and are batched before painting; large message bodies use
 bounded parts. The pinned native history API pages oldest first. Opening a thread
 reads 100 items; **Load to latest** incrementally reads the remaining pages and
