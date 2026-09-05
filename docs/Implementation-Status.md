@@ -235,7 +235,7 @@ this error-presentation source has not received a new passing timing receipt.
 The indexed store and 200-row window are preserved, and a unit check verifies
 that normal live deltas do not notify the error banner/composer.
 
-The current NAS UI image is
+The native-error UI rollout used image
 `sha256:ab2263cbb31c672432033bfa000d200967047835ab9b092244450db7df17d2ea`,
 built from source `d1650bc20efa8893b2f64622f0f37a5ae1b1eeb4`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33963795902) and local
@@ -333,6 +333,20 @@ history loading time. This final-source receipt is
 
 The deployment container builds and passes isolated network-disabled
 static-asset/authentication smoke tests. Runtime, control, provider, protocol,
-Nix, and dotfiles code are unchanged. Production rollout verification is recorded
-below after the web/gateway container update; all development checks used
-disposable state and no model calls.
+Nix, and dotfiles code are unchanged. All development checks used disposable
+state and no model calls.
+
+The current NAS UI image is
+`sha256:a8806b6ae9e3e61317db2b2777e9fcb436f6d2e55b917b138a52a0c8144381d6`,
+built from source `a7e74e1372b0a10bc9ea6f75b5f2cb983b04a714`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33967602801) passed,
+including the container build and authentication/static-asset smoke tests.
+The deployed JavaScript and CSS match the local production build byte for byte.
+Read-only desktop and mobile checks show the native model and reasoning choices,
+the slash menu, and all 81 existing history items on selection and reload. The
+native-error warning remains visible. Host discovery and origin rejection pass.
+Only the NAS web/gateway container was recreated; control/runtime process IDs
+and start times are unchanged. No production setting changes, prompts, launches,
+stops, resumes, or model calls were issued. No sudo rebuild is needed.
+The scrubbed, checksummed rollout receipt is
+`receipts/slash-commands-deployment/2026-09-05T13-01-00Z`.
