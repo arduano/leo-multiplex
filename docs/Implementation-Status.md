@@ -376,3 +376,14 @@ missed the native start. The final-source browser receipt is
 `receipts/browser/2026-09-05T13-38-54.421Z`.
 The change does not scan history or notify the composer for ordinary deltas;
 unit checks exercise 1,000 subsequent deltas for each recovery-output type.
+
+The current NAS UI image is
+`sha256:d54a915600db42dfac45d0cd556529eb9eba3e60ed1d2b4a0781e9e5e931090d`,
+built from source `b61cb5ea7309bce6bbe125d485c881783c8e56c8`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33969617759) passed.
+Deployed assets match the tested production build. Read-only desktop, reload,
+and mobile checks show 100 native items and an active native session without a
+stale error banner. Only the web/gateway container was recreated; host control
+and runtime process identities are unchanged. No production mutations or model
+calls were issued. Checksummed rollout evidence is
+`receipts/error-recovery-deployment/2026-09-05T13-43-00Z`.
