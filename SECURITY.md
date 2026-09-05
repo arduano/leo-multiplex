@@ -59,5 +59,15 @@ native homes, tickets, identities or transport secrets. The managed and ordinary
 Codex processes share an OS account; configuration separation is an ownership
 boundary, not protection from malicious code running with that account.
 
+The agent CLI authenticates through the same gateway and uses the same operator
+scopes. A process permitted to use the owner's Tailscale identity can control
+managed agents with the owner's host-account access; it is not a restricted
+agent sandbox. Its operation ledger contains exact prompt/native request inputs
+in owned private files, committed before mutation dispatch. Retain that ledger
+privately across runner restarts; explicit retries preserve the saved IDs and
+binding fences. Optional Cloudflare assertions are read from a private file,
+never URL parameters. Image downloads use scoped runtime APIs and exclusive
+owner-only destination files. See [the CLI runbook](docs/Agent-CLI.md).
+
 Report issues privately to the repository owner. Supply redacted versions and
 reproduction steps using disposable state, not raw production logs or databases.

@@ -246,3 +246,47 @@ checks, host reachability, and the catalog WebSocket remain healthy. Only the
 NAS web/gateway container was recreated; control/runtime PIDs and start times
 are unchanged. No model calls or session mutations were issued. Checksummed
 rollout evidence is `receipts/native-errors-deployment/2026-09-05T11-38-19.288Z`.
+
+## Agent-facing CLI
+
+`leo-agents` now exposes the personal gateway to shell tools and agent runners
+such as OpenClaw. It is installed on main-pc at `~/.local/bin/leo-agents`, linked
+to this checkout's built client. The default origin is the existing Tailscale IP;
+owner authentication and gateway origin checks are unchanged. The client can
+also read an existing Cloudflare assertion from a private file. Tagged Tailscale
+machine identities remain unsupported by the current owner-login policy.
+
+Commands cover host/session discovery, exact-profile launch, bounded native
+history and NDJSON events, Codex turn waits, send/steer/interrupt, explicit
+stop/resume, harness-native commands, pending interactions and explicit answers,
+and scoped image upload/download. Every session mutation requires a caller-owned
+request ID. The CLI commits its exact envelope in a private local ledger before
+dispatch, reconciles repeated invocations, and resubmits only on an explicit
+`operation REQUEST_ID --retry`. Uploads use caller-owned image IDs separately.
+
+Send acknowledgment is distinct from turn completion. `send --wait` opens a
+stream before dispatch and correlates the returned native Codex turn ID. Native
+capacity/error, interruption, blocking input, missing continuity, and timeout
+remain explicit outcomes. An idle catalog cannot bypass native `systemError`.
+No command automatically resumes, approves a question, or retries a prompt.
+Standalone waits require retained events to prove earlier completion; the pinned
+history API's omission of old turn errors remains unchanged. The CLI and UI
+share the existing pure native-error normalization module.
+
+Typechecking, all 237 tests in eighteen files, and a production build pass.
+Disposable subprocess HTTP/WS fixtures verify exact origin/auth headers, stdin,
+completion-before-acknowledgment, capacity failure, initial stream gaps, timeout,
+and immutable retries across process restarts. Focused tests cover private-ledger
+races and filesystem checks, bounded observation, native response reconciliation,
+and checksum-verified image transfer. No new model calls were used.
+
+Read-only checks through the live Tailscale gateway pass host/session discovery,
+native status and a bounded WebSocket subscription. The existing session still
+reports idle in the catalog and `systemError` natively. Only aggregate status was
+recorded. Control/runtime process IDs and start times are unchanged; no production
+prompts, launches, stops, resumes, or image mutations were issued. No NAS deploy,
+dotfiles change, or sudo rebuild is needed. The scrubbed, checksummed local receipt
+is `receipts/agent-cli/2026-09-05T12-29-05.437Z`.
+
+See [Agent CLI](Agent-CLI.md) for installation, JSON/exit semantics, recovery,
+images, and an OpenClaw subprocess integration workflow.

@@ -1,6 +1,6 @@
 # Third-party notices
 
-The personal React UI and gateway process supervision derive from Agent
+The personal React UI, gateway process supervision, and CLI client usage derive from Agent
 Multiplex by Arduano, under its MIT license. Its browser dependency notices are retained in
 `apps/web/THIRD_PARTY_LICENSES.txt` and shipped with the static assets.
 

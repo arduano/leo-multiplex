@@ -51,6 +51,18 @@ can be stopped. Live messages remain available while history loads. See the
 [browser qualification](tests/browser/README.md) for the 50,000-turn fixture and
 the measured performance limits.
 
+## Agent CLI
+
+`leo-agents` exposes the managed workspace to terminal tools and agent runners
+through the existing gateway. It returns JSON (NDJSON for event streams), keeps
+mutation IDs in a private ledger, and distinguishes command acknowledgment from
+native turn completion. It supports session creation, messages, native commands,
+questions, history, and image transfer without restarting host services.
+
+After building, run `npm run cli -- help`. See the
+[Agent CLI runbook](docs/Agent-CLI.md) for installation, request reconciliation,
+image examples, and OpenClaw integration.
+
 ## Host
 
 The Home Manager module exports `services.leo-host`. The Nix package pins its own

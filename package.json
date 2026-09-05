@@ -14,7 +14,8 @@
     "test": "vitest run",
     "start:host": "node dist/apps/host/src/main.js",
     "start:control": "node dist/apps/host/src/control.js",
-    "start:server": "node dist/apps/server/src/main.js"
+    "start:server": "node dist/apps/server/src/main.js",
+    "cli": "node dist/apps/agent-cli/src/main.js"
   },
   "dependencies": {
     "@arduano/agent-multiplex-adapter-codex": "https://github.com/arduano/agent-multiplex/releases/download/v0.2.0/arduano-agent-multiplex-adapter-codex-0.2.0.tgz",
@@ -105,5 +106,8 @@
     "libxmljs2@0.37.0": false,
     "msgpackr-extract@3.0.4": true,
     "node-pty@1.1.0": true
+  },
+  "bin": {
+    "leo-agents": "bin/leo-agents.js"
   }
 }
