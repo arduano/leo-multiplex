@@ -223,6 +223,40 @@ try {
   assert.equal(await page.getByRole("link", { name: "Sign out", exact: true }).count(), 0);
   await page.keyboard.press("Escape");
   checks.push({ name: "Tailscale account menu identifies access without a Cloudflare logout", passed: true });
+  const beforeWorkingStates = mutations.length;
+  assert.equal(await page.getByTestId("agent-working-indicator").count(), 0, "An idle agent must not look like it is working");
+  session.runtimeStatus = "running"; nativeStatus = "active"; await refresh();
+  await page.getByTestId("agent-working-indicator").waitFor();
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(() => {
+      const indicator = document.querySelector('[data-testid="agent-working-indicator"]')?.getBoundingClientRect();
+      const messages = document.querySelectorAll('[data-testid="chat-message"]');
+      const lastMessage = messages.item(messages.length - 1)?.getBoundingClientRect();
+      const composer = document.querySelector('[data-testid="prompt-input"]')?.getBoundingClientRect();
+      return indicator && lastMessage && composer && indicator.height > 0 &&
+        indicator.y >= lastMessage.bottom - 1 && indicator.bottom <= composer.y + 1 &&
+        indicator.x >= 0 && indicator.right <= innerWidth && indicator.bottom <= innerHeight;
+    });
+    await screenshot(`working-indicator-${width}x${height}`);
+    await axe(`working-indicator-${width}x${height}`);
+  }
+  await page.setViewportSize({ width: 1720, height: 1180 });
+  for (const runtimeStatus of ["idle", "error"]) {
+    session.runtimeStatus = runtimeStatus; await refresh();
+    await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
+    session.runtimeStatus = "running"; await refresh();
+    await page.getByTestId("agent-working-indicator").waitFor();
+  }
+  online = false; await refresh();
+  await page.getByTestId("stale-session-notice").waitFor();
+  await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
+  online = true; await refresh();
+  await page.getByTestId("agent-working-indicator").waitFor();
+  session.runtimeStatus = "idle"; nativeStatus = "idle"; await refresh();
+  await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
+  assert.equal(mutations.length, beforeWorkingStates, "Displaying native working state must not issue an agent command");
+  checks.push({ name: "working indicator follows running catalog state at the conversation bottom and disappears for idle, error, or offline hosts", passed: true });
   await page.getByTestId("prompt-input").fill("A draft that must survive reconnects");
   for (const [width, height] of [[1720,1180],[1440,900],[1024,768],[768,1024],[390,844],[844,390]]) {
     await page.setViewportSize({ width, height });
@@ -339,10 +373,16 @@ try {
   checks.push({ name: "unavailable initial history recovers on native lifecycle without repeated full reads", passed: true });
   const beforeErrors = mutations.length;
   const capacityFailure = { message: "This model is at capacity. Please try again later.", codexErrorInfo: "serverOverloaded", additionalDetails: "Disposable provider capacity response." };
+  session.runtimeStatus = "running"; await refresh();
+  await page.getByTestId("agent-working-indicator").waitFor();
   emitNative("error", { turnId: "capacity-turn", error: capacityFailure, willRetry: true });
   await page.getByTestId("session-error-banner").filter({ hasText: "retrying automatically" }).waitFor();
+  await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
   emitNative("turn/completed", { turn: { id: "capacity-turn", status: "failed", error: capacityFailure } });
   await page.getByTestId("session-error-banner").filter({ hasText: "Wait for model capacity" }).waitFor();
+  assert.equal(await page.getByTestId("agent-working-indicator").count(), 0, "A native failure must override a stale running catalog status");
+  session.runtimeStatus = "idle"; await refresh();
+  checks.push({ name: "native retry and terminal failures suppress healthy working indication even when the catalog still says running", passed: true });
   assert.equal(await page.getByTestId("native-error-notice").count(), 1, "Error notification and failed completion must share one turn notice");
   await page.getByTestId("prompt-input").fill("A draft kept while I check the capacity error.");
   for (const [width, height] of [[1720,1180],[1440,900],[1024,768],[768,1024],[390,844],[844,390]]) {

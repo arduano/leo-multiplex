@@ -377,7 +377,7 @@ missed the native start. The final-source browser receipt is
 The change does not scan history or notify the composer for ordinary deltas;
 unit checks exercise 1,000 subsequent deltas for each recovery-output type.
 
-The current NAS UI image is
+The error-recovery rollout used image
 `sha256:d54a915600db42dfac45d0cd556529eb9eba3e60ed1d2b4a0781e9e5e931090d`,
 built from source `b61cb5ea7309bce6bbe125d485c881783c8e56c8`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33969617759) passed.
@@ -387,3 +387,40 @@ stale error banner. Only the web/gateway container was recreated; host control
 and runtime process identities are unchanged. No production mutations or model
 calls were issued. Checksummed rollout evidence is
 `receipts/error-recovery-deployment/2026-09-05T13-43-00Z`.
+
+## Transcript layout and working indicator
+
+The previous virtual window positioned each row independently from cached
+heights, while some rows stopped measurement and switched between Markdown and
+plain text. A disposable reproduction found eleven painted overlapping row
+pairs during a large scroll reversal. The window now has one positioned parent
+with its rows in normal document flow; height changes move neighboring rows in
+the same layout. All mounted rows are observed for size changes. Deferred
+offscreen rendering remains, with at most 200 readable messages mounted.
+
+Responsive shell changes also detached and reattached the preserved conversation
+portal, resetting browser scrolling while leaving the virtualizer at its old
+offset. The shell now restores the transcript offset and synchronizes the scroll
+observer across reparenting. Session state and drafts stay mounted.
+
+A small “Working…” indicator appears below the newest loaded message while the
+selected reachable agent is running. Native error warnings take precedence;
+idle, failed, and offline agents do not show it. Reduced-motion preferences
+disable the dot's pulse.
+
+Typechecking, all 264 tests, the production build, and isolated container smoke
+checks pass. Browser qualification passes 45 checks, including desktop/mobile
+indicator placement and its lifecycle. The separate transcript fixture passes
+121 geometry checks covering immediate and settled scroll reversals, all six
+viewport sizes, tool expansion/remounting, streamed output, and native-history
+reconciliation. Visibility checks exclude content the browser explicitly skips
+painting; the corrected checks still reproduce the old overlap. Screenshot
+reviews found no clipping, overlap, or serious/critical accessibility findings.
+Final-source receipts are `receipts/browser/2026-09-05T14-03-45.097Z` and
+`receipts/transcript-layout/2026-09-05T14-01-42.519Z`.
+
+The final-source 50,000-turn / 100,001-item stress test passes with the
+200-message window: simultaneous scrolling/streaming/typing measured 26.6 ms
+p95 input-to-paint (90.4 ms maximum), 33.4 ms p95 frame interval, and no long
+tasks. Full history loading took 28.10 seconds on this run. The checksummed
+artifact manifest is `receipts/long-thread/2026-09-05T14-04-44.017Z`.

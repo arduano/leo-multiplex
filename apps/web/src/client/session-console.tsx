@@ -648,7 +648,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory(true)} data-testid="load-all-history">Load to latest</button>
         </>}
       </div> : null}
-      <VirtualTranscript ref={transcript} store={store} loading={historyState === "loading"} unavailable={historyState === "failed"} />
+      <VirtualTranscript ref={transcript} store={store} loading={historyState === "loading"} unavailable={historyState === "failed"} working={active && running && !sessionFailure} />
 
       {pendingInteractions.length > 0 ? (
         <div

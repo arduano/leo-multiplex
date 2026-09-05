@@ -21,8 +21,8 @@ function transcriptRange({ startIndex, endIndex, count }: Range): number[] {
 
 /** Composer edits do not traverse history. Rich Markdown stays near the viewport. */
 export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
-  readonly store: TranscriptStore; readonly loading: boolean; readonly unavailable?: boolean;
-}>(function VirtualTranscript({ store, loading, unavailable = false }, ref) {
+  readonly store: TranscriptStore; readonly loading: boolean; readonly unavailable?: boolean; readonly working?: boolean;
+}>(function VirtualTranscript({ store, loading, unavailable = false, working = false }, ref) {
   const version = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -39,7 +39,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
       const entry = store.at(index)!;
       return entry.kind === "tool" || entry.kind === "reasoning" || entry.kind === "subagent" ? 68 : 160;
     },
-    rangeExtractor: transcriptRange, paddingStart: 24, paddingEnd: 24,
+    rangeExtractor: transcriptRange, paddingStart: 24, paddingEnd: working ? 60 : 24,
     // Batch height measurements from one commit; flushing each row separately
     // repeatedly recalculates offsets during a jump deep into a long thread.
     useFlushSync: false,
@@ -65,7 +65,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
       if (liveChanged) setUnread((current) => current + Math.max(1, added));
     }
     previousHistoryCount.current = store.historyCount;
-  }, [version, store, jump]);
+  }, [version, store, jump, working]);
   useEffect(() => {
     const element = viewport.current?.firstElementChild;
     if (!element) return;
@@ -73,8 +73,10 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
     observer.observe(element);
     return () => observer.disconnect();
   }, [jump]);
+  const rows = virtualizer.getVirtualItems();
   return <div className="relative min-h-0 flex-1">
     <div ref={viewport} className="h-full overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--surface-canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
+      style={{ overflowAnchor: "none" }}
       onScroll={(event) => {
         const element = event.currentTarget;
         following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
@@ -82,23 +84,37 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
         if (row) anchor.current = { id: String(row.key), offset: element.scrollTop - row.start };
         if (following.current) setUnread(0);
       }} role="region" aria-label="Agent conversation" tabIndex={0} data-testid="chat-transcript" data-total-entries={store.count}>
-      {store.count === 0 ? <div className="mx-auto grid h-full max-w-[72ch] content-center px-6 pb-12 text-sm text-[var(--text-secondary)]">
+      {store.count === 0 && working ? <div className="mx-auto flex h-full max-w-[80ch] flex-col justify-end px-4 pb-6 sm:px-8"><WorkingIndicator /></div>
+      : store.count === 0 ? <div className="mx-auto grid h-full max-w-[72ch] content-center px-6 pb-12 text-sm text-[var(--text-secondary)]">
         <p className="mb-2 text-lg font-medium text-[var(--text-primary)]">{loading ? "Opening conversation…" : unavailable ? "History is unavailable" : "Start a conversation"}</p>
         <p>{loading ? "Reading native history." : unavailable ? "Retry loading above. Your session is still selected." : "Send a message to begin working with this agent."}</p>
       </div> : <div className="relative mx-auto w-full min-w-0 max-w-[80ch]" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map((row) => {
+        {/* One positioned window, with natural flow inside it. A row growing
+            during Markdown/image/layout changes must move its neighbors in
+            the same browser layout, before ResizeObserver updates estimates. */}
+        <div className="absolute left-0 top-0 w-full min-w-0" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
+        {rows.map((row) => {
           const rich = row.index >= (virtualizer.range?.startIndex ?? 0) - 5 && row.index <= (virtualizer.range?.endIndex ?? 0) + 5;
           return <div key={row.key} data-index={row.index}
-            ref={rich ? virtualizer.measureElement : undefined} className="absolute left-0 top-0 w-full min-w-0 px-4 pb-6 sm:px-8"
-            style={{ transform: `translateY(${row.start}px)`, contentVisibility: rich ? "visible" : "auto", containIntrinsicBlockSize: `${Math.max(0, row.size - 24)}px` }}>
+            ref={virtualizer.measureElement} className="w-full min-w-0 px-4 pb-6 sm:px-8"
+            style={{ contentVisibility: rich ? "visible" : "auto", containIntrinsicBlockSize: `${Math.max(0, row.size - 24)}px` }}>
             <TimelineItem entry={store.at(row.index)!} store={store} rich={rich} />
           </div>;
         })}
+        {working && rows.at(-1)?.index === store.count - 1 ? <div className="px-4 sm:px-8"><WorkingIndicator /></div> : null}
+        </div>
       </div>}
     </div>
     {unread > 0 ? <Button className="absolute bottom-3 left-1/2 min-h-9 -translate-x-1/2 bg-[var(--surface-raised)] px-3 py-1 text-xs" icon={ArrowDown} onClick={jump} data-testid="jump-to-latest">Latest · {unread} new</Button> : null}
   </div>;
 }));
+
+function WorkingIndicator() {
+  return <div className="flex min-h-6 items-center gap-2 text-xs text-[var(--text-secondary)]" role="status" data-testid="agent-working-indicator">
+    <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-[var(--accent)] motion-reduce:animate-none" />
+    <span>Working…</span>
+  </div>;
+}
 
 const BODY_PAGE_SIZE = 16_384;
 /** Parse at most one bounded Markdown segment; tool output stays literal. */

@@ -66,3 +66,11 @@ bounds on the recorded machine/browser, not a guarantee that every device or
 arbitrary native payload can never pause. Native loading still requires network
 round trips, and the current API makes reaching recent history in an existing
 large thread an explicit, cancellable forward scan.
+
+`node tests/browser/transcript-layout.mjs` checks the geometry of an 801-item
+production-build fixture with varied Markdown and tool heights. It checks both
+the first frame and settled layout after rapid scroll reversals, responsive
+reflow, tool expansion and remounting, streamed output, and live/history item
+reconciliation. Visible rows must not intersect or duplicate, and the transcript
+must retain visible content with at most 200 mounted messages. Scrubbed passing
+receipts and screenshot/source checksums live in `receipts/transcript-layout/`.

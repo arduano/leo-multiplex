@@ -69,7 +69,8 @@ export function WorkspaceShell({ left, center, inspector, selectedLabel }: Works
     host.className = "flex min-h-0 min-w-0 flex-1 flex-col";
     return host;
   });
-  const mount = <ConversationMount host={conversationHost} />;
+  const conversationScroll = useRef<ConversationScroll | null>(null);
+  const mount = <ConversationMount host={conversationHost} scroll={conversationScroll} />;
   const [layout, setLayout] = useState<LayoutPreferences>(readLayoutPreferences);
 
   function updateLayout(update: Partial<LayoutPreferences>): void {
@@ -88,12 +89,35 @@ export function WorkspaceShell({ left, center, inspector, selectedLabel }: Works
   return <>{workspace}{createPortal(center, conversationHost)}</>;
 }
 
-function ConversationMount({ host }: { host: HTMLDivElement }) {
+interface ConversationScroll {
+  readonly element: HTMLElement;
+  readonly top: number;
+  readonly left: number;
+}
+
+function ConversationMount({ host, scroll }: { host: HTMLDivElement; scroll: { current: ConversationScroll | null } }) {
   const container = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     container.current?.append(host);
-    return () => { host.remove(); };
-  }, [host]);
+    // Moving the preserved portal between responsive shells resets native
+    // scrolling. Restore its offset once the new pane has its layout, then
+    // notify the virtualizer even if the browser emits no scroll event.
+    const position = scroll.current;
+    const restore = () => {
+      if (!position || !host.contains(position.element)) return;
+      position.element.scrollTop = position.top;
+      position.element.scrollLeft = position.left;
+      position.element.dispatchEvent(new Event("scroll"));
+    };
+    restore();
+    const frame = requestAnimationFrame(restore);
+    return () => {
+      cancelAnimationFrame(frame);
+      const element = host.querySelector<HTMLElement>('[data-testid="chat-transcript"]');
+      scroll.current = element ? { element, top: element.scrollTop, left: element.scrollLeft } : null;
+      host.remove();
+    };
+  }, [host, scroll]);
   return <div ref={container} className="flex min-h-0 min-w-0 flex-1 flex-col" />;
 }
 
