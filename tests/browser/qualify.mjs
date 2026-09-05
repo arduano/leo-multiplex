@@ -43,6 +43,7 @@ await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   }
 }));
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
+await page.route("**/auth/session", (route) => route.fulfill({ status: login ? 200 : 401, contentType: "application/json", body: JSON.stringify({ method: "tailscale" }) }));
 await page.route("**/trpc/**", async (route) => {
   const request = route.request();
   const url = new URL(request.url());
@@ -98,6 +99,11 @@ async function axe(name) {
 try {
   await page.goto(`http://127.0.0.1:${port}`);
   await waitEnabled("prompt-input", true);
+  await page.getByTestId("connection-menu-button").click();
+  await page.getByText("Connected through Tailscale", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("link", { name: "Sign out", exact: true }).count(), 0);
+  await page.keyboard.press("Escape");
+  checks.push({ name: "Tailscale account menu identifies access without a Cloudflare logout", passed: true });
   await page.getByTestId("prompt-input").fill("A draft that must survive reconnects");
   for (const [width, height] of [[1720,1180],[1440,900],[1024,768],[768,1024],[390,844],[844,390]]) {
     await page.setViewportSize({ width, height });

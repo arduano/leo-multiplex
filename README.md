@@ -68,15 +68,18 @@ Restarting the runtime interrupts active execution and discards managed PTYs;
 stored conversations remain resumable. Closing a browser or managed TUI leaves
 the service running. Existing external sessions are not involved.
 
-## NAS and Cloudflare
+## NAS and authentication
 
 See [the NAS runbook](deploy/nas/README.md). Deploy only this application's Compose
 project under `~/host/leo-multiplex`. It does not host canonical session state.
 
-Cloudflare Access is the sole browser login. The origin verifies signed Access
-assertions against the configured team, audience, and allowed email for HTTP and
-WebSocket connections. Normal use requires no app password or bearer token.
-Cloudflare setup belongs to Leo.
+The server supports [Tailscale Serve authentication](docs/Tailscale-Authentication.md)
+and Cloudflare Access as separate modes. Both enforce the owner email and browser
+origin for HTTP and WebSocket connections. Tailscale mode requires a loopback
+socket peer and Serve's user identity, with host networking and an enforced
+loopback listener. Cloudflare mode verifies signed assertions against the configured
+team, audience, and expiry. Neither mode asks for an app password or browser
+bearer token. Cloudflare setup can be added later by Leo.
 
 ## Recovery and upgrades
 

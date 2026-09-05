@@ -9,13 +9,13 @@ import {
   webAsset, installBoundedWebSocketEgress, TRPC_HTTP_BODY_LIMIT_BYTES,
   WEBSOCKET_INGRESS_MESSAGE_LIMIT_BYTES,
 } from "../../web/src/index.js";
-import { AuthenticationError, createAccessAuthenticator, type AccessConfig, type AccessIdentity } from "./auth.js";
+import { AuthenticationError, createAuthenticator, type AuthenticationConfig, type AccessIdentity } from "./auth.js";
 
 export function createPersonalHttpSurface(
   projection: AccessGatewayProjection,
   instanceId: string,
-  access: AccessConfig,
-  authenticate = createAccessAuthenticator(access),
+  access: AuthenticationConfig,
+  authenticate = createAuthenticator(access),
 ): GatewayHttpSurface {
   const router = createAccessGatewayRouter(projection, { instanceId });
   const identities = new WeakMap<IncomingMessage, AccessIdentity>();
@@ -45,10 +45,14 @@ export function createPersonalHttpSurface(
     try { identities.set(request, await authenticate(request)); }
     catch {
       response.writeHead(401, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
-      response.end("Sign in with Cloudflare Access\n"); return;
+      response.end(access.mode === "tailscale" ? "Connect through the configured Tailscale workspace address\n" : "Sign in with Cloudflare Access\n"); return;
     }
     if (path === "/auth/check") {
       response.writeHead(204, { "cache-control": "no-store" }); response.end(); return;
+    }
+    if (path === "/auth/session" && request.method === "GET") {
+      response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      response.end(JSON.stringify({ method: access.mode ?? "cloudflare" }) + "\n"); return;
     }
     if (path.startsWith("/trpc/")) { handler(request, response); return; }
     if (request.method !== "GET" && request.method !== "HEAD") {

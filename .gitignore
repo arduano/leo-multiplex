@@ -8,5 +8,6 @@ result-*
 .env
 .env.*
 !.env.example
+!.env.tailscale.example
 *.sqlite*
 *.identity

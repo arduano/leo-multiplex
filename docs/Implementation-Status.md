@@ -12,8 +12,9 @@ stopped. No new real-model calls were made for this implementation.
 - The personal existing-workdir provider applies full access and no approvals on
   launch and resume. Its private managed Codex home reuses the selected provider
   and auth-helper reference from the original read-only CLI configuration.
-- Cloudflare Access is the only browser login. The origin independently verifies
-  signed identity, issuer, audience, expiry, owner email, and mutation/WS origin.
+- The origin supports Tailscale Serve on an enforced host-loopback listener, or
+  Cloudflare Access JWT verification. Both enforce owner email and mutation/WS
+  origin. Tailscale identity headers from non-loopback socket peers are rejected.
 - The personal React UI supports new managed sessions, native conversations,
   images, questions, model/mode controls, and terminals. Unavailable-host rows
   preserve drafts in browser memory while refusing stale actions.
@@ -23,11 +24,11 @@ stopped. No new real-model calls were made for this implementation.
 
 ## Verification and its limits
 
-The implementation passed application typechecking, 23 tests in seven files, and
+The implementation passed application typechecking, 32 tests in nine files, and
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
-expiry. Browser qualification covers six viewport screenshots and 13 checks,
+expiry. Browser qualification covers six viewport screenshots and 14 checks,
 with no serious or critical axe findings. These checks do not prove real-model
 behavior through the new deployment.
 

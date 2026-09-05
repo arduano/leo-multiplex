@@ -46,3 +46,20 @@ try {
 } finally {
   await surface.close();
 }
+
+const tailConfig = { mode: "tailscale", publicOrigin: "https://nas.example.ts.net:8443", email: "owner@example.test" };
+await assert.rejects(runPersonalServer({ LEO_AUTH_MODE: "tailscale", LEO_PUBLIC_ORIGIN: tailConfig.publicOrigin, LEO_ACCESS_EMAIL: tailConfig.email, LEO_HTTP_BIND: "0.0.0.0" }, new AbortController().signal), /loopback/);
+const tailSurface = createPersonalHttpSurface(new AccessGatewayProjection([]), "tailscale-smoke", tailConfig);
+try {
+  await new Promise((resolve) => tailSurface.server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${tailSurface.server.address().port}`;
+  assert.equal((await fetch(`${origin}/auth/session`)).status, 401);
+  assert.equal((await fetch(`${origin}/auth/session`, { headers: { "Tailscale-User-Login": "wrong@example.test" } })).status, 401);
+  const headers = { "Tailscale-User-Login": tailConfig.email };
+  assert.deepEqual(await (await fetch(`${origin}/auth/session`, { headers })).json(), { method: "tailscale" });
+  assert.equal((await fetch(origin, { headers })).status, 200);
+  assert.equal((await fetch(`${origin}/auth/check`, { method: "POST", headers: { ...headers, origin: "https://wrong.example.test" } })).status, 401);
+  console.log(JSON.stringify({ ok: true, authentication: "Tailscale loopback fixture", modelCalls: 0 }));
+} finally {
+  await tailSurface.close();
+}

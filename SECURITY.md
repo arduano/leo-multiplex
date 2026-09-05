@@ -5,11 +5,30 @@ operator can run Codex and use a managed terminal with the host account's access
 The host runs YOLO sessions by design. No application setting grants extra root
 privileges.
 
-Cloudflare Access assertions are verified at the origin using RS256, the fixed
-configured issuer, the application audience, expiry, subject, and allowed email.
-Unsigned forwarding headers never confer identity. HTTP mutations and WebSocket
-upgrades require the configured browser origin. Missing authentication fails
-closed. WebSocket lifetime is limited by the assertion expiry.
+Select exactly one authentication mode. In Cloudflare mode, Access assertions are
+verified at the origin using RS256, the configured issuer, application audience,
+expiry, subject, and allowed email. WebSocket lifetime is limited by JWT expiry.
+
+In Tailscale mode, the origin requires the allowed `Tailscale-User-Login` and a
+loopback socket peer. Tailscale Serve strips client-supplied identity headers and
+supplies its authenticated user's login. Serve connects directly to the gateway
+on `127.0.0.1:4328`; the container uses host networking and the application rejects
+non-loopback bind configuration. Never put this listener behind a LAN/public
+forwarder or bridge-network port mapping that disguises remote peers as loopback.
+Trusted NAS-local processes can reach the listener and assert an identity; they
+are explicitly inside the trust boundary. The application does not trust
+forwarded IPs, display names, or Cloudflare headers as a Tailscale identity
+fallback. LAN, tailnet, and Docker socket peers fail authentication.
+
+Tailscale WebSockets reconnect at least every five minutes to recheck Serve
+identity and the email allowlist. Tagged clients and Funnel requests without
+user identity fail closed. This mode supports ASCII Tailscale login addresses.
+See [Tailscale authentication](docs/Tailscale-Authentication.md) for configuration.
+
+In both modes, HTTP mutations and WebSocket upgrades require the exact configured
+browser origin; requests supplying another origin are rejected even for GETs.
+Duplicate authentication headers are rejected. Missing authentication fails
+closed and switching modes never enables unauthenticated access.
 
 The gateway receives operator scopes at two boundaries: its control-source grant
 and each authenticated request. Neither grants catalog authority. Host endpoint

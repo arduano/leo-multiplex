@@ -274,6 +274,15 @@ function AppHeader({ connected, globalStatus, onRefresh }: {
 }
 
 function ConnectionMenu({ status }: { readonly status: string }) {
+  const authentication = useQuery({
+    queryKey: ["authentication-method"], retry: false, staleTime: 60_000,
+    queryFn: async () => {
+      const response = await fetch("/auth/session", { redirect: "manual", cache: "no-store" });
+      if (!response.ok) throw new Error("Account information is unavailable");
+      return await response.json() as { method: "cloudflare" | "tailscale" };
+    },
+  });
+  const method = authentication.data?.method;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -285,8 +294,9 @@ function ConnectionMenu({ status }: { readonly status: string }) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content sideOffset={8} align="end" className="z-50 w-64 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4 text-sm text-[var(--text-primary)]">
-          <p>Signed in with Cloudflare Access</p>
-          <a className="mt-3 block text-[var(--accent)] underline" href="/cdn-cgi/access/logout">Sign out</a>
+          <p>{method === "tailscale" ? "Connected through Tailscale" : method === "cloudflare" ? "Signed in with Cloudflare Access" : "Authenticated connection"}</p>
+          {method === "tailscale" ? <p className="mt-2 text-xs text-[var(--text-secondary)]">Access follows your Tailscale account.</p> : null}
+          {method === "cloudflare" ? <a className="mt-3 block text-[var(--accent)] underline" href="/cdn-cgi/access/logout">Sign out</a> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
