@@ -160,3 +160,12 @@ network paging determines how quickly recent history can be reached.
 Final local receipts are `receipts/browser/2026-09-05T10-50-40.496Z` and
 `receipts/long-thread/2026-09-05T10-50-03.478Z`. Their source/lockfile hashes match the
 reviewed source. No production transcript or model interaction was used.
+
+The NAS gateway/UI now runs the tested image with local immutable identity
+`sha256:852840c106a35a6fddc10935bd4e0df63b8dbfdd91fc4416dbb74e914f2b97e5`,
+built from UI source commit `85e9618f15c8c887ecae05dd5ddbb84c8545886c`.
+Only the `leo-multiplex-web` container was recreated. Read-only checks pass through
+the Tailscale IP for authentication, origin rejection, static assets, reachable
+host projection, and a catalog WebSocket subscription. The control/runtime PIDs
+and process start times match their pre-deployment values. Deployment evidence is
+`receipts/ui-deployment/2026-09-05T10-53-04.021Z`.
