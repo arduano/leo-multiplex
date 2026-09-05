@@ -32,8 +32,8 @@ a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
 expiry. Browser qualification covers six viewports and the conversation regressions
-described below, with no serious or critical axe findings. These checks do not prove real-model
-behavior through the new deployment.
+described below, with no serious or critical axe findings. These checks do not
+prove real-model behavior through the new deployment.
 
 The Docker image passes a network-disabled smoke run using disposable signing
 keys: built HTML/assets load, the gateway reports zero authority, and missing
@@ -173,13 +173,20 @@ supersede the previous 17-row-window measurements. The operator's blank transcri
 was separately diagnosed through a read-only native API request, recording only
 aggregate status/counts.
 
-The preceding deployment passed network-disabled Docker authentication/static-asset
-smoke checks and remains the rollout baseline until this correction is deployed.
 The NAS gateway/UI now runs the tested image with local immutable identity
-`sha256:852840c106a35a6fddc10935bd4e0df63b8dbfdd91fc4416dbb74e914f2b97e5`,
-built from UI source commit `85e9618f15c8c887ecae05dd5ddbb84c8545886c`.
-Only the `leo-multiplex-web` container was recreated. Read-only checks pass through
-the Tailscale IP for authentication, origin rejection, static assets, reachable
-host projection, and a catalog WebSocket subscription. The control/runtime PIDs
-and process start times match their pre-deployment values. Deployment evidence is
-`receipts/ui-deployment/2026-09-05T10-53-04.021Z`.
+`sha256:60c281258852b662977387d8d3f4a3056534e80b1ab26e5bdfe7bf8ffc29cc75`,
+built from UI source commit `bf130bb3cae38992df6d357f5cc66cfc2e35530a`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33962543418) passed;
+the image also passed local network-disabled authentication/static-asset smoke
+checks. Only the `leo-multiplex-web` container was recreated.
+
+Read-only checks through the Tailscale IP pass authentication, origin rejection,
+static assets, reachable host projection, and a catalog WebSocket subscription.
+The deployed asset bytes match the local production build. Browser checks now
+also verify the operator's existing session actually loads: 81 native items
+render after desktop selection, page reload, and mobile selection, with no
+history or page errors. No prompts, launches, stops, archives, or model calls were
+issued; no production transcript content or screenshots were recorded. The
+control/runtime PIDs and process start times match their pre-deployment values.
+Checksummed deployment evidence is
+`receipts/history-window-deployment/2026-09-05T11-11-34.831Z`.
