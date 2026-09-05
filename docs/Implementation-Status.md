@@ -155,7 +155,7 @@ history. Per-agent drafts, images, and exact-ID uncertain-command reconciliation
 remain covered. All six viewport screenshots were inspected; no serious or
 critical axe violations remain.
 
-The production-build stress fixture loads 50,000 turns / 100,001 native items
+That history-loading pass's production-build stress fixture loads 50,000 turns / 100,001 native items
 through exactly 1,001 native pages. Exactly 200 messages are mounted once enough
 history is loaded. On the qualification Chromium/machine, loading took 13.22
 seconds; p95 input-to-next-paint was 13.5 ms while streaming and 16.0 ms while
@@ -166,14 +166,14 @@ parts. Loaded native content still occupies memory, and oldest-first network
 paging determines how quickly recent history can be reached; these measurements
 qualify this fixture and machine rather than guarantee every-device latency.
 
-Current local receipts are `receipts/browser/2026-09-05T11-04-08.959Z` and
+The history-loading pass's local receipts are `receipts/browser/2026-09-05T11-04-08.959Z` and
 `receipts/long-thread/2026-09-05T11-06-34.700Z`. Their source/lockfile hashes match
-the reviewed source. Both use disposable fixtures with no model interaction. They
+that pass's reviewed source. Both use disposable fixtures with no model interaction. They
 supersede the previous 17-row-window measurements. The operator's blank transcript
 was separately diagnosed through a read-only native API request, recording only
 aggregate status/counts.
 
-The NAS gateway/UI now runs the tested image with local immutable identity
+The preceding history-loading rollout ran the tested image with local immutable identity
 `sha256:60c281258852b662977387d8d3f4a3056534e80b1ab26e5bdfe7bf8ffc29cc75`,
 built from UI source commit `bf130bb3cae38992df6d357f5cc66cfc2e35530a`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33962543418) passed;
@@ -234,3 +234,15 @@ The preceding passing 200-message qualification remains historical evidence;
 this error-presentation source has not received a new passing timing receipt.
 The indexed store and 200-row window are preserved, and a unit check verifies
 that normal live deltas do not notify the error banner/composer.
+
+The current NAS UI image is
+`sha256:ab2263cbb31c672432033bfa000d200967047835ab9b092244450db7df17d2ea`,
+built from source `d1650bc20efa8893b2f64622f0f37a5ae1b1eeb4`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33963795902) and local
+production-build/container-smoke checks passed. Deployed assets match the local
+build. Read-only browser verification shows all 81 existing native items and the
+historical-error warning on selection, reload, and mobile. Authentication, origin
+checks, host reachability, and the catalog WebSocket remain healthy. Only the
+NAS web/gateway container was recreated; control/runtime PIDs and start times
+are unchanged. No model calls or session mutations were issued. Checksummed
+rollout evidence is `receipts/native-errors-deployment/2026-09-05T11-38-19.288Z`.
