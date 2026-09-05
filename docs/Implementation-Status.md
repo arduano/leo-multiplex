@@ -1,9 +1,9 @@
 # Implementation status — 2026-09-05
 
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
-Production activation is pending the framework release and Cloudflare application
-settings. Existing Codex and tmux sessions have not been adopted, modified, or
-stopped. No new real-model calls were made for this implementation.
+Production activation is pending the operator's sudo rebuild and Tailscale
+MagicDNS/HTTPS settings. Cloudflare is postponed until the Tailscale trial works.
+Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Implemented boundary
 
@@ -39,20 +39,25 @@ fixture-key configuration. Compose and pinned GitHub workflows validate.
 
 The Nix package builds with no unresolved ELF dependencies. Verification imports
 Iroh, node-pty, transport, and host entrypoints, checks in-memory SQLite, and runs
-only `leo-codex --version` (`0.152.0`). Home Manager evaluation against main-pc and
-the dotfiles patch dry-run pass. Neither changes nor activates the dotfiles.
+only `leo-codex --version` (`0.152.0`). The public flake is pinned in main-pc's
+dotfiles, and its full system build passed without activation. Existing unrelated
+dotfiles changes and dependency pins were preserved.
 
-All 16 framework tarballs were packed from clean source
-`dbc8a713dcd276d4ef3d047c6c67a7561e7f1c7e` in
-[framework PR #19](https://github.com/arduano/agent-multiplex/pull/19), now merged
-as `0e043478538a30a0a42fd854f5f5c8a14309cbf0` with an identical source tree.
-That source passes 598 tests and the framework typecheck, documentation,
-checkpoint, and release-metadata gates. The lock records exact tarball SHA-512
-integrities and future public `v0.2.0` Release URLs; transport remains the public
-`0.2.1` artifact. Local npm/Docker/Nix verification seeds only matching artifact
-bytes into disposable or content-addressed caches. It does **not** prove that
-the unpublished URLs are downloadable. There are no sibling imports or local
-file dependencies in the deployment manifests.
+The public [Agent Multiplex v0.2.0 release](https://github.com/arduano/agent-multiplex/releases/tag/v0.2.0)
+binds source `0e043478538a30a0a42fd854f5f5c8a14309cbf0`. Main CI, CodeQL,
+deterministic tree/scale, and the approved real Codex/Copilot qualification passed.
+The native run included a 930-second soak, fresh replies afterward, and complete
+cleanup of its isolated resources. Its owner-recorded receipt inventory is
+`79e7bfff5878448ef574f1d888024a8a11a000644eb8cb31bbb9f093a18ee077`.
+[Publication run](https://github.com/arduano/agent-multiplex/actions/runs/33956925510)
+passed. This framework qualification does not replace a personal deployment trial.
+
+All 21 public assets match their release inventory. The 16 package tarballs have
+different archive bytes from the local development packs but identical extracted
+file contents. The app lock now records the public tarball integrities; a fresh
+install downloads them without a registry token. Transport remains public 0.2.1.
+There are no sibling imports or local file dependencies in deployment manifests.
+The selected local-config TOML parser is pinned to patched version 1.6.1.
 
 Passing browser manifests/screenshots and local implementation verification
 inventories live in the ignored `receipts/` tree. Build and evaluation diagnostics
@@ -60,24 +65,14 @@ live in `.cache/`. Neither directory is published.
 
 ## Remaining rollout
 
-1. Require the merged framework commit's main-branch CI, CodeQL, and deterministic
-   Docker qualification to pass. PR CI/CodeQL passed and both image-pointer
-   security findings were fixed before merge.
-2. Run the framework's required native four-container qualification and 930-second
-   soak against clean, exact `origin/main`, with a fresh explicit model allowance.
-   Record the independently validated native status, then publish `v0.2.0` using
-   the normal signed-tag workflow. See the framework
-   [release procedure](https://github.com/arduano/agent-multiplex/blob/feat/protocol-v5-personal-embedding/docs/wiki/Releases.md#candidate-checklist).
-3. Compare all public framework artifact integrities with this lock; update and
-   revalidate if final published bytes differ. Require a fresh uncached CI build
-   before deploying, then run **Publish NAS image** and retain its digest.
-4. Follow [main-pc integration](../deploy/main-pc/README.md) to pin the public Leo
-   revision in dotfiles, review/build, and activate only the new host services.
-5. Supply public origin, Access team domain, AUD, and allowed email. Follow
-   [NAS deployment](../deploy/nas/README.md), pair by SSH, then close enrollment.
-   Cloudflare Tunnel/DNS/Access configuration belongs to Leo.
+1. Complete the application checks and Docker image using the final public lock.
+2. Update the dotfiles Leo pin and build, then let the operator run the sudo
+   rebuild. Pair only the new host/runtime/gateway and close enrollment.
+3. Enable Tailscale MagicDNS and HTTPS certificates in the tailnet admin DNS
+   settings. Use the dedicated Serve port 8443, preserving the existing port 443
+   route. Follow [NAS deployment](../deploy/nas/README.md).
+4. Verify the real NAS browser path, host availability, and web session workflow.
+   Existing CLI/tmux sessions remain outside this application's ownership.
 
-The source repository can be published before these rollout prerequisites are
-met. Its initial CI cannot install framework `v0.2.0` until that release exists.
-Do not substitute protocol-v4 artifacts, bypass the native release gate, or
-activate against development source links to work around this dependency.
+Cloudflare Tunnel/DNS/Access setup remains the operator's later task. Tailscale
+access must not be replaced with unauthenticated LAN or public exposure.

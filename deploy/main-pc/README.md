@@ -4,17 +4,16 @@
 user on `main-pc`. It adds the public Leo flake input and imports its Home Manager
 module. It does not change `iso-gui.nix` or
 `main-pc/system/hardware-configuration.nix`, which already have unrelated local
-changes. This patch has not been applied and no service has been activated.
+changes. The initial integration has been applied locally; service activation remains an operator step.
 
 ## Publication boundary
 
-The current package lock references exact Agent Multiplex `v0.2.0` Release
-artifacts. That release is not public yet. Local Nix builds use fixed-output
-store entries seeded with the exact locked tarballs; they prove local packaging,
-not that a fresh machine can download the release. Publish and qualify the
-framework artifacts and the Leo repository before integrating this flake.
-Keep the resulting Leo revision in the dotfiles' `flake.lock`. Do not replace
-Release URLs with sibling paths or copy private npm configuration into Nix.
+The package lock references the public Agent Multiplex `v0.2.0` Release
+artifacts with verified SHA-512 integrities. Pin the public Leo revision in the
+dotfiles `flake.lock`; do not replace Release URLs with sibling paths or put
+private npm configuration into Nix. Nix fetches all dependencies from public
+sources. Development used local packs before release; deployment uses the
+published tarball hashes.
 
 ## Local verification without activation
 

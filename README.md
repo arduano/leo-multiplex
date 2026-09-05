@@ -22,12 +22,10 @@ npm test
 npm run build
 ```
 
-The coordinated Agent Multiplex 0.2.0 release is still pending. Until it is
-published, a fresh `npm ci` or public Nix/Docker build cannot fetch those pinned
-artifacts. Local verification used matching packed tarballs in disposable
-caches. See [implementation status](docs/Implementation-Status.md) for evidence
-and remaining deployment steps. Do not mix protocol-v4 0.1.0 packages with this
-application.
+Dependencies pin the public Agent Multiplex 0.2.0 release with exact tarball
+integrities. See [implementation status](docs/Implementation-Status.md) for
+verification and deployment progress. Do not mix protocol-v4 0.1.0 packages with
+this application.
 
 The UI derives from Agent Multiplex's MIT-licensed React demo. It retains native
 Codex history, streaming, images, questions, settings, lifecycle operations, and
