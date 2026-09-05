@@ -4,7 +4,8 @@
 user on `main-pc`. It adds the public Leo flake input and imports its Home Manager
 module. It does not change `iso-gui.nix` or
 `main-pc/system/hardware-configuration.nix`, which already have unrelated local
-changes. The initial integration has been applied locally; service activation remains an operator step.
+changes. The integration is applied locally and the operator has activated it. Current
+rollout facts are in [Implementation status](../../docs/Implementation-Status.md).
 
 ## Publication boundary
 
@@ -90,7 +91,7 @@ The runtime waits for `control-source.json`, then enrolls its separate identity.
 Once the new NAS Compose project is ready, run the repository's
 `scripts/pair-nas.sh` to transfer `gateway-pairing.json` over the existing `nas`
 SSH alias. Follow [the NAS runbook](../nas/README.md) for that project's startup
-and Cloudflare Access configuration. Confirm the `main-pc` source is selected
+and Tailscale access configuration. Confirm the `main-pc` source is selected
 and reachable. Do not print pairing files, tickets, provider configuration, or
 shared secrets while verifying this.
 

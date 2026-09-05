@@ -3,7 +3,9 @@
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
 The NAS gateway is deployed at **http://100.82.173.47:8444/** through Tailscale
 Serve. MagicDNS and HTTPS certificates are unnecessary for this IP route. The
-operator's NixOS rebuild is in progress; permanent runtime activation is pending. Cloudflare is postponed until the Tailscale trial works.
+operator's NixOS rebuild completed, and the permanent main-pc control and runtime
+services are active. Initial runtime pairing is complete; enrollment is closed.
+Cloudflare is postponed until the Tailscale trial works.
 Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Implemented boundary
@@ -41,8 +43,8 @@ fixture-key configuration. Compose and pinned GitHub workflows validate.
 The Nix package builds with no unresolved ELF dependencies. Verification imports
 Iroh, node-pty, transport, and host entrypoints, checks in-memory SQLite, and runs
 only `leo-codex --version` (`0.152.0`). The public flake is pinned in main-pc's
-dotfiles, and its full system build passed without activation. Existing unrelated
-dotfiles changes and dependency pins were preserved.
+dotfiles, and its full system build passed and was activated by the operator.
+Existing unrelated dotfiles changes and dependency pins were preserved.
 
 The public [Agent Multiplex v0.2.0 release](https://github.com/arduano/agent-multiplex/releases/tag/v0.2.0)
 binds source `0e043478538a30a0a42fd854f5f5c8a14309cbf0`. Main CI, CodeQL,
@@ -78,8 +80,10 @@ transport. Checks against the real NAS process passed health, owner authenticati
 unauthenticated rejection, WebSocket upgrade, main-pc source selection, and
 reconnection after control restart with enrollment closed. This used only the
 new catalog service temporarily; no runtime or Codex session was launched. The
-gateway retains its enrolled identity and safely shows the host as unavailable
-while waiting for permanent activation. The IP rollout additionally verifies authenticated browser and WebSocket access
+gateway retains its enrolled identity. Following permanent activation, runtime
+enrollment was briefly opened on the new control and then closed again. Both
+services remain active, and the gateway reports main-pc online and reachable
+after the control restart with enrollment closed. The IP rollout additionally verifies authenticated browser and WebSocket access
 through Tailscale Serve. Image draft IDs use secure browser randomness that is
 available on an HTTP origin; browser qualification also disables the HTTPS-only
 UUID/hash APIs while exercising attachments and stable launch requests.
@@ -89,15 +93,22 @@ whose full system build passed. The UI now directly declares the same already
 locked UUID dependency; no existing dependency version changed. The newer gateway-only revision does not require another host
 build or repinning before the operator's prepared rebuild.
 
-## Remaining rollout
+## Ready for the operator's first session
 
-1. The public host pin and full system build are ready; the operator is running
-   `sudo nixos-rebuild switch --flake ~/.dotfiles#main-pc`.
-2. Pair the new runtime briefly through the new control service and close
-   enrollment. The NAS gateway is already enrolled.
-3. Verify host availability and let the operator create and try the first managed
-   sessions at **http://100.82.173.47:8444/**. Existing CLI/tmux sessions remain
-   outside this application's ownership.
+The first-boot offline status came from closed runtime enrollment: both Nix
+services were running, but the control rejected the new runtime identity. Pairing
+is now complete, and both enrollment flags are closed in the running service and
+permanent configuration. The runtime was not restarted during pairing.
+
+The real Tailscale browser path now loads main-pc in **New agent**, discovers 13
+Codex models, and enables the launch form for an existing workdir. This check did
+not submit a launch or send a prompt. Its local receipt is in
+`receipts/host-pairing/2026-09-05T10-06-02.807Z`.
+
+Open **http://100.82.173.47:8444/**, select **New agent**, choose main-pc and an
+existing directory, then launch a Codex agent. The first managed session and
+interactive trial are left to the operator. Existing CLI/tmux sessions remain
+outside this application's ownership.
 
 The IP route uses owner identity supplied by Tailscale Serve and encryption from
 WireGuard. Its backend stays on NAS loopback. HTTPS/MagicDNS and Cloudflare can
