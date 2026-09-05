@@ -466,3 +466,14 @@ messages mounted. This run took 45.97 seconds; typing during import measured
 27.5 ms p95 (40.3 ms maximum), 33.3 ms p95 frame interval, and no long tasks.
 Cancellation, explicit single-page reads, switching away, and reselection pass.
 The final-source receipt is `receipts/long-thread/2026-09-05T23-50-02.865Z`.
+
+The current NAS UI image is
+`sha256:755d0a5ebbfc8b432a54d0a3b6e102f05739290c57b34d2400398bc3a268c75a`,
+built from source `0db7ad957365446d20bf0d68b9197ca18a7064b6`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/33999804190) passed.
+Deployed entry and dynamic assets match the tested build. Read-only checks on the
+existing session pass desktop selection, reload, and mobile selection with
+complete history and the viewport at the latest messages. No history/page errors
+or production mutations occurred. Host control/runtime process identities are
+unchanged; only the web/gateway container was recreated. Checksummed rollout evidence is
+`receipts/latest-history-deployment/2026-09-05T23-54-00Z`.
