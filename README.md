@@ -43,6 +43,11 @@ The UI preserves Codex's automatic-retry signal and never retries a failed promp
 on its own. For an earlier error omitted by the published history API, it checks
 native status and directs you to Terminal before continuing.
 
+Type `/` in the composer for commands such as `/plan`, `/model`, and `/effort`.
+The applied model beside the prompt opens model and native reasoning choices
+directly. See [workspace commands](docs/Workspace-Commands.md) for keyboard controls
+and next-turn settings semantics.
+
 Long conversations render a measured window of up to 200 messages. Native updates
 touch individual items and are batched before painting; large message bodies use
 bounded parts. The pinned native history API pages oldest first. Opening a thread

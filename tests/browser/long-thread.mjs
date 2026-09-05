@@ -19,7 +19,7 @@ async function sourceFiles(directory) {
   }
   return files;
 }
-const inputs = [...await sourceFiles(join(root, "apps/web/src")), join(root, "apps/web/vite.config.ts"), join(root, "apps/web/index.html"), join(root, "package.json"), join(root, "package-lock.json"), join(root, "LICENSE"), join(root, "THIRD_PARTY_NOTICES.md"), join(root, "apps/web/THIRD_PARTY_LICENSES.txt"), import.meta.filename].sort();
+const inputs = [join(root, "packages/native-errors/src/index.ts"), ...await sourceFiles(join(root, "apps/web/src")), join(root, "apps/web/vite.config.ts"), join(root, "apps/web/index.html"), join(root, "package.json"), join(root, "package-lock.json"), join(root, "LICENSE"), join(root, "THIRD_PARTY_NOTICES.md"), join(root, "apps/web/THIRD_PARTY_LICENSES.txt"), import.meta.filename].sort();
 const hashes = Object.fromEntries(await Promise.all(inputs.map(async (path) => [relative(root, path), sha256(await readFile(path))])));
 const fixtureTurns = 50_000;
 const fixtureItems = fixtureTurns * 2 + 1;

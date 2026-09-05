@@ -24,6 +24,11 @@ It verifies:
   retain exactly one launch ID and request body; terminal settlement unlocks
   the next launch.
 
+The composer/model checks also exercise local slash parsing and keyboard
+completion, native reasoning choices, delayed setting acknowledgment, failed and
+lost responses, exact-ID reconciliation, image/draft retention, and bounded
+model/command panels on portrait and landscape phones.
+
 Passing screenshots and a manifest covering all UI source, dependency lockfile,
 font/license notices, and screenshot checksums are written under the ignored
 `receipts/browser/` directory. Failed runs retain diagnostic screenshots only.

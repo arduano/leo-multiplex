@@ -198,7 +198,7 @@ function Dashboard() {
           )}
           center={<div className="flex h-full min-h-0 flex-col">
             {selectedStale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
-            <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} />
+            <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} onNewSession={() => setSpawnOpen(true)} />
           </div>}
           inspector={(actions) => (
             <InspectorPane

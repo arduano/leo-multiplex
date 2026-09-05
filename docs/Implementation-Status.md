@@ -290,3 +290,49 @@ is `receipts/agent-cli/2026-09-05T12-29-05.437Z`.
 
 See [Agent CLI](Agent-CLI.md) for installation, JSON/exit semantics, recovery,
 images, and an OpenClaw subprocess integration workflow.
+
+## Composer commands and Codex model switching
+
+The composer supports `/plan`, `/model`, `/effort`, `/mode`, `/default`,
+`/interrupt`, `/new`, `/status`, `/terminal`, and `/help`, with native-mode
+arguments and keyboard suggestions. Known and unsupported command tokens are
+handled locally; they never accidentally become agent prompts. `//` escapes a
+literal command. Attached images and unrelated message drafts survive setting
+changes. An uncertain slash mutation retains its draft and exact command envelope
+across session selection for explicit reconciliation.
+
+The applied model is now the composer’s settings trigger. Model selection is a
+single explicit action, followed by the Codex Reasoning tab. Reasoning levels and
+descriptions come from the current model’s native catalog. The old hardcoded
+reasoning list and separate draft/Apply controls are removed. Missing settings
+remain unknown and catalog defaults are labelled separately. Retained effort
+that is unsupported by a newly selected model gets a warning and an explicit
+choice; the UI does not silently issue a second setting mutation.
+
+Codex changes use native thread settings for subsequent turns. Copy makes this
+scope explicit while work is running. Model/mode changes do not resume, prompt,
+interrupt, or clear a capacity warning. Only `/interrupt` issues an interrupt;
+`/new` opens the launch dialog without submitting it. See
+[workspace commands](Workspace-Commands.md) for usage.
+
+Typechecking, all 256 tests in nineteen files, and a production build pass.
+The disposable browser suite passes 40 checks, including delayed setting
+acknowledgment, failed and lost responses, exact retry identity, native reasoning
+choices, image/draft retention, slash keyboard behavior, and mobile popup bounds.
+All six viewport layouts and command/model panels were visually inspected;
+no serious or critical axe findings remain. The receipt is
+`receipts/browser/2026-09-05T12-55-29.177Z`.
+
+The new production-build long-thread qualification passes on this machine with
+50,000 turns / 100,001 native items and the 200-message window. Loading took
+15.29 seconds. Concurrent streaming, scrolling, and typing measured 23.3 ms p95
+input-to-paint (27.4 ms maximum), 33.4 ms p95 frame interval, and no long tasks.
+Native data still occupies memory and oldest-first paging still determines
+history loading time. This final-source receipt is
+`receipts/long-thread/2026-09-05T12-56-59.005Z`.
+
+The deployment container builds and passes isolated network-disabled
+static-asset/authentication smoke tests. Runtime, control, provider, protocol,
+Nix, and dotfiles code are unchanged. Production rollout verification is recorded
+below after the web/gateway container update; all development checks used
+disposable state and no model calls.

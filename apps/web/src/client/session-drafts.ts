@@ -6,6 +6,7 @@ interface SessionDraft {
   readonly prompt: string;
   readonly images: DraftImage[];
   readonly uncertain: CommandEnvelope | null;
+  readonly uncertainPrompt: string | null;
 }
 interface DraftSlot {
   value: SessionDraft;
@@ -19,7 +20,7 @@ const slots = new Map<string, DraftSlot>();
 function slotFor(binding: string): DraftSlot {
   let slot = slots.get(binding);
   if (!slot) {
-    slot = { value: { prompt: "", images: [], uncertain: null }, listeners: new Set() };
+    slot = { value: { prompt: "", images: [], uncertain: null, uncertainPrompt: null }, listeners: new Set() };
     slots.set(binding, slot);
   }
   return slot;
@@ -44,6 +45,7 @@ export function useSessionDraft(binding: string) {
     ...value,
     setPrompt: useCallback((action: SetStateAction<string>) => update("prompt", action), [update]),
     setImages: useCallback((action: SetStateAction<DraftImage[]>) => update("images", action), [update]),
+    setUncertainPrompt: useCallback((action: SetStateAction<string | null>) => update("uncertainPrompt", action), [update]),
     setUncertain: useCallback((action: SetStateAction<CommandEnvelope | null>) => update("uncertain", action), [update]),
   };
 }

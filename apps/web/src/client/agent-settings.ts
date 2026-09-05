@@ -4,39 +4,11 @@ import type {
   NativeModel,
 } from "@arduano/agent-multiplex-protocol";
 
-export interface SettingDraft {
-  readonly value: string;
-  readonly edited: boolean;
-}
-
 /** Use the harness catalog's declared default without promoting hidden legacy entries. */
 export function preferredModel(models: readonly NativeModel[]): NativeModel | undefined {
   return models.find((candidate) => nativeBoolean(candidate.native, "isDefault") === true)
     ?? models.find((candidate) => nativeBoolean(candidate.native, "hidden") !== true)
     ?? models[0];
-}
-
-export function createSettingDraft(applied: string, fallback = ""): SettingDraft {
-  return { value: applied || fallback, edited: false };
-}
-
-export function editSettingDraft(value: string, applied: string): SettingDraft {
-  return { value, edited: value !== applied };
-}
-
-/**
- * Follow authoritative changes until the operator edits this picker. An edited
- * value remains a draft until the replicated harness setting catches up to it.
- */
-export function reconcileSettingDraft(
-  draft: SettingDraft,
-  applied: string,
-  fallback = "",
-): SettingDraft {
-  if (draft.edited && draft.value !== applied) return draft;
-  const value = applied || fallback;
-  if (draft.value === value && !draft.edited) return draft;
-  return { value, edited: false };
 }
 
 export function appliedSettingsSummary(

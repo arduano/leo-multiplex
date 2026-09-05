@@ -6,7 +6,6 @@ import {
   LoaderCircle,
   MessageSquareText,
   Send,
-  Settings2,
   TerminalSquare,
   X,
 } from "lucide-react";
@@ -16,6 +15,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useId,
   useCallback,
   useRef,
   useState,
@@ -38,18 +38,12 @@ import type {
   ImageDescriptor,
   ImageMediaType,
   HarnessCommand,
-  HarnessSessionSettings,
   SessionRecord,
 } from "@arduano/agent-multiplex-protocol";
 
-import {
-  appliedSettingsSummary,
-  createSettingDraft,
-  editSettingDraft,
-  preferredModel,
-  reconcileSettingDraft,
-  type SettingDraft,
-} from "./agent-settings.js";
+import { appliedSettingsSummary, preferredModel } from "./agent-settings.js";
+import { ModelPicker } from "./model-picker.js";
+import { resolveSlash, slashSuggestions, type SlashResult, type SettingsSection } from "./slash-commands.js";
 import { errorMessage, useApi } from "./api.js";
 import { ImageSessionProvider, prepareImageFile, modelImageLimits } from "./image-media.js";
 import { pendingInteractionRefetchInterval } from "./interaction-refresh.js";
@@ -67,7 +61,7 @@ import { TranscriptStore } from "./transcript-store.js";
 import { VirtualTranscript, type TranscriptHandle } from "./virtual-transcript.js";
 import { useSessionDraft } from "./session-drafts.js";
 import type { TerminalSideChannelCapability } from "./terminal-state.js";
-import { Badge, Button, EmptyState, Select, Textarea, classes } from "./ui.js";
+import { Badge, Button, EmptyState, Textarea, classes } from "./ui.js";
 
 const TerminalPanel = lazy(async () => {
   const module = await import("./terminal-panel.js");
@@ -80,12 +74,14 @@ interface CommandAction {
   readonly optimistic?: TimelineEntry;
   readonly images?: CommandEnvelope["images"];
   readonly envelope?: CommandEnvelope;
+  readonly consumePrompt?: string;
 }
 
-export function SessionConsole({ session, terminalCapability, readOnly = false }: {
+export function SessionConsole({ session, terminalCapability, readOnly = false, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly onNewSession: () => void;
 }) {
   const { connectionKey } = useApi();
   const bindingIdentity = session ? sessionBindingIdentity(session) : "no-session";
@@ -96,15 +92,17 @@ export function SessionConsole({ session, terminalCapability, readOnly = false }
       bindingIdentity={bindingIdentity}
       terminalCapability={terminalCapability}
       readOnly={readOnly}
+      onNewSession={onNewSession}
     />
   );
 }
 
-function BoundSessionConsole({ session, bindingIdentity, terminalCapability, readOnly = false }: {
+function BoundSessionConsole({ session, bindingIdentity, terminalCapability, readOnly = false, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly bindingIdentity: string;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly onNewSession: () => void;
 }) {
   const { client, connectionKey } = useApi();
   const queryClient = useQueryClient();
@@ -127,7 +125,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const [historyError, setHistoryError] = useState("");
   const [historySignal, setHistorySignal] = useState<NativeHistorySignal | null>(null);
   const [recentEvents, setRecentEvents] = useState<readonly { kind: string; type: string; sequence?: number }[]>([]);
-  const { prompt, setPrompt, images: draftImages, setImages: setDraftImages, uncertain, setUncertain } = useSessionDraft(`${connectionKey}:${bindingIdentity}`);
+  const { prompt, setPrompt, images: draftImages, setImages: setDraftImages, uncertain, setUncertain, uncertainPrompt, setUncertainPrompt } = useSessionDraft(`${connectionKey}:${bindingIdentity}`);
   const draftsRef = useRef(draftImages);
   draftsRef.current = draftImages;
   const mounted = useRef(true);
@@ -143,18 +141,12 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     imageUpload.current?.abort();
   }; }, []);
   const [actionStatus, setActionStatus] = useState("");
-  const [modelDraft, setModelDraft] = useState<SettingDraft>(() =>
-    createSettingDraft(session?.harnessSettings?.model ?? "")
-  );
-  const [modeDraft, setModeDraft] = useState<SettingDraft>(() =>
-    createSettingDraft(
-      session?.harnessSettings?.mode ?? "",
-      session?.harness === "copilot" ? "interactive" : "default",
-    )
-  );
-  const [effortDraft, setEffortDraft] = useState<SettingDraft>(() =>
-    createSettingDraft(session?.harnessSettings?.effort ?? "", "medium")
-  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("model");
+  const promptInput = useRef<HTMLTextAreaElement>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
+  const slashMenuId = useId();
   const [workspaceView, setWorkspaceView] = useState<"chat" | "terminal">("chat");
   const historyGeneration = session && historySignal?.bindingIdentity === bindingIdentity
     ? historySignal.generation
@@ -192,12 +184,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     setStreamState(session ? "connecting" : "stopped");
     setActionStatus("");
     setWorkspaceView("chat");
-    setModelDraft(createSettingDraft(session?.harnessSettings?.model ?? ""));
-    setModeDraft(createSettingDraft(
-      session?.harnessSettings?.mode ?? "",
-      session?.harness === "copilot" ? "interactive" : "default",
-    ));
-    setEffortDraft(createSettingDraft(session?.harnessSettings?.effort ?? "", "medium"));
   }, [bindingIdentity, connectionKey]);
 
   // Establish the native stream before asking the harness for history. The
@@ -365,27 +351,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }, [historyGeneration, bindingIdentity, readHistory]);
   useEffect(() => () => { historyRead.current?.abort(); }, []);
 
-  useEffect(() => {
-    setModelDraft((current) => reconcileSettingDraft(
-      current,
-      session?.harnessSettings?.model ?? "",
-      preferredModel(models.data ?? [])?.id ?? "",
-    ));
-  }, [models.data, session?.harnessSettings?.model]);
-
-  useEffect(() => {
-    setModeDraft((current) => reconcileSettingDraft(
-      current,
-      session?.harnessSettings?.mode ?? "",
-      session?.harness === "copilot" ? "interactive" : "default",
-    ));
-    setEffortDraft((current) => reconcileSettingDraft(
-      current,
-      session?.harnessSettings?.effort ?? "",
-      "medium",
-    ));
-  }, [session?.harness, session?.harnessSettings?.effort, session?.harnessSettings?.mode]);
-
   const mutation = useMutation({
     retry: false,
     onSettled: () => { dispatching.current = false; },
@@ -394,27 +359,30 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (readOnly) throw new Error("Reconnect the host before changing this session");
       const envelope = action.envelope ?? await sessionCommand(session, action.request, action.images);
       setUncertain(envelope);
+      setUncertainPrompt(action.consumePrompt ?? null);
       if (action.optimistic && !action.envelope) {
         store.addLocal({ ...action.optimistic!, id: `local:${envelope.commandId}` });
       }
       const record = await client.sessions.execute.mutate(envelope);
-      if (record.state !== "outcomeUnknown" && record.state !== "received" && record.state !== "started") setUncertain(null);
+      if (record.state !== "outcomeUnknown" && record.state !== "received" && record.state !== "started") { setUncertain(null); setUncertainPrompt(null); }
       return { action, record };
     },
-    onSuccess: ({ action, record }) => {
+    onSuccess: async ({ action, record }) => {
       setActionStatus(commandStatus(action.success, record));
       if (record.state === "succeeded" && (action.request.command.type === "send" || action.request.command.type === "steer")) {
         setPrompt("");
         for (const image of draftsRef.current) URL.revokeObjectURL(image.url);
         setDraftImages([]);
       }
-      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      if (record.state === "succeeded" && action.consumePrompt !== undefined) setPrompt(current => current === action.consumePrompt ? "" : current);
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      if (record.state === "succeeded" && action.request.command.type === "setModel" && session?.harness === "codex" && settingsOpen) setSettingsSection("effort");
     },
     onError: (error) => setActionStatus(errorMessage(error)),
   });
 
   function executeAction(action: CommandAction): void {
-    if (dispatching.current) return;
+    if (dispatching.current || readOnly) return;
     dispatching.current = true;
     mutation.mutate(action);
   }
@@ -433,6 +401,11 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 
   const active = !readOnly && session.availability === "active";
   const running = session.runtimeStatus === "running";
+  const busy = mutation.isPending || uploading || preparingImages || Boolean(uncertain);
+  const suggestions = active && !busy && slashDismissed !== prompt ? slashSuggestions(prompt, session.harness) : [];
+  const selectedSlash = Math.min(slashIndex, suggestions.length - 1);
+  const composerIntent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
+  const isSlash = composerIntent.kind !== "message";
   const pendingInteractions = interactions.data?.filter((item) => item.state === "pending") ?? [];
   const title = sessionTitle(session);
   const settingsSummary = appliedSettingsSummary(
@@ -445,10 +418,43 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     ? (models.data ?? []).find((model) => model.id === session.harnessSettings?.model)
     : preferredModel(models.data ?? []));
 
-  function dispatch(request: HarnessCommand, success: string, optimistic?: TimelineEntry): void {
-    if (uncertain || uploading || mutation.isPending || dispatching.current) return;
+  function dispatch(request: HarnessCommand, success: string, optimistic?: TimelineEntry, consumePrompt?: string): void {
+    if (!active || uncertain || uploading || preparing.current || mutation.isPending || dispatching.current) return;
     setActionStatus("Dispatching command once…");
-    executeAction({ request, success, ...(optimistic ? { optimistic } : {}) });
+    executeAction({ request, success, ...(optimistic ? { optimistic } : {}), ...(consumePrompt !== undefined ? { consumePrompt } : {}) });
+  }
+
+  function openSettings(section: SettingsSection) {
+    setActionStatus("");
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }
+
+  function performSlash(intent: Exclude<SlashResult, { kind: "message" }>, consumed: string): void {
+    if (!active || busy || dispatching.current) return;
+    if (intent.kind === "error") { setActionStatus(intent.message); setSlashDismissed(prompt); return; }
+    if (intent.kind === "command") {
+      dispatch(intent.request, intent.success, undefined, consumed);
+      return;
+    }
+    setPrompt(current => current === consumed ? "" : current);
+    if (intent.kind === "settings") { openSettings(intent.section); return; }
+    setActionStatus("");
+    if (intent.action === "help") { setPrompt("/"); setSlashDismissed(null); setSlashIndex(0); promptInput.current?.focus(); }
+    else if (intent.action === "status") setDiagnosticsOpen(true);
+    else if (intent.action === "terminal") setWorkspaceView("terminal");
+    else onNewSession();
+  }
+
+  function chooseSlash(name: string) {
+    const intent = resolveSlash(`/${name}`, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running });
+    if (intent.kind !== "message") performSlash(intent, prompt);
+  }
+
+  function changeSetting(text: string) {
+    const intent = resolveSlash(text, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running });
+    if (intent.kind === "command") dispatch(intent.request, intent.success);
+    else if (intent.kind === "error") setActionStatus(intent.message);
   }
 
   async function attachImages(files: readonly File[]): Promise<void> {
@@ -473,13 +479,15 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 
   async function send(kind: "send" | "steer"): Promise<void> {
     if (!session || !active || (!prompt.trim() && !draftImages.length) || uploading || imageUpload.current || uncertain || preparing.current || dispatching.current) return;
+    const intent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
+    if (intent.kind !== "message") { performSlash(intent, prompt); return; }
     if (draftImages.length && (imageLimits.support === "unsupported" || draftImages.length > imageLimits.count ||
       draftImages.some((image) => image.file.size > imageLimits.bytes || imageLimits.mediaTypes && !imageLimits.mediaTypes.includes(image.file.type)))) {
       setActionStatus("Attachments exceed the applied model's image capabilities");
       return;
     }
     transcript.current?.followLatest();
-    const body = prompt.trim();
+    const body = intent.text.trim();
     let request: HarnessCommand = session.harness === "codex"
       ? kind === "send"
         ? { harness: "codex", command: { type: "send", input: body } }
@@ -530,10 +538,23 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     } });
   }
 
-  function keyboardSend(event: KeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+  function keyboardSend(event: KeyboardEvent<HTMLElement>): void {
+    if (event.nativeEvent.isComposing) return;
+    if (suggestions.length) {
+      if (event.key === "Escape") { event.preventDefault(); setSlashDismissed(prompt); promptInput.current?.focus(); return; }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const next = (selectedSlash + (event.key === "ArrowDown" ? 1 : -1) + suggestions.length) % suggestions.length;
+        setSlashIndex(next);
+        document.getElementById(`${slashMenuId}-${next}`)?.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      if (event.key === "Tab") { event.preventDefault(); setPrompt(`/${suggestions[selectedSlash]!.name} `); setSlashIndex(0); return; }
+      if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); chooseSlash(suggestions[selectedSlash]!.name); return; }
+    }
+    if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
-    if (!mutation.isPending && !uploading && active && (prompt.trim() || draftImages.length)) void send("send");
+    if (!busy && active && (prompt.trim() || draftImages.length)) void send("send");
   }
 
   return (
@@ -651,66 +672,44 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
             </div>)}
           </div> : null}
           <div className="relative rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] transition focus-within:border-[var(--accent)]/40 focus-within:ring-2 focus-within:ring-[var(--accent)]/[0.08]">
+            {suggestions.length ? <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[min(360px,45dvh)] w-full overflow-y-auto overscroll-contain rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-1.5 shadow-lg" id={slashMenuId} role="listbox" tabIndex={0} aria-activedescendant={`${slashMenuId}-${selectedSlash}`} onKeyDown={event => { if (event.key !== "Tab") keyboardSend(event); }} aria-label="Slash commands" data-testid="slash-menu">
+              {suggestions.map((item, index) => <button key={item.name} id={`${slashMenuId}-${index}`} type="button" role="option" aria-selected={index === selectedSlash} tabIndex={-1}
+                className={classes("flex min-h-11 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-hover)]", index === selectedSlash && "bg-[var(--surface-hover)]")}
+                onMouseDown={event => event.preventDefault()} onClick={() => chooseSlash(item.name)} data-testid={`slash-option-${item.name}`}>
+                <span className="w-24 shrink-0 font-mono">/{item.name}</span><span className="text-xs text-[var(--text-secondary)]">{item.description}</span>
+              </button>)}
+            </div> : null}
             <Textarea
+              ref={promptInput}
+              aria-label="Message this agent"
+              aria-autocomplete="list"
+              aria-controls={suggestions.length ? slashMenuId : undefined}
+              aria-activedescendant={suggestions.length ? `${slashMenuId}-${selectedSlash}` : undefined}
               className="block min-h-10 max-h-48 resize-none [field-sizing:content] [@media(max-height:500px)]:max-h-16 [@media(max-height:500px)]:leading-5 border-0 bg-transparent text-sm leading-6 focus:ring-0"
               rows={1}
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => { setPrompt(event.target.value); setSlashIndex(0); setSlashDismissed(null); }}
               onKeyDown={keyboardSend}
               onPaste={(event) => { const files = [...event.clipboardData.files]; if (files.length) { event.preventDefault(); void attachImages(files); } }}
-              placeholder={readOnly ? "Reconnect the host before sending a message" : active ? "Message this agent…" : "Resume this session before sending a message"}
+              placeholder={readOnly ? "Reconnect the host before sending a message" : active ? "Message this agent, or / for commands…" : "Resume this session before sending a message"}
               disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
               data-testid="prompt-input"
             />
-            <div className="flex items-center gap-2 px-2 pb-2">
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2 sm:gap-2">
               <input ref={imagePicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" multiple className="hidden" onChange={(event) => { void attachImages([...(event.target.files ?? [])]); event.target.value = ""; }} data-testid="image-file-input" />
               <Button icon={ImagePlus} disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain) || imageLimits.support === "unsupported"} aria-label="Attach images" title={imageLimits.support === "unsupported" ? "The applied model does not accept images" : "Attach images"} onClick={() => imagePicker.current?.click()} data-testid="attach-images-button" />
-              <AgentSettings
-                session={session}
-                active={active}
-                busy={mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
-                loadingModels={models.isPending}
-                models={models.data ?? []}
-                appliedSettings={session.harnessSettings}
-                settingsSummary={settingsSummary}
-                modelDraft={modelDraft.value}
-                modeDraft={modeDraft.value}
-                effortDraft={effortDraft.value}
-                onModelChange={(value) => setModelDraft(editSettingDraft(
-                  value,
-                  session.harnessSettings?.model ?? "",
-                ))}
-                onModeChange={(value) => setModeDraft(editSettingDraft(
-                  value,
-                  session.harnessSettings?.mode ?? "",
-                ))}
-                onEffortChange={(value) => setEffortDraft(editSettingDraft(
-                  value,
-                  session.harnessSettings?.effort ?? "",
-                ))}
-                onApplyModel={() => dispatch(
-                  session.harness === "codex"
-                    ? { harness: "codex", command: { type: "setModel", model: modelDraft.value } }
-                    : { harness: "copilot", command: { type: "setModel", model: modelDraft.value } },
-                  `Model changed to ${modelDraft.value}`,
-                )}
-                onApplyMode={() => dispatch(
-                  session.harness === "codex"
-                    ? { harness: "codex", command: { type: "setMode", mode: modeDraft.value } }
-                    : { harness: "copilot", command: { type: "setMode", mode: modeDraft.value as "interactive" | "plan" | "autopilot" } },
-                  `Mode changed to ${modeDraft.value}`,
-                )}
-                onApplyEffort={() => dispatch(
-                  { harness: "codex", command: { type: "setEffort", effort: effortDraft.value } },
-                  `Effort changed to ${effortDraft.value}`,
-                )}
-              />
-              <span className="hidden truncate text-xs text-[var(--text-secondary)] md:inline" title={`Applied: ${settingsSummary}`}>
-                {settingsSummary}
-              </span>
+              <ModelPicker session={session} models={models.data ?? []} loading={models.isPending} loadError={models.isError}
+                onRetryModels={() => { void models.refetch(); }} disabled={!active || busy} open={settingsOpen} onOpenChange={value => { setSettingsOpen(value); if (value) setActionStatus(""); }}
+                section={settingsSection} onSectionChange={setSettingsSection} status={actionStatus}
+                onModel={value => changeSetting(`/model ${value}`)} onMode={value => changeSetting(`/mode ${value}`)} onEffort={value => changeSetting(`/effort ${value}`)} />
+              <Button className="min-w-0 shrink-0 px-2 text-xs" disabled={!active || busy} onClick={() => openSettings("mode")} aria-label="Change agent mode" data-testid="composer-mode-button">
+                {session.harnessSettings?.mode === "plan" ? "Plan" : session.harnessSettings?.mode === "default" ? "Agent" : session.harnessSettings?.mode === "interactive" ? "Interactive" : session.harnessSettings?.mode ?? "Mode"}
+              </Button>
+              {session.harness === "codex" && session.harnessSettings?.effort ? <button className="hidden min-h-9 shrink-0 text-xs text-[var(--text-secondary)] lg:block" disabled={!active || busy} onClick={() => openSettings("effort")} aria-label="Change reasoning effort" data-testid="composer-effort-button">{humanizeStatus(session.harnessSettings.effort)}</button> : null}
+              <span className="sr-only">{settingsSummary}</span>
               <div className="ml-auto flex gap-1.5">
                 <Button
-                  className={running ? undefined : "hidden"}
+                  className={running && !isSlash ? undefined : "hidden"}
                   icon={CornerDownRight}
                   disabled={!active || !running || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
                   onClick={() => send("steer")}
@@ -726,16 +725,16 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
                   onClick={() => send("send")}
                   data-testid="send-button"
                 >
-                  Send
+                  {isSlash ? "Run" : "Send"}
                 </Button>
               </div>
             </div>
           </div>
           {uploading ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => imageUpload.current?.abort()}>Cancel upload</button> : null}
-          {uncertain && !mutation.isPending ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => executeAction({ request: uncertain.request, envelope: uncertain, success: "Command reconciled" })} disabled={readOnly} data-testid="reconcile-command">Check the original command</button> : null}
+          {uncertain && !mutation.isPending ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => executeAction({ request: uncertain.request, envelope: uncertain, success: "Command reconciled", ...(uncertainPrompt !== null ? { consumePrompt: uncertainPrompt } : {}) })} disabled={readOnly} data-testid="reconcile-command">Check the original command</button> : null}
           <div className={classes(!actionStatus && "hidden sm:flex", "col-span-full mt-1.5 flex min-h-6 items-center justify-between gap-3 [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:min-h-0")}>
             <p className="min-w-0 truncate text-xs text-[var(--text-secondary)]" role="status" title={actionStatus} data-testid="action-status">{actionStatus}</p>
-            <span className="hidden shrink-0 text-xs text-[var(--text-secondary)] sm:inline [@media(max-height:500px)]:hidden">Enter to send · Shift+Enter for newline</span>
+            <span className="hidden shrink-0 text-xs text-[var(--text-secondary)] sm:inline [@media(max-height:500px)]:hidden">/ for commands · Shift+Enter for newline</span>
           </div>
 
         </div>
@@ -747,156 +746,6 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         </Suspense>
       </Tabs.Content>
     </Tabs.Root></ImageSessionProvider>
-  );
-}
-
-function AgentSettings({
-  session,
-  active,
-  busy,
-  loadingModels,
-  models,
-  appliedSettings,
-  settingsSummary,
-  modelDraft,
-  modeDraft,
-  effortDraft,
-  onModelChange,
-  onModeChange,
-  onEffortChange,
-  onApplyModel,
-  onApplyMode,
-  onApplyEffort,
-}: {
-  readonly session: SessionRecord;
-  readonly active: boolean;
-  readonly busy: boolean;
-  readonly loadingModels: boolean;
-  readonly models: readonly { readonly id: string; readonly name?: string | null | undefined }[];
-  readonly appliedSettings: HarnessSessionSettings | undefined;
-  readonly settingsSummary: string;
-  readonly modelDraft: string;
-  readonly modeDraft: string;
-  readonly effortDraft: string;
-  readonly onModelChange: (value: string) => void;
-  readonly onModeChange: (value: string) => void;
-  readonly onEffortChange: (value: string) => void;
-  readonly onApplyModel: () => void;
-  readonly onApplyMode: () => void;
-  readonly onApplyEffort: () => void;
-}) {
-  const modelChanged = modelDraft !== (appliedSettings?.model ?? "");
-  const modeChanged = modeDraft !== (appliedSettings?.mode ?? "");
-  const effortChanged = effortDraft !== (appliedSettings?.effort ?? "");
-  const listedModel = models.some((candidate) => candidate.id === modelDraft);
-  const codexModes = ["default", "plan"];
-  const copilotModes = ["interactive", "plan", "autopilot"];
-  const listedModes = session.harness === "codex" ? codexModes : copilotModes;
-  const efforts = ["low", "medium", "high", "xhigh", "max", "ultra"];
-  return (
-    <Popover.Root>
-      <Popover.Trigger asChild>
-        <Button className="h-8 min-h-8 max-w-48 px-2.5 py-1 text-xs" icon={Settings2} aria-label="Agent settings" data-testid="agent-settings-button">
-          <span className="hidden truncate sm:inline">Agent settings</span>
-        </Button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          align="start"
-          side="top"
-          sideOffset={8}
-          collisionPadding={12}
-          aria-label="Agent settings"
-          className="z-50 w-[min(360px,calc(100vw-24px))] rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-3 text-[var(--text-primary)] shadow-2xl outline-none data-[state=open]:animate-in"
-          data-testid="agent-settings-popover"
-        >
-          <div className="mb-3">
-            <p className="text-xs font-semibold">Applied settings</p>
-            <p
-              className="mt-0.5 truncate text-xs text-[var(--text-secondary)]"
-              title={settingsSummary}
-              data-testid="applied-settings-summary"
-            >
-              {settingsSummary}
-            </p>
-          </div>
-          <div className="grid gap-3">
-            <label className="grid gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-              <SettingDraftLabel label="Model" changed={modelChanged} />
-              <div className="flex gap-2">
-                <Select
-                  className="h-9 min-w-0 flex-1 py-1 text-xs"
-                  value={modelDraft}
-                  onChange={(event) => onModelChange(event.target.value)}
-                  disabled={!active || loadingModels || busy}
-                  data-testid="model-select"
-                >
-                  {!models.length ? <option value="">Harness model</option> : null}
-                  {modelDraft && !listedModel ? <option value={modelDraft}>{modelDraft} · unavailable</option> : null}
-                  {models.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name ?? candidate.id}</option>)}
-                </Select>
-                <Popover.Close asChild>
-                  <Button className="h-9 py-1 text-xs" disabled={!active || !modelDraft || !modelChanged || busy} onClick={onApplyModel} data-testid="model-button">Apply</Button>
-                </Popover.Close>
-              </div>
-            </label>
-            <label className="grid gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-              <SettingDraftLabel label="Mode" changed={modeChanged} />
-              <div className="flex gap-2">
-                <Select
-                  className="h-9 min-w-0 flex-1 py-1 text-xs"
-                  value={modeDraft}
-                  onChange={(event) => onModeChange(event.target.value)}
-                  disabled={!active || busy}
-                  data-testid="mode-select"
-                >
-                  {modeDraft && !listedModes.includes(modeDraft) ? <option value={modeDraft}>{modeDraft} · unavailable</option> : null}
-                  {session.harness === "codex" ? (
-                    <>
-                      <option value="default">Default</option>
-                      <option value="plan">Plan</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="interactive">Interactive</option>
-                      <option value="plan">Plan</option>
-                      <option value="autopilot">Autopilot</option>
-                    </>
-                  )}
-                </Select>
-                <Popover.Close asChild>
-                  <Button className="h-9 py-1 text-xs" disabled={!active || !modeChanged || busy} onClick={onApplyMode} data-testid="mode-button">Apply</Button>
-                </Popover.Close>
-              </div>
-            </label>
-            {session.harness === "codex" ? (
-              <label className="grid gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                <SettingDraftLabel label="Reasoning effort" changed={effortChanged} />
-                <div className="flex gap-2">
-                  <Select className="h-9 min-w-0 flex-1 py-1 text-xs" value={effortDraft} onChange={(event) => onEffortChange(event.target.value)} disabled={!active || busy} data-testid="effort-select">
-                    {effortDraft && !efforts.includes(effortDraft) ? <option value={effortDraft}>{effortDraft} · unavailable</option> : null}
-                    {efforts.map((value) => <option key={value}>{value}</option>)}
-                  </Select>
-                  <Popover.Close asChild>
-                    <Button className="h-9 py-1 text-xs" disabled={!active || !effortChanged || busy} onClick={onApplyEffort} data-testid="effort-button">Apply</Button>
-                  </Popover.Close>
-                </div>
-              </label>
-            ) : null}
-          </div>
-          <p className="mt-3 text-xs leading-4 text-[var(--text-secondary)]">Picker changes are drafts. Apply each setting independently; the summary updates after the harness acknowledges it.</p>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-function SettingDraftLabel({ label, changed }: { readonly label: string; readonly changed: boolean }) {
-  return (
-    <span className="flex items-center justify-between gap-2">
-      <span>{label}</span>
-      {changed ? <span className="font-normal text-[var(--status-waiting)]">Draft</span> : null}
-    </span>
   );
 }
 

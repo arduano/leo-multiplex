@@ -18,7 +18,7 @@ async function sourceFiles(directory) {
   }
   return files;
 }
-const sources = [...await sourceFiles("apps/web"), "package.json", "package-lock.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "tests/browser/qualify.mjs"];
+const sources = [...await sourceFiles("apps/web"), ...await sourceFiles("packages/native-errors"), "package.json", "package-lock.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "tests/browser/qualify.mjs"];
 const sourceHashes = Object.fromEntries(await Promise.all(sources.map(async (path) => [path, sha256(await readFile(join(root, path)))])));
 const output = join(root, "receipts/browser", new Date().toISOString().replaceAll(":", "-"));
 await mkdir(output, { recursive: true });
@@ -43,6 +43,14 @@ const session = { sessionId: id(4), runtimeNodeId: id(5), metadataAuthority: aut
 const other = { ...session, sessionId: id(14), vendorSessionId: "other-fixture-native", nativeSummary: { title: "Another disposable agent" }, metadata: { revision: 1, values: { "agent.title": "Another disposable agent" }, keyRevisions: { "agent.title": 1 } } };
 let showOther = false;
 const commands = [];
+const models = [
+  { harness: "codex", id: "fixture-model", name: "Fixture model", description: "The general-purpose disposable model.", native: { id: "catalog-record-general", model: "fixture-model", hidden: false, isDefault: true, defaultReasoningEffort: "medium", inputModalities: ["text", "image"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced fixture reasoning." }, { reasoningEffort: "high", description: "Thorough fixture reasoning." }] } },
+  { harness: "codex", id: "fixture-fast", name: "Fixture fast", description: "A quicker disposable model with different reasoning choices.", native: { id: "catalog-record-fast", model: "fixture-fast", hidden: false, isDefault: false, defaultReasoningEffort: "low", inputModalities: ["text", "image"], supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast fixture reasoning." }, { reasoningEffort: "high", description: "Thorough fixture reasoning." }] } },
+  { harness: "codex", id: "hidden-old", name: "Hidden legacy fixture", description: "An explicitly hidden legacy model.", native: { id: "catalog-record-legacy", model: "hidden-old", hidden: true, isDefault: false, defaultReasoningEffort: "low", inputModalities: ["text", "image"], supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Legacy fixture reasoning." }] } },
+];
+let nextSettingBehavior = "succeeded";
+let releaseSetting;
+let pendingSetting;
 const runtime = { runtimeNodeId: id(5), name: "Disposable test host", presence: "online", reachability: "reachable", runtimeNodeBootId: id(7), capabilities: [], harnesses: [{ harness: "codex", available: true, capabilities: [] }] };
 const source = { sourceId: "fixture", displayName: "Disposable test host", endpointId: "fixture", state: "selected", manifest: { coveredControlNodeIds: [id(2)] }, updatedAt: timestamp };
 const profile = { providerId: "leo.local", profileId: "workspace", contractVersion: 1, requestSchemaHash: "a".repeat(64), implementationVersion: "1.0.0", harnesses: ["codex"], available: true, capabilities: [] };
@@ -100,7 +108,7 @@ await page.route("**/trpc/**", async (route) => {
       case "runtimeNodes.list": data = online ? [runtime] : []; break;
       case "sessions.search": data = { sessions: online && !empty ? showOther ? [session, other] : [session] : [], nextCursor: null }; break;
       case "harness.models":
-      case "launchProfiles.models": data = [{ harness: "codex", id: "fixture-model", name: "Fixture model" }]; break;
+      case "launchProfiles.models": data = models; break;
       case "launchProfiles.list": data = [profile]; break;
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
@@ -120,6 +128,22 @@ await page.route("**/trpc/**", async (route) => {
         commands.push(input);
         if (commands.length === 1) return route.abort("failed");
         data = { commandId: input.commandId, payloadHash: input.payloadHash, sessionId: input.sessionId, runtimeNodeId: input.runtimeNodeId, state: "succeeded", request: input.request, createdAt: timestamp, updatedAt: timestamp };
+        if (["setModel", "setMode", "setEffort"].includes(input.request.command.type)) {
+          const behavior = nextSettingBehavior;
+          nextSettingBehavior = "succeeded";
+          if (behavior === "drop") return route.abort("failed");
+          if (behavior === "delay") await pendingSetting;
+          if (behavior === "failed") {
+            data.state = "failed";
+            data.error = "Disposable setting was rejected by the harness";
+          } else {
+            const selected = input.sessionId === other.sessionId ? other : session;
+            const command = input.request.command;
+            const setting = command.type === "setModel" ? { model: command.model } : command.type === "setMode" ? { mode: command.mode } : { effort: command.effort };
+            selected.harnessSettings = { ...selected.harnessSettings, ...setting };
+            data.result = { encoding: "native-json-images-v1", images: [], json: {} };
+          }
+        }
         break;
       case "launches.create":
         launches.push(input);
@@ -137,6 +161,32 @@ async function waitEnabled(testId, enabled) {
     const element = document.querySelector(`[data-testid="${testId}"]`);
     return element && element.disabled === !enabled;
   }, { testId, enabled });
+}
+async function eventually(check, message) {
+  const deadline = Date.now() + 15_000;
+  while (!check()) {
+    assert(Date.now() < deadline, message);
+    await page.waitForTimeout(25);
+  }
+}
+async function submitSlash(text) {
+  await page.getByTestId("prompt-input").fill(text);
+  await waitEnabled("send-button", true);
+  await page.getByTestId("send-button").click();
+}
+async function waitPrompt(text) {
+  await page.waitForFunction((text) => document.querySelector('[data-testid="prompt-input"]')?.value === text, text);
+}
+async function withinViewport(testId, name) {
+  // Radix first mounts its portal offscreen, then positions it at the anchor.
+  await page.waitForFunction(testId => {
+    const box = document.querySelector(`[data-testid="${testId}"]`)?.getBoundingClientRect();
+    return box && box.x >= -1 && box.y >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1;
+  }, testId);
+  const box = await page.getByTestId(testId).boundingBox();
+  const viewport = page.viewportSize();
+  assert(box && box.x >= -1 && box.y >= -1 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1, `${name} is outside the viewport: ${JSON.stringify(box)}`);
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} causes horizontal overflow`);
 }
 async function refresh() { await page.getByTestId("refresh-workspace").click(); }
 async function screenshot(name) {
@@ -362,6 +412,158 @@ try {
   await waitEnabled("spawn-cwd-input", true);
   checks.push({ name: "settled launch unlocks a subsequent operation", passed: true });
   await page.keyboard.press("Escape");
+
+  const beforeSlash = commands.length;
+  for (const [text, feedback] of [["/compact", "isn’t available"], ["/not-a-command", "isn’t available"], ["/plan write a migration", "Use /plan"], ["/model not-a-real-model", "Choose an exact model"], ["/effort ultra", "supported reasoning"]]) {
+    await submitSlash(text);
+    await page.getByTestId("action-status").filter({ hasText: feedback }).waitFor();
+    assert.equal(await page.getByTestId("prompt-input").inputValue(), text, "Invalid slash command destroyed its draft");
+    assert.equal(commands.length, beforeSlash, `${text} reached the model instead of local validation`);
+  }
+  await submitSlash("/help");
+  await page.getByTestId("slash-menu").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("slash-menu").waitFor({ state: "detached" });
+  await page.getByTestId("prompt-input").fill("");
+  await page.getByTestId("prompt-input").fill("/");
+  await page.getByTestId("slash-menu").waitFor();
+  const firstSuggestion = await page.getByTestId("slash-menu").getByRole("option", { selected: true }).getAttribute("data-testid");
+  await page.getByTestId("prompt-input").press("ArrowDown");
+  const secondSuggestion = await page.getByTestId("slash-menu").getByRole("option", { selected: true }).getAttribute("data-testid");
+  assert.notEqual(secondSuggestion, firstSuggestion, "ArrowDown did not move command selection");
+  await page.getByTestId("prompt-input").press("ArrowUp");
+  assert.equal(await page.getByTestId("slash-menu").getByRole("option", { selected: true }).getAttribute("data-testid"), firstSuggestion);
+  await page.getByTestId("prompt-input").fill("/mod");
+  await page.getByTestId("prompt-input").press("Tab");
+  assert.equal((await page.getByTestId("prompt-input").inputValue()).trim(), "/model", "Tab did not complete the highlighted command");
+  assert.equal(commands.length, beforeSlash, "Command navigation unexpectedly dispatched a mutation");
+  await page.getByTestId("prompt-input").press("Escape");
+  checks.push({ name: "slash validation and accessible keyboard completion stay local and preserve invalid drafts", passed: true });
+
+  await page.locator('input[type="file"]').setInputFiles({ name: "slash-draft.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("button", { name: "Remove slash-draft.png" }).waitFor();
+  await submitSlash("/plan");
+  await eventually(() => commands.length === beforeSlash + 1, "Plan command was not dispatched");
+  assert.deepEqual(commands.at(-1).request, { harness: "codex", command: { type: "setMode", mode: "plan" } });
+  await waitPrompt("");
+  await page.getByRole("button", { name: "Remove slash-draft.png" }).waitFor();
+  await eventually(() => session.harnessSettings.mode === "plan", "Plan mode did not reach acknowledged settings");
+  assert.equal(mutations.filter((path) => path.startsWith("images.")).length, 0, "A settings command uploaded the attached draft image");
+  await page.getByRole("button", { name: "Remove slash-draft.png" }).click();
+  await submitSlash("/plan off");
+  await waitPrompt("");
+  assert.deepEqual(commands.at(-1).request, { harness: "codex", command: { type: "setMode", mode: "default" } });
+  await submitSlash("/plan on");
+  await waitPrompt("");
+  await submitSlash("/default");
+  await waitPrompt("");
+  assert.equal(session.harnessSettings.mode, "default");
+  checks.push({ name: "plan aliases change only native mode and preserve attached images without a prompt or upload", passed: true });
+
+  await page.getByTestId("prompt-input").fill("Keep this message while choosing a model");
+  await page.getByTestId("agent-settings-button").click();
+  await page.getByTestId("model-option-fixture-fast").waitFor();
+  assert.equal(await page.getByTestId("model-option-hidden-old").count(), 0, "Hidden legacy models crowd the normal picker");
+  nextSettingBehavior = "delay";
+  pendingSetting = new Promise((resolve) => { releaseSetting = resolve; });
+  const beforeModel = commands.length;
+  await page.getByTestId("model-option-fixture-fast").click();
+  await eventually(() => commands.length === beforeModel + 1, "Model selection did not dispatch");
+  assert.deepEqual(commands.at(-1).request, { harness: "codex", command: { type: "setModel", model: "fixture-fast" } });
+  assert.equal(session.harnessSettings.model, "fixture-model", "Fixture settings changed before acknowledgment");
+  assert((await page.getByTestId("agent-settings-button").innerText()).includes("Fixture model"), "Model trigger claimed success before acknowledgment");
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Keep this message while choosing a model");
+  releaseSetting();
+  await page.getByTestId("agent-settings-button").filter({ hasText: "Fixture fast" }).waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Keep this message while choosing a model");
+  await page.getByTestId("agent-settings-button").click();
+  await page.getByRole("tab", { name: "Reasoning", exact: true }).click();
+  await page.getByTestId("effort-option-low").waitFor();
+  assert.equal(await page.getByTestId("effort-option-medium").count(), 0, "Picker offered reasoning unsupported by the selected model");
+  assert.equal(await page.getByTestId("effort-option-ultra").count(), 0);
+  await page.getByTestId("effort-option-high").click();
+  await eventually(() => session.harnessSettings.effort === "high", "Reasoning selection did not reach the harness");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "Keep this message while choosing a model");
+  checks.push({ name: "direct model and native reasoning picks retain draft and show applied model only after acknowledgment", passed: true });
+
+  await submitSlash("/model fixture-model");
+  await waitPrompt("");
+  await page.getByTestId("agent-settings-button").filter({ hasText: "Fixture model" }).waitFor();
+  await submitSlash("/effort medium");
+  await waitPrompt("");
+  assert.deepEqual(commands.at(-1).request, { harness: "codex", command: { type: "setEffort", effort: "medium" } });
+  nextSettingBehavior = "failed";
+  await submitSlash("/model fixture-fast");
+  await page.getByTestId("action-status").filter({ hasText: "Disposable setting was rejected" }).waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "/model fixture-fast", "Rejected setting lost its command draft");
+  assert.equal(session.harnessSettings.model, "fixture-model");
+  assert.equal(await page.getByTestId("reconcile-command").count(), 0, "A definitive failure was presented as ambiguous");
+  nextSettingBehavior = "drop";
+  const beforeDroppedSetting = commands.length;
+  await submitSlash("/model fixture-fast");
+  await page.getByTestId("reconcile-command").waitFor();
+  assert.equal(commands.length, beforeDroppedSetting + 1);
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "/model fixture-fast");
+  await waitEnabled("send-button", false);
+  await page.getByTestId("reconcile-command").click();
+  await page.getByTestId("agent-settings-button").filter({ hasText: "Fixture fast" }).waitFor();
+  await page.getByTestId("reconcile-command").waitFor({ state: "detached" });
+  assert.equal(commands.length, beforeDroppedSetting + 2);
+  assert.deepEqual(commands.at(-1), commands.at(-2), "An uncertain model change retried a different envelope");
+  checks.push({ name: "slash model and effort use exact native IDs; rejected and ambiguous changes retain drafts and exact retry identity", passed: true });
+
+  const beforeLocalCommands = commands.length;
+  await submitSlash("/mode");
+  await page.getByTestId("mode-option-plan").waitFor();
+  await page.keyboard.press("Escape");
+  await submitSlash("/status");
+  await page.getByTestId("stream-status").waitFor();
+  await page.keyboard.press("Escape");
+  await submitSlash("/new");
+  await page.getByTestId("spawn-form").waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(commands.length, beforeLocalCommands);
+  assert.equal(launches.length, 2, "/new submitted a launch instead of opening the dialog");
+  await submitSlash("/interrupt");
+  await page.getByTestId("action-status").filter({ hasText: "no running turn" }).waitFor();
+  assert.equal(commands.length, beforeLocalCommands);
+  session.runtimeStatus = "running";
+  await refresh();
+  await submitSlash("/plan off");
+  await waitPrompt("");
+  assert.deepEqual(commands.at(-1).request.command, { type: "setMode", mode: "default" }, "A running session's future mode was rewritten as a turn setting");
+  await page.getByTestId("action-status").filter({ hasText: "Next-turn" }).waitFor();
+  await submitSlash("/interrupt");
+  await waitPrompt("");
+  assert.deepEqual(commands.at(-1).request.command, { type: "interrupt" });
+  session.runtimeStatus = "idle";
+  await refresh();
+  await submitSlash("//literal");
+  await waitPrompt("");
+  assert.deepEqual(commands.at(-1).request, { harness: "codex", command: { type: "send", input: "/literal" } });
+  assert.equal(commands.slice(beforeSlash).filter(({ request }) => request.command.type === "send").length, 1, "A local slash action was sent as a prompt");
+  assert.equal(commands.slice(beforeSlash).filter(({ request }) => ["steer", "updateTurnSettings"].includes(request.command.type)).length, 0);
+  checks.push({ name: "local slash views never launch or prompt; running settings remain next-turn and literal escape sends exact text", passed: true });
+
+  for (const [width, height] of [[390,844],[844,390]]) {
+    await page.setViewportSize({ width, height });
+    await submitSlash("/model");
+    await page.getByTestId("agent-settings-popover").waitFor();
+    await withinViewport("agent-settings-popover", `Model picker at ${width}x${height}`);
+    await screenshot(`model-picker-${width}x${height}`);
+    await axe(`model-picker-${width}x${height}`);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("prompt-input").fill("/");
+    await page.getByTestId("slash-menu").waitFor();
+    await withinViewport("slash-menu", `Slash menu at ${width}x${height}`);
+    await screenshot(`slash-menu-${width}x${height}`);
+    await axe(`slash-menu-${width}x${height}`);
+    await page.getByTestId("prompt-input").press("Escape");
+  }
+  checks.push({ name: "model picker and slash commands fit narrow portrait and landscape without accessibility regressions", passed: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
   empty = true; await refresh();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 0);
   checks.push({ name: "fresh authority removal clears stale row", passed: true });
