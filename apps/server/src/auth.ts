@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { isIPv4 } from "node:net";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import type { GatewayAuthContext } from "@arduano/agent-multiplex-gateway";
 
@@ -42,13 +43,21 @@ function singleHeader(request: IncomingMessage, name: string, limit: number): st
   return value;
 }
 
+function isTailscaleHttpOrigin(origin: URL): boolean {
+  if (origin.protocol !== "http:" || !isIPv4(origin.hostname)) return false;
+  const [first, second] = origin.hostname.split(".").map(Number);
+  return first === 100 && second !== undefined && second >= 64 && second <= 127;
+}
+
 /** Serve replaces identity headers. Only NAS-local socket peers may assert this identity. */
 export function createTailscaleAuthenticator(config: TailscaleConfig) {
   const origin = new URL(config.publicOrigin);
   const owner = config.email.trim().toLowerCase();
-  if (origin.protocol !== "https:" || origin.origin !== config.publicOrigin ||
+  // Exact serialization rejects URL credentials/components and noncanonical IPv4
+  // spellings normalized by URL (integer, hexadecimal, octal, or shortened forms).
+  if ((origin.protocol !== "https:" && !isTailscaleHttpOrigin(origin)) || origin.origin !== config.publicOrigin ||
       !/^[\x21-\x7e]+$/.test(owner) || !/^[^\s,@]+@[^\s,@]+$/.test(owner)) {
-    throw new TypeError("Tailscale requires an HTTPS public origin and owner email");
+    throw new TypeError("Tailscale requires an HTTPS origin or canonical HTTP IPv4 origin in 100.64.0.0/10, and owner email");
   }
   return async (request: IncomingMessage, websocket = false): Promise<AccessIdentity> => {
     assertOrigin(request, origin.origin, websocket);

@@ -16,6 +16,11 @@ await vite.listen();
 const port = vite.httpServer.address().port;
 const browser = await chromium.launch({ ...(process.env.LEO_TEST_CHROMIUM ? { executablePath: process.env.LEO_TEST_CHROMIUM } : {}), headless: true });
 const context = await browser.newContext({ viewport: { width: 1720, height: 1180 }, reducedMotion: "reduce" });
+// A Tailscale HTTP address has secure randomness but no HTTPS-only UUID/hash APIs.
+await context.addInitScript(() => {
+  Object.defineProperty(globalThis.crypto, "randomUUID", { value: undefined });
+  Object.defineProperty(globalThis.crypto, "subtle", { value: undefined });
+});
 const page = await context.newPage();
 page.setDefaultTimeout(15_000);
 const errors = [];
@@ -99,6 +104,11 @@ async function axe(name) {
 try {
   await page.goto(`http://127.0.0.1:${port}`);
   await waitEnabled("prompt-input", true);
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
+  await page.locator('input[type="file"]').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
+  await page.getByRole("button", { name: "Remove tailscale-http.png" }).waitFor();
+  await page.getByRole("button", { name: "Remove tailscale-http.png" }).click();
+  checks.push({ name: "image attachment without HTTPS-only crypto APIs", passed: true });
   await page.getByTestId("connection-menu-button").click();
   await page.getByText("Connected through Tailscale", { exact: true }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Sign out", exact: true }).count(), 0);

@@ -1,14 +1,15 @@
 # Tailscale authentication
 
-Select Tailscale mode to use the workspace through the NAS's HTTPS Serve address.
-Cloudflare configuration is unnecessary in this mode and remains supported for
-later use.
+Select Tailscale mode to use the workspace through the NAS's Serve address.
+HTTPS supports the NAS's MagicDNS name. HTTP is also supported with a canonical
+Tailscale IPv4 address in `100.64.0.0/10`. Cloudflare configuration is unnecessary
+in this mode and remains supported for later use.
 
 The required request path is:
 
 ```text
 Allowed Tailscale user
-  -> Tailscale Serve HTTPS
+  -> Tailscale Serve (HTTPS or HTTP on its tailnet IPv4 address)
   -> 127.0.0.1:4328
   -> Leo application in a Docker host-network container
 ```
@@ -30,10 +31,27 @@ LEO_HTTP_BIND=127.0.0.1
 LEO_HTTP_PORT=4328
 ```
 
-The public origin must be the exact HTTPS origin, including a nondefault port
-when applicable, without a path or trailing slash. The allowed email is the
+The public origin must be exact, including a nondefault port when applicable,
+without user credentials, a path, query, fragment, or trailing slash. For HTTP
+access without MagicDNS/TLS, use the NAS's actual Tailscale IPv4 and Serve HTTP
+port, for example `LEO_PUBLIC_ORIGIN=http://100.100.20.30:8444`. The
+[NAS runbook](../deploy/nas/README.md) and its `tailscale-ip.py` configure the HTTP
+listener and IP routing alias to proxy to `http://127.0.0.1:4328`. Use the actual
+assigned address; the example does not provision or assign one.
+
+HTTP origins are restricted to canonical dotted-decimal IPv4 addresses from
+`100.64.0.0` through `100.127.255.255`. LAN/public addresses, hostnames, IPv6,
+shortened addresses, and hexadecimal/octal/integer spellings are rejected.
+Cloudflare mode continues to require HTTPS. The allowed email is the
 ASCII Tailscale login address, not a display name. There is no application token
 or extra proxy secret to provision.
+
+With HTTP Serve, Tailscale's WireGuard connection still encrypts traffic between
+the client and NAS. The browser sees an HTTP origin and treats it as a non-secure
+context; browser APIs requiring HTTPS can be unavailable. The WebSocket URL uses
+`ws:`, and its handshake must carry the exact configured `http:` origin. This
+option does not permit HTTP access outside the tailnet Serve path or weaken
+the loopback-peer and allowed-user requirements.
 
 Use the standalone `deploy/nas/compose.tailscale.yaml` with `network_mode: host`,
 not the bridge-network Compose file. The application must bind only to the NAS

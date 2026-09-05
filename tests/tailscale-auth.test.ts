@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 import { authenticationConfig, httpBindAddress } from "../apps/server/src/auth-config.js";
 import {
-  createAuthenticator, createTailscaleAuthenticator, OPERATOR_SCOPES,
+  createAccessAuthenticator, createAuthenticator, createTailscaleAuthenticator, OPERATOR_SCOPES,
   TAILSCALE_IDENTITY_LIFETIME_MS,
 } from "../apps/server/src/auth.js";
 
@@ -70,6 +70,36 @@ describe("Tailscale Serve identity", () => {
     for (const override of [{ publicOrigin: "http://nas.fixture.ts.net" }, { email: "owner@example.test,other@example.test" }, { email: "\u00e9@example.test" }]) {
       expect(() => createTailscaleAuthenticator({ ...config, ...override })).toThrow("Tailscale requires");
     }
+  });
+
+  it.each(["http://100.64.0.0", "http://100.127.255.255", "http://100.100.20.30:8080"])("accepts canonical tailnet HTTP origin %s with the same identity and exact-origin fences", async (publicOrigin) => {
+    const auth = createTailscaleAuthenticator({ ...config, publicOrigin });
+    await expect(auth(request(trusted()))).resolves.toBeDefined();
+    await expect(auth(request({ ...trusted(), origin: publicOrigin }, "POST"))).resolves.toBeDefined();
+    await expect(auth(request({ ...trusted(), origin: publicOrigin }), true)).resolves.toBeDefined();
+    await expect(auth(request({ origin: publicOrigin }, "POST"))).rejects.toThrow("Sign in");
+    await expect(auth(request({ ...trusted(), origin: publicOrigin }, "POST", "100.64.0.2"))).rejects.toThrow("Sign in");
+    for (const origin of [undefined, publicOrigin.replace("http:", "https:"), `${publicOrigin}/`, "http://100.64.0.3:8080"]) {
+      const headers = { ...trusted(), ...(origin === undefined ? {} : { origin }) };
+      await expect(auth(request(headers, "POST"))).rejects.toThrow("Sign in");
+      await expect(auth(request(headers), true)).rejects.toThrow("Sign in");
+    }
+  });
+
+  it.each([
+    "http://100.63.255.255", "http://100.128.0.0", "http://99.127.0.1", "http://101.64.0.1",
+    "http://192.168.1.10", "http://10.0.0.1", "http://172.16.0.1", "http://127.0.0.1", "http://8.8.8.8",
+    "http://localhost", "http://nas.fixture.ts.net", "http://100.64.0.1.example.test", "http://[::1]", "http://[::ffff:100.64.0.1]",
+    "http://user@100.64.0.1", "http://user:pass@100.64.0.1", "http://100.64.0.1/", "http://100.64.0.1/path",
+    "http://100.64.0.1?query=value", "http://100.64.0.1#fragment", "http://100.64.0.1:80", "http://100.64.0.1:08080",
+    "http://100.64.1", "http://1681915905", "http://0x64400001", "http://0144.0100.0.1", "http://100.064.0.1", "http://100.64.0.1.",
+    "http://%31%30%30.64.0.1", " http://100.64.0.1", "http://100.64.0.1\n", "ftp://100.64.0.1",
+  ])("rejects unapproved or noncanonical HTTP origin %s", (publicOrigin) => {
+    expect(() => createTailscaleAuthenticator({ ...config, publicOrigin })).toThrow();
+  });
+
+  it("keeps Cloudflare origins HTTPS-only even for a Tailscale address", () => {
+    expect(() => createAccessAuthenticator({ publicOrigin: "http://100.64.0.1", teamDomain: "https://fixture.cloudflareaccess.com", audience: "fixture", email: config.email })).toThrow("HTTPS");
   });
 
   it("loads only explicitly selected authentication config and never falls back when it is incomplete", async () => {

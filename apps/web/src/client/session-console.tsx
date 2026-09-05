@@ -34,6 +34,7 @@ import {
   type UIEvent,
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { v4 as randomUUID } from "uuid";
 import remarkGfm from "remark-gfm";
 
 import {
@@ -453,7 +454,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (prepared.some((file) => file.size > imageLimits.bytes)) throw new Error(`This model accepts images of at most ${Math.floor(imageLimits.bytes / 1024)} KiB`);
       if (imageLimits.mediaTypes && prepared.some((file) => !imageLimits.mediaTypes!.includes(file.type))) throw new Error("This image type is not supported by the applied model");
       if ([...draftsRef.current.map((item) => item.file), ...prepared].reduce((total, file) => total + file.size, 0) > 50 * 1_024 * 1_024) throw new Error("Image attachments exceed 50 MiB");
-      const next = [...draftsRef.current, ...prepared.map((file) => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) }))];
+      const next = [...draftsRef.current, ...prepared.map((file) => ({ id: randomUUID(), file, url: URL.createObjectURL(file) }))];
       draftsRef.current = next;
       setDraftImages(next);
       setActionStatus(imageLimits.support === "unknown" ? "Image support is unreported for this model" : "");

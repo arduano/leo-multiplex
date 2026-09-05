@@ -9,9 +9,10 @@ const closes: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(closes.splice(0).map((close) => close())); });
 const trusted = () => ({ "Tailscale-User-Login": config.email });
 
-async function fixture(shortExpiry = false) {
-  const authenticate = createTailscaleAuthenticator(config);
-  const surface = createPersonalHttpSurface(new AccessGatewayProjection([]), "tailscale-fixture", config,
+async function fixture(shortExpiry = false, publicOrigin = config.publicOrigin) {
+  const selectedConfig = { ...config, publicOrigin };
+  const authenticate = createTailscaleAuthenticator(selectedConfig);
+  const surface = createPersonalHttpSurface(new AccessGatewayProjection([]), "tailscale-fixture", selectedConfig,
     shortExpiry ? async (request, websocket) => ({ ...await authenticate(request, websocket), expiresAt: Date.now() + 200 }) : authenticate);
   closes.push(() => surface.close());
   await new Promise<void>((resolve) => surface.server.listen(0, "127.0.0.1", resolve));
@@ -30,6 +31,22 @@ async function rejectedSocket(url: string, headers: Record<string, string>) {
 }
 
 describe("Tailscale HTTP/WebSocket edge", () => {
+  it("serves authenticated HTTP tailnet origins and upgrades ws with the exact HTTP origin", async () => {
+    const publicOrigin = "http://100.100.20.30:8080";
+    const url = await fixture(false, publicOrigin);
+    const headers = { ...trusted(), origin: publicOrigin };
+    expect((await fetch(`${url}/auth/check`, { headers, method: "POST" })).status).toBe(204);
+    expect(await (await fetch(`${url}/auth/session`, { headers })).json()).toEqual({ method: "tailscale" });
+    expect((await fetch(`${url}/auth/check`, { headers: { ...headers, "Tailscale-User-Login": "other@example.test" } })).status).toBe(401);
+    for (const origin of ["https://100.100.20.30:8080", "http://100.100.20.30", "http://100.100.20.31:8080"]) {
+      expect((await fetch(`${url}/auth/check`, { method: "POST", headers: { ...trusted(), origin } })).status).toBe(401);
+      expect(await rejectedSocket(url, { ...trusted(), origin })).toBe(401);
+    }
+    const socket = new WebSocket(url.replace("http", "ws") + "/trpc", { headers });
+    await new Promise<void>((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
+    await new Promise<void>((resolve) => { socket.once("close", resolve); socket.close(); });
+  });
+
   it("requires the owner login on the trusted loopback listener and protects auth discovery", async () => {
     const url = await fixture();
     expect(await (await fetch(`${url}/healthz`)).json()).toEqual({ ok: true });

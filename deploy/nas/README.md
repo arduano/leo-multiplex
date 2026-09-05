@@ -1,34 +1,53 @@
 # home-nas deployment
 
-## Tailscale first
+## Tailscale IP access
 
 Use `compose.tailscale.yaml` as the standalone Compose file. Copy
-`.env.tailscale.example` to `.env` and set the immutable image, exact HTTPS
-Tailscale origin, allowed Tailscale login, and `LEO_GATEWAY_P2P_BIND` set to
-the NAS Tailscale IPv4 followed by `:0` (`tailscale ip -4` gives the address). Do not combine the two Compose
-files. This mode needs no Cloudflare account configuration.
+`.env.tailscale.example` to `.env`, set the immutable image and allowed Tailscale
+login, and use the NAS address from `tailscale ip -4` for these settings:
+
+```dotenv
+LEO_PUBLIC_ORIGIN=http://100.YOUR_NAS_IP:8444
+LEO_GATEWAY_P2P_BIND=100.YOUR_NAS_IP:0
+```
+
+The deployed personal address is **http://100.82.173.47:8444/**. Access goes through
+Tailscale Serve's authenticated HTTP listener, with WireGuard encryption across
+the tailnet. MagicDNS and HTTPS certificates are not required for this address.
+The app still checks the owner login, actual loopback proxy connection, and exact
+browser origin. The backend remains inaccessible directly over the LAN/tailnet.
+
+Copy `tailscale-ip.py` into this NAS project and run it as the configured Tailscale
+operator. It adds only the dedicated HTTP port 8444 and its hostname/IP handlers:
 
 ```sh
 docker compose -f compose.tailscale.yaml config --quiet
 docker compose -f compose.tailscale.yaml up -d
-tailscale serve --bg --https=8443 http://127.0.0.1:4328
+python3 tailscale-ip.py
 ```
 
-The gateway uses host networking but binds HTTP only to `127.0.0.1:4328`.
-The transport binds only to the configured Tailscale address, avoiding automatic
-advertisement of the NAS's many Docker bridge interfaces. The personal gateway
-composes published source clients and projection APIs for this explicit binding;
-package versions and transport security remain unchanged.
-Tailscale Serve terminates HTTPS and supplies its authenticated user identity.
-The app checks the exact allowed login and browser origin. It rejects requests
-without Serve identity and requests arriving through a non-loopback connection.
-Do not expose the backend on a Docker bridge, LAN, or public address, and do not
-enable Funnel. Local NAS processes are inside this trusted personal boundary.
-See [Serve identity headers](https://tailscale.com/kb/1312/serve#identity-headers).
+Tailscale 1.102 HTTP Serve appends the tailnet suffix to an IP Host header during
+routing. The script installs that alias through the LocalAPI using the existing
+configuration's ETag. It preserves unrelated routes, rejects conflicting handlers
+and Funnel, and never retries a concurrent configuration overwrite. The ordinary
+`tailscale serve --http=8444` command creates only the hostname route. The gateway
+container does not receive the LocalAPI socket.
 
-Port 8443 is dedicated to this application; preserve any existing Serve listener
-on 443. Stop only this route with `tailscale serve --https=8443 off` when migrating
-to Cloudflare. Never run `tailscale serve reset` as part of this deployment.
+The gateway uses host networking and binds HTTP only to `127.0.0.1:4328`. Its
+transport binds to the configured Tailscale address to avoid advertising the
+NAS's many Docker bridges. Personal process composition uses the published source
+clients and projection APIs; package versions and transport security are unchanged.
+Trusted NAS-local processes remain inside the authentication boundary. Do not
+expose the backend through another proxy or Docker bridge mapping, or enable Funnel.
+
+For optional HTTPS later, enable MagicDNS/certificates, change the exact public
+origin to the NAS HTTPS hostname, and use
+`tailscale serve --bg --https=8443 http://127.0.0.1:4328`. Preserve the existing
+port 443 route. Remove only the IP route with `python3 tailscale-ip.py --remove`,
+or only the project's HTTPS route with `tailscale serve --https=8443 off`.
+Never run `tailscale serve reset` for this project. See
+[Tailscale authentication](../../docs/Tailscale-Authentication.md) for the trust
+boundary and HTTP browser behavior.
 
 ## Image and common state
 

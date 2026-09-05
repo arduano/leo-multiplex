@@ -47,7 +47,7 @@ try {
   await surface.close();
 }
 
-const tailConfig = { mode: "tailscale", publicOrigin: "https://nas.example.ts.net:8443", email: "owner@example.test" };
+const tailConfig = { mode: "tailscale", publicOrigin: "http://100.64.0.2:8444", email: "owner@example.test" };
 await assert.rejects(runPersonalServer({ LEO_AUTH_MODE: "tailscale", LEO_PUBLIC_ORIGIN: tailConfig.publicOrigin, LEO_ACCESS_EMAIL: tailConfig.email, LEO_HTTP_BIND: "0.0.0.0" }, new AbortController().signal), /loopback/);
 const tailSurface = createPersonalHttpSurface(new AccessGatewayProjection([]), "tailscale-smoke", tailConfig);
 try {

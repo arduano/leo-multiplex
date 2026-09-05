@@ -8,6 +8,8 @@ The fixture starts a temporary loopback Vite server and intercepts all API and
 WebSocket requests. It contacts no host, provider, Codex process, or auth home.
 It verifies:
 
+- Image attachment and stable launch construction with HTTPS-only UUID and hash
+  APIs unavailable, as on a Tailscale HTTP origin.
 - Six responsive viewports, visible composer, no document overflow, keyboard
   sheet dismissal/focus restoration, and no serious or critical axe findings.
 - Stale host rows remain visible in browser memory with session and metadata

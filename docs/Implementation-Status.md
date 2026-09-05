@@ -1,8 +1,9 @@
 # Implementation status — 2026-09-05
 
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
-The NAS gateway is deployed and healthy; permanent host activation and browser
-access are pending the operator's sudo rebuild and Tailscale MagicDNS/HTTPS settings. Cloudflare is postponed until the Tailscale trial works.
+The NAS gateway is deployed at **http://100.82.173.47:8444/** through Tailscale
+Serve. MagicDNS and HTTPS certificates are unnecessary for this IP route. The
+operator's NixOS rebuild is in progress; permanent runtime activation is pending. Cloudflare is postponed until the Tailscale trial works.
 Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Implemented boundary
@@ -24,11 +25,11 @@ Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Verification and its limits
 
-The implementation passed application typechecking, 33 tests in ten files, and
+The implementation passed application typechecking, 70 tests in ten files, and
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
-expiry. Browser qualification covers six viewport screenshots and 14 checks,
+expiry. Browser qualification covers six viewport screenshots and 15 checks,
 with no serious or critical axe findings. These checks do not prove real-model
 behavior through the new deployment.
 
@@ -78,25 +79,26 @@ unauthenticated rejection, WebSocket upgrade, main-pc source selection, and
 reconnection after control restart with enrollment closed. This used only the
 new catalog service temporarily; no runtime or Codex session was launched. The
 gateway retains its enrolled identity and safely shows the host as unavailable
-while waiting for permanent activation. These origin checks do not establish
-a working browser connection through Tailscale Serve.
+while waiting for permanent activation. The IP rollout additionally verifies authenticated browser and WebSocket access
+through Tailscale Serve. Image draft IDs use secure browser randomness that is
+available on an HTTP origin; browser qualification also disables the HTTPS-only
+UUID/hash APIs while exercising attachments and stable launch requests.
 
-The host portion is unchanged from the public dotfiles pin whose full system
-build passed. The newer gateway-only revision does not require another host
+The host code and Nix integration are unchanged from the public dotfiles pin
+whose full system build passed. The UI now directly declares the same already
+locked UUID dependency; no existing dependency version changed. The newer gateway-only revision does not require another host
 build or repinning before the operator's prepared rebuild.
 
 ## Remaining rollout
 
-1. The public host pin and full system build are ready. The operator runs
+1. The public host pin and full system build are ready; the operator is running
    `sudo nixos-rebuild switch --flake ~/.dotfiles#main-pc`.
 2. Pair the new runtime briefly through the new control service and close
    enrollment. The NAS gateway is already enrolled.
-3. Enable Tailscale MagicDNS and HTTPS certificates in the tailnet admin DNS
-   settings. The dedicated Serve port 8443 is configured; the existing port 443
-   route is preserved. Follow [NAS deployment](../deploy/nas/README.md).
-4. Verify the real Tailscale browser path, host availability, and web session
-   workflow. The operator will create and try the first managed sessions.
-   Existing CLI/tmux sessions remain outside this application's ownership.
+3. Verify host availability and let the operator create and try the first managed
+   sessions at **http://100.82.173.47:8444/**. Existing CLI/tmux sessions remain
+   outside this application's ownership.
 
-Cloudflare Tunnel/DNS/Access setup remains the operator's later task. Tailscale
-access must not be replaced with unauthenticated LAN or public exposure.
+The IP route uses owner identity supplied by Tailscale Serve and encryption from
+WireGuard. Its backend stays on NAS loopback. HTTPS/MagicDNS and Cloudflare can
+be configured later; no unauthenticated LAN or public access is enabled.

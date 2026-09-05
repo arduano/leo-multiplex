@@ -20,6 +20,13 @@ are explicitly inside the trust boundary. The application does not trust
 forwarded IPs, display names, or Cloudflare headers as a Tailscale identity
 fallback. LAN, tailnet, and Docker socket peers fail authentication.
 
+Tailscale public origins may use HTTPS, or HTTP only with a canonical IPv4
+address in `100.64.0.0/10`. HTTP hostnames, LAN/public addresses, alternate IP
+spellings, and URLs containing credentials or extra components are rejected.
+Tailscale Serve's tailnet connection remains WireGuard encrypted for HTTP access;
+the browser nevertheless sees a non-secure context. The HTTP exception does not
+apply to Cloudflare mode, and neither socket-peer nor identity validation changes.
+
 Tailscale WebSockets reconnect at least every five minutes to recheck Serve
 identity and the email allowlist. Tagged clients and Funnel requests without
 user identity fail closed. This mode supports ASCII Tailscale login addresses.
