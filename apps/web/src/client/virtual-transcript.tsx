@@ -26,6 +26,8 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
   const version = useSyncExternalStore(store.subscribe, store.snapshot, store.snapshot);
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(true);
+  const userScrolling = useRef(false);
+  const touchY = useRef<number | undefined>(undefined);
   const previousActivity = useRef(store.activity);
   const previousCount = useRef(store.count);
   const previousHistoryCount = useRef(store.historyCount);
@@ -46,6 +48,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
   });
   const jump = useCallback(() => {
     following.current = true;
+    userScrolling.current = false;
     setUnread(0);
     if (store.count) virtualizer.scrollToIndex(store.count - 1, { align: "end" });
   }, [store, virtualizer]);
@@ -73,13 +76,36 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
     observer.observe(element);
     return () => observer.disconnect();
   }, [jump]);
+  const beginUserScroll = (towardEarlier = false) => {
+    userScrolling.current = true;
+    if (towardEarlier) following.current = false;
+  };
   const rows = virtualizer.getVirtualItems();
   return <div className="relative min-h-0 flex-1">
     <div ref={viewport} className="h-full overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--surface-canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
       style={{ overflowAnchor: "none" }}
+      onWheel={(event) => { if (event.deltaY < 0 || !following.current && event.deltaY > 0) beginUserScroll(event.deltaY < 0); }}
+      onTouchStart={(event) => { touchY.current = event.touches[0]?.clientY; }}
+      onTouchMove={(event) => {
+        const nextY = event.touches[0]?.clientY;
+        if (nextY !== undefined && touchY.current !== undefined && (nextY > touchY.current || !following.current)) beginUserScroll(nextY > touchY.current);
+        touchY.current = nextY;
+      }}
+      onPointerDown={(event) => { if (event.target === event.currentTarget) beginUserScroll(); }}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+          const earlier = ["ArrowUp", "PageUp", "Home"].includes(event.key) || event.key === " " && event.shiftKey;
+          if (earlier || !following.current) beginUserScroll(earlier);
+        }
+      }}
       onScroll={(event) => {
         const element = event.currentTarget;
-        following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+        // New pages, image measurements, and virtual scroll correction also
+        // emit scroll events. Only an operator gesture can leave latest-follow.
+        if (userScrolling.current) {
+          following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+          if (following.current) userScrolling.current = false;
+        }
         const row = virtualizer.getVirtualItems().find((item) => item.end > element.scrollTop);
         if (row) anchor.current = { id: String(row.key), offset: element.scrollTop - row.start };
         if (following.current) setUnread(0);

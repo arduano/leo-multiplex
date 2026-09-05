@@ -46,8 +46,9 @@ integration suites.
 isolated receipt directory and opens a disposable 50,000-turn / 100,001-item
 conversation. It uses the published oldest-first 100-item native paging
 contract. No browser-only shortcuts inject the transcript into React state.
-The suite checks initial bounded loading, explicit cancellation, cancellation
-on session switch, the complete cursor chain past 100 pages, bounded mounted
+The suite checks automatic loading to the latest messages, explicit cancellation,
+single-page reads after cancellation, cancellation on session switch, automatic
+tail alignment on reselection, the complete cursor chain past 100 pages, bounded mounted
 messages/DOM, access to first and last items, paged multi-megabyte output,
 streaming while typing, scroll anchoring, no full-history request on native turn
 completion, scrolling through the complete history, and mobile layout.
@@ -65,7 +66,7 @@ the viewport to keep deep scrolling responsive. These are repeatable qualificati
 bounds on the recorded machine/browser, not a guarantee that every device or
 arbitrary native payload can never pause. Native loading still requires network
 round trips, and the current API makes reaching recent history in an existing
-large thread an explicit, cancellable forward scan.
+large thread an automatic, cancellable forward scan.
 
 `node tests/browser/transcript-layout.mjs` checks the geometry of an 801-item
 production-build fixture with varied Markdown and tool heights. It checks both

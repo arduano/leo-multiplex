@@ -71,6 +71,11 @@ const profile = { providerId: "leo.local", profileId: "workspace", contractVersi
 const historyRequests = [];
 const unexpectedRequests = [];
 let historyDelay = 25;
+// Hold later native pages while checking the initial layout and a live item
+// whose historical position is not loaded yet. Automatic scanning resumes as
+// soon as this fixture gate opens, without an operator Load to latest action.
+let releaseContinuedHistory;
+const continuedHistoryGate = new Promise((resolve) => { releaseContinuedHistory = resolve; });
 let eventSequence = 0;
 const subscriptions = new Set();
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
@@ -128,6 +133,7 @@ await page.route("**/trpc/**", async (route) => {
         }
         historyRequests.push({ sessionId: input.sessionId, cursor: input.request.cursor ?? null, time: performance.now() });
         if (historyDelay) await new Promise((resolve) => setTimeout(resolve, historyDelay));
+        if (input.sessionId === session.sessionId && input.request.cursor) await continuedHistoryGate;
         if (input.sessionId === other.sessionId) {
           data = { harness: "codex", vendorSessionId: other.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "other-turn", item: { type: "agentMessage", id: "other-message", phase: "final_answer", text: "A separate disposable conversation." } }], nextCursor: null } } };
         } else {
@@ -232,10 +238,19 @@ try {
   sendNative("item/completed", { turnId: reconciled.turnId, item: reconciled.item });
   await waitCount(101);
   await assertLayout("live item before its historical position is known");
-  await page.getByTestId("load-all-history").click();
+  releaseContinuedHistory();
   await waitCount(fixtureItems);
   assert.equal(historyRequests.length, pages.length);
   await assertLayout("native history reconciles the earlier live item by ID");
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector('[data-testid="chat-transcript"]');
+    const tail = transcript?.querySelector('[data-entry-id="codex:huge-output"]');
+    if (!transcript || !tail?.checkVisibility({ contentVisibilityAuto: true })) return false;
+    const viewport = transcript.getBoundingClientRect();
+    const bounds = tail.getBoundingClientRect();
+    return bounds.bottom > viewport.top && bounds.top < viewport.bottom && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
+  });
+  checks.push({ name: "automatic initial loading displays the last native item after variable-height reconciliation", passed: true });
 
   const jumps = [0, 0.95, 0.1, 0.9, 0.2, 0.8, 0.35, 0.65, 0.48, 0.52, 1, 0];
   for (const [index, fraction] of jumps.entries()) {

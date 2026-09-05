@@ -62,7 +62,8 @@ const runtime = { runtimeNodeId: id(5), name: "Disposable test host", presence: 
 const source = { sourceId: "fixture", displayName: "Disposable test host", endpointId: "fixture", state: "selected", manifest: { coveredControlNodeIds: [id(2)] }, updatedAt: timestamp };
 const profile = { providerId: "leo.local", profileId: "workspace", contractVersion: 1, requestSchemaHash: "a".repeat(64), implementationVersion: "1.0.0", harnesses: ["codex"], available: true, capabilities: [] };
 const historyRequests = [];
-let historyDelay = 0;
+let historyDelay = 100;
+let continuedHistoryGate = null;
 let eventSequence = 0;
 const subscriptions = new Set();
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
@@ -115,6 +116,7 @@ await page.route("**/trpc/**", async (route) => {
         }
         historyRequests.push({ sessionId: input.sessionId, cursor: input.request.cursor ?? null, time: performance.now() });
         if (historyDelay) await new Promise((resolve) => setTimeout(resolve, historyDelay));
+        if (input.sessionId === session.sessionId && input.request.cursor && continuedHistoryGate) await continuedHistoryGate;
         if (input.sessionId === other.sessionId) {
           data = { harness: "codex", vendorSessionId: other.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "other-turn", item: { type: "agentMessage", id: "other-message", phase: "final_answer", text: "A separate disposable conversation." } }], nextCursor: null } } };
         } else {
@@ -178,9 +180,10 @@ async function stopMetrics(name) {
 }
 try {
   await page.goto(`http://127.0.0.1:${port}`);
-  await waitCount(100);
-  assert.equal(historyRequests.length, 1, "Opening a giant conversation must fetch only its first page");
-  await boundedDOM("initial 100-item page");
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="chat-transcript"]')?.getAttribute("data-total-entries")) >= 200);
+  assert(historyRequests.length >= 2, "Opening a giant conversation must automatically continue beyond its first native page");
+  await boundedDOM("automatic initial history loading");
+  checks.push({ name: "opening a session automatically scans bounded native pages toward latest", passed: true });
   await page.setViewportSize({ width: 844, height: 390 });
   await page.getByTestId("history-pagination").waitFor();
   await page.getByTestId("prompt-input").fill("Draft while earlier history is still loading");
@@ -193,9 +196,6 @@ try {
   checks.push({ name: "partial native history leaves at least 120px conversation in short landscape", transcriptHeight: partialTranscript.height });
   await page.getByTestId("prompt-input").fill("");
   await page.setViewportSize({ width: 1440, height: 900 });
-  historyDelay = 100;
-  await page.getByTestId("load-all-history").click();
-  await page.waitForTimeout(300);
   await page.getByTestId("cancel-history-load").click();
   await page.getByTestId("load-all-history").waitFor();
   const stoppedRequests = historyRequests.length;
@@ -203,7 +203,16 @@ try {
   await page.waitForTimeout(350);
   assert.equal(historyRequests.length, stoppedRequests, "Cancellation continued fetching pages");
   assert.equal(await count(), stoppedCount, "Cancelled history response changed visible history");
-  checks.push({ name: "load cancellation stops requests and ignores late responses", loadedItems: stoppedCount });
+  checks.push({ name: "automatic load cancellation stops requests and ignores late responses", loadedItems: stoppedCount });
+
+  await page.getByTestId("load-more-history").click();
+  await waitCount(stoppedCount + 100);
+  await page.getByTestId("load-all-history").waitFor();
+  const nextPageRequests = historyRequests.length;
+  await page.waitForTimeout(350);
+  assert.equal(historyRequests.length, nextPageRequests, "Next 100 continued into an automatic full scan after cancellation");
+  assert.equal(await count(), stoppedCount + 100);
+  checks.push({ name: "stopped automatic loading still allows one explicit bounded page", passed: true });
 
   await page.getByTestId("load-all-history").click();
   await page.waitForTimeout(150);
@@ -216,17 +225,19 @@ try {
   assert.equal(await count(), 1, "Old binding history polluted the selected session");
   checks.push({ name: "switching sessions cancels former history without cross-session rows", passed: true });
   historyDelay = 0;
+  let releaseContinuedHistory;
+  continuedHistoryGate = new Promise((resolve) => { releaseContinuedHistory = resolve; });
+  const fullStartRequest = historyRequests.length;
   await page.getByTestId("session-card").filter({ hasText: "50,000-turn disposable fixture" }).click();
   await waitCount(100);
-  const fullStartRequest = historyRequests.length - 1;
   await page.getByTestId("prompt-input").fill("");
   await startMetrics();
   const loadingStart = performance.now();
-  await page.getByTestId("load-all-history").click();
+  continuedHistoryGate = null;
+  releaseContinuedHistory();
   // Keep interaction active during import, not just after fixture ingestion.
   const loadingTyping = page.getByTestId("prompt-input").pressSequentially("Typing remains available while a very long thread loads.", { delay: 25 });
   await loadingTyping;
-  await scrollTo(0);
   await waitCount(fixtureItems, 120_000);
   measurements.loadMs = performance.now() - loadingStart;
   const loadMetrics = await stopMetrics("historyLoading");
@@ -238,7 +249,15 @@ try {
   assert.equal(fullRequests.length, pages.length, "Full history missed or replayed pages");
   assert.deepEqual(fullRequests.map((item) => item.cursor), pages.map((_, index) => index ? `offset:${index * 100}` : null));
   assert.equal(await page.getByTestId("history-pagination").count(), 0, "Complete history still presented as partial");
-  checks.push({ name: "50,000 turns loaded in exact native order beyond former 100-page cap", turns: fixtureTurns, items: fixtureItems, pageRequests: fullRequests.length });
+  await page.waitForFunction(() => {
+    const transcript = document.querySelector('[data-testid="chat-transcript"]');
+    const tail = transcript?.querySelector('[data-entry-id="codex:huge-output"]');
+    if (!transcript || !tail?.checkVisibility({ contentVisibilityAuto: true })) return false;
+    const viewport = transcript.getBoundingClientRect();
+    const bounds = tail.getBoundingClientRect();
+    return bounds.bottom > viewport.top && bounds.top < viewport.bottom && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
+  });
+  checks.push({ name: "reselected 50,000-turn session automatically loads every native page and displays latest", turns: fixtureTurns, items: fixtureItems, pageRequests: fullRequests.length });
   await boundedDOM("all 100,001 items loaded");
   await scrollTo(0);
   await page.locator('[data-entry-id="codex:user-0"]').waitFor();

@@ -334,7 +334,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (mounted.current) setLoadingAll(false);
       if (mounted.current && reconcilePending.current && !controller.signal.aborted) {
         reconcilePending.current = false;
-        void readHistory(false, true);
+        void readHistory(true, true);
       }
     }
   }, [pager, store]);
@@ -346,7 +346,9 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     // Let the effect commit before issuing a request. StrictMode's setup /
     // cleanup probe otherwise aborts the first read and leaves its replacement
     // waiting behind that same in-flight promise.
-    const start = setTimeout(() => { void readHistory(false, historyGeneration > 0); }, 0);
+    // The published API pages oldest first. Keep following bounded pages so
+    // opening a session reaches its actual latest messages without another click.
+    const start = setTimeout(() => { void readHistory(true, historyGeneration > 0); }, 0);
     return () => { clearTimeout(start); };
   }, [historyGeneration, bindingIdentity, readHistory]);
   useEffect(() => () => { historyRead.current?.abort(); }, []);
@@ -642,7 +644,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       ) : null}
 
       {!historyDone || historyState === "failed" ? <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-subtle)] px-4 py-1.5 text-xs text-[var(--text-secondary)] [@media(max-height:500px)]:py-0" data-testid="history-pagination">
-        <span>{historyCount.toLocaleString()} items loaded · Oldest first</span>
+        <span>{loadingAll ? "Loading latest messages…" : "Earlier messages loaded"} · {historyCount.toLocaleString()} items</span>
         {historyState === "loading" ? <button className="min-h-9 text-[var(--accent)]" onClick={() => historyRead.current?.abort()} data-testid="cancel-history-load">{loadingAll ? "Stop loading" : "Cancel"}</button> : <>
           <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory()} data-testid="load-more-history">{historyState === "failed" ? "Retry history" : "Next 100"}</button>
           <button className="min-h-9 text-[var(--accent)]" onClick={() => void readHistory(true)} data-testid="load-all-history">Load to latest</button>

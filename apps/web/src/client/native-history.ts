@@ -142,7 +142,7 @@ export interface NativeHistoryPage {
 
 /** Published v0.2.0 Codex items/list forces ascending order; Copilot pages
  * getEvents() from offset zero. Cursors are opaque. There is no native tail
- * request in this contract, so loading toward the latest is explicit. */
+ * request in this contract, so reaching the latest follows bounded pages. */
 export class NativeHistoryPager {
   private cursor: string | undefined;
   private terminalCursor: string | undefined;

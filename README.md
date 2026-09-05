@@ -50,9 +50,10 @@ and next-turn settings semantics.
 
 Long conversations render a measured window of up to 200 messages. Native updates
 touch individual items and are batched before painting; large message bodies use
-bounded parts. The pinned native history API pages oldest first. Opening a thread
-reads 100 items; **Load to latest** incrementally reads the remaining pages and
-can be stopped. Live messages remain available while history loads. See the
+bounded parts. Opening a thread automatically reads toward its latest messages
+in bounded pages and follows the bottom. Loading can be stopped; scrolling up
+keeps your place while it continues. **Load to latest** continues a stopped load.
+Live messages remain available while history loads. See the
 [browser qualification](tests/browser/README.md) for the 50,000-turn fixture and
 the measured performance limits.
 

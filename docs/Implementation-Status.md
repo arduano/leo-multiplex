@@ -425,7 +425,7 @@ p95 input-to-paint (90.4 ms maximum), 33.4 ms p95 frame interval, and no long
 tasks. Full history loading took 28.10 seconds on this run. The checksummed
 artifact manifest is `receipts/long-thread/2026-09-05T14-04-44.017Z`.
 
-The current NAS UI image is
+The transcript-layout rollout used image
 `sha256:e22446b199de3537b9d9293813189e513dbb6ab2c3e00d45bf69b68e7c9bd75b`,
 built from source `d686eb7d36333b6746ca3c6349afbdf0b11401b7`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33970820485) passed.
@@ -436,3 +436,33 @@ reachability and Origin rejection pass. Only the NAS web/gateway container was
 recreated; control/runtime process IDs and start times remain unchanged. No
 production mutations or model calls were issued. Checksummed rollout evidence is
 `receipts/transcript-layout-deployment/2026-09-05T14-07-00Z`.
+
+## Open sessions at their latest messages
+
+Selecting or reloading a session now automatically follows bounded native pages
+to the end, instead of stopping after the first 100 oldest items. The history
+bar shows “Loading latest messages…” and keeps cancellation available. After
+stopping, the existing single-page and load-to-latest controls remain usable.
+Switching sessions cancels the old binding's request; ordinary completed turns
+still do not reread loaded history.
+
+The viewport follows the newest messages throughout loading. Wheel, touch,
+scrollbar, and keyboard gestures can move the reader away; native page growth,
+image measurement, or responsive layout scroll events alone cannot disable
+follow-to-latest. Reading earlier content preserves its anchor while new data
+arrives. Published dependencies and host/runtime behavior are unchanged.
+
+Typechecking, 264 tests, the production build, and the isolated container smoke
+checks pass. The browser suite passes 45 checks, and the geometry fixture passes
+124 checks including automatic final-message visibility after native/live
+reconciliation. All six viewport screenshots were inspected. Receipts are
+`receipts/browser/2026-09-05T23-49-08.973Z` and
+`receipts/transcript-layout/2026-09-05T23-49-10.111Z`.
+
+The 50,000-turn / 100,001-item suite automatically reaches the final message
+through all 1,001 native pages without a load button click and keeps at most 200
+messages mounted. This run took 45.97 seconds; typing during import measured
+21.9 ms p95 input-to-paint. Simultaneous streaming, scrolling, and typing measured
+27.5 ms p95 (40.3 ms maximum), 33.3 ms p95 frame interval, and no long tasks.
+Cancellation, explicit single-page reads, switching away, and reselection pass.
+The final-source receipt is `receipts/long-thread/2026-09-05T23-50-02.865Z`.
