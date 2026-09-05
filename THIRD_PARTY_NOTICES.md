@@ -1,7 +1,7 @@
 # Third-party notices
 
-The personal React UI derives from Agent Multiplex by Arduano, under its MIT
-license. Its browser dependency notices are retained in
+The personal React UI and gateway process supervision derive from Agent
+Multiplex by Arduano, under its MIT license. Its browser dependency notices are retained in
 `apps/web/THIRD_PARTY_LICENSES.txt` and shipped with the static assets.
 
 Codex CLI is pinned independently to 0.152.0. Codex's Apache-2.0 license and NOTICE

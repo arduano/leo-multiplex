@@ -13,6 +13,7 @@ services:
       LEO_GATEWAY_STATE_DIR: /data
       LEO_HTTP_BIND: 127.0.0.1
       LEO_HTTP_PORT: "4328"
+      LEO_GATEWAY_P2P_BIND: ${LEO_GATEWAY_P2P_BIND:?Set the NAS Tailscale IPv4 with port 0}
     # Tailscale Serve supplies authenticated identity to a host-loopback-only
     # listener. No Docker bridge port can bypass Serve and forge that identity.
     network_mode: host

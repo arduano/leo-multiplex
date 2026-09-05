@@ -30,6 +30,11 @@ browser origin; requests supplying another origin are rejected even for GETs.
 Duplicate authentication headers are rejected. Missing authentication fails
 closed and switching modes never enables unauthenticated access.
 
+The NAS transport binds to its configured Tailscale address instead of
+automatically advertising all Docker bridge interfaces. This is a local socket
+choice; source endpoint pins, enrollment, shared-secret authentication, and
+zero-authority projection remain enforced by the published framework packages.
+
 The gateway receives operator scopes at two boundaries: its control-source grant
 and each authenticated request. Neither grants catalog authority. Host endpoint
 pins and a private shared secret authenticate transport. Close enrollment after

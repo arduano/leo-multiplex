@@ -1,8 +1,8 @@
 # Implementation status — 2026-09-05
 
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
-Production activation is pending the operator's sudo rebuild and Tailscale
-MagicDNS/HTTPS settings. Cloudflare is postponed until the Tailscale trial works.
+The NAS gateway is deployed and healthy; permanent host activation and browser
+access are pending the operator's sudo rebuild and Tailscale MagicDNS/HTTPS settings. Cloudflare is postponed until the Tailscale trial works.
 Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Implemented boundary
@@ -24,7 +24,7 @@ Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Verification and its limits
 
-The implementation passed application typechecking, 32 tests in nine files, and
+The implementation passed application typechecking, 33 tests in ten files, and
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
@@ -63,15 +63,39 @@ Passing browser manifests/screenshots and local implementation verification
 inventories live in the ignored `receipts/` tree. Build and evaluation diagnostics
 live in `.cache/`. Neither directory is published.
 
+## NAS deployment verification
+
+The NAS host has enough Docker interfaces to exceed automatic transport route
+discovery's 32-address bound. The personal gateway now composes the published
+source-client, projection, identity, and operational-store APIs with an explicit
+Tailscale socket binding. The published framework and transport pins are unchanged.
+Its process test covers offline HTTP availability, zero authority, reconnect,
+stream reset, and clean shutdown.
+
+The new Compose container is running with host-loopback HTTP and a Tailscale-bound
+transport. Checks against the real NAS process passed health, owner authentication,
+unauthenticated rejection, WebSocket upgrade, main-pc source selection, and
+reconnection after control restart with enrollment closed. This used only the
+new catalog service temporarily; no runtime or Codex session was launched. The
+gateway retains its enrolled identity and safely shows the host as unavailable
+while waiting for permanent activation. These origin checks do not establish
+a working browser connection through Tailscale Serve.
+
+The host portion is unchanged from the public dotfiles pin whose full system
+build passed. The newer gateway-only revision does not require another host
+build or repinning before the operator's prepared rebuild.
+
 ## Remaining rollout
 
-1. Complete the application checks and Docker image using the final public lock.
-2. Update the dotfiles Leo pin and build, then let the operator run the sudo
-   rebuild. Pair only the new host/runtime/gateway and close enrollment.
+1. The public host pin and full system build are ready. The operator runs
+   `sudo nixos-rebuild switch --flake ~/.dotfiles#main-pc`.
+2. Pair the new runtime briefly through the new control service and close
+   enrollment. The NAS gateway is already enrolled.
 3. Enable Tailscale MagicDNS and HTTPS certificates in the tailnet admin DNS
-   settings. Use the dedicated Serve port 8443, preserving the existing port 443
-   route. Follow [NAS deployment](../deploy/nas/README.md).
-4. Verify the real NAS browser path, host availability, and web session workflow.
+   settings. The dedicated Serve port 8443 is configured; the existing port 443
+   route is preserved. Follow [NAS deployment](../deploy/nas/README.md).
+4. Verify the real Tailscale browser path, host availability, and web session
+   workflow. The operator will create and try the first managed sessions.
    Existing CLI/tmux sessions remain outside this application's ownership.
 
 Cloudflare Tunnel/DNS/Access setup remains the operator's later task. Tailscale

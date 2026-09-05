@@ -4,7 +4,8 @@
 
 Use `compose.tailscale.yaml` as the standalone Compose file. Copy
 `.env.tailscale.example` to `.env` and set the immutable image, exact HTTPS
-Tailscale origin, and allowed Tailscale login. Do not combine the two Compose
+Tailscale origin, allowed Tailscale login, and `LEO_GATEWAY_P2P_BIND` set to
+the NAS Tailscale IPv4 followed by `:0` (`tailscale ip -4` gives the address). Do not combine the two Compose
 files. This mode needs no Cloudflare account configuration.
 
 ```sh
@@ -14,6 +15,10 @@ tailscale serve --bg --https=8443 http://127.0.0.1:4328
 ```
 
 The gateway uses host networking but binds HTTP only to `127.0.0.1:4328`.
+The transport binds only to the configured Tailscale address, avoiding automatic
+advertisement of the NAS's many Docker bridge interfaces. The personal gateway
+composes published source clients and projection APIs for this explicit binding;
+package versions and transport security remain unchanged.
 Tailscale Serve terminates HTTPS and supplies its authenticated user identity.
 The app checks the exact allowed login and browser origin. It rejects requests
 without Serve identity and requests arriving through a non-loopback connection.
