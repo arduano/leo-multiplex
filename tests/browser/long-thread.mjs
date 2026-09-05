@@ -109,6 +109,10 @@ await page.route("**/trpc/**", async (route) => {
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
       case "sessions.readNativeHistory": {
+        if (input.request.includeTurns === false) {
+          data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { thread: { status: { type: "idle" }, turns: [] } } } };
+          break;
+        }
         historyRequests.push({ sessionId: input.sessionId, cursor: input.request.cursor ?? null, time: performance.now() });
         if (historyDelay) await new Promise((resolve) => setTimeout(resolve, historyDelay));
         if (input.sessionId === other.sessionId) {

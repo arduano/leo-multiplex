@@ -27,7 +27,7 @@ Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Verification and its limits
 
-The implementation passed application typechecking, 78 tests in eleven files, and
+The implementation passed application typechecking, 116 tests in thirteen files, and
 a production build. The cross-role mock test covers launch retry, metadata
 authority, stop/resume, unavailable-source rejection, catalog reopening, and
 archive release order. Authentication tests exercise signed HTTP/WS access and
@@ -148,7 +148,7 @@ messages; it no longer prevents the initial read. A failed read shows an explici
 unavailable state with a retry control and retries at a native lifecycle boundary.
 Once a page succeeds, ordinary turn completion does not replay loaded history.
 
-Current UI verification passed all 78 tests, typechecking, and a production build.
+The preceding history-loading UI verification passed all 78 tests, typechecking, and a production build.
 The viewport suite passes 22 checks with populated transcripts, including initial
 selection/reload without a catalog summary and recovery after unavailable initial
 history. Per-agent drafts, images, and exact-ID uncertain-command reconciliation
@@ -190,3 +190,47 @@ issued; no production transcript content or screenshots were recorded. The
 control/runtime PIDs and process start times match their pre-deployment values.
 Checksummed deployment evidence is
 `receipts/history-window-deployment/2026-09-05T11-11-34.831Z`.
+
+## Native error presentation
+
+Native Codex `error` and failed `turn/completed` events now produce a dedicated
+error notice and a persistent warning above the workspace. The warning separates
+capacity, usage, rate, session-budget, context, and authentication failures using
+native codes first, with explicit error-message wording as a fallback. Ordinary
+assistant/tool content is never scanned to infer a provider failure. Native
+messages and additional details render as plain text with bounded fields.
+
+Notifications for the same native thread/turn update one notice. Native
+`willRetry` is shown as an automatic retry already being performed by Codex;
+the UI never retries the prompt or resumes the session automatically. A failed
+completion keeps the earlier message if Codex omits its replacement error.
+Root warnings survive switching sessions in the same tab and clear on observed
+successful completion. Child errors remain separate transcript notices. Idle or
+new-turn status alone does not erase an earlier failure. This is a bounded
+observation cache in browser memory, not canonical state or browser storage.
+
+The released `0.2.0` Codex history endpoint only pages thread items; it omits
+past turn status/errors. A separate bounded native metadata read on selection
+and reconciliation detects `systemError`, even when the catalog says idle. When
+the original error message is unavailable, the UI explicitly directs the operator
+to check Terminal before continuing, without claiming to know its cause. Exact
+historical error recovery still needs a published framework route to native
+`thread/turns/list` with `itemsView: "notLoaded"`; no such host change or restart
+is included in this UI pass.
+
+Typechecking and 116 tests in thirteen files pass. The disposable browser suite
+passes 30 checks, including capacity/usage states, native retry/failure deduplication,
+per-binding warning/draft retention, successful recovery, and reload with an idle
+catalog but native systemError. Error-state screenshots across all six viewports
+were inspected; no serious or critical axe findings remain. The local passing
+browser receipt is `receipts/browser/2026-09-05T11-29-41.320Z`.
+
+The new scale reruns are diagnostics, not passing qualification: under heavy
+background CPU load, two runs reached the strict 50 ms p95 concurrent-frame
+threshold (the later run measured 17.8 ms p95 / 27.5 ms maximum input-to-paint).
+An attempt confined to eight busy CPUs failed the history-import long-task bound.
+No performance threshold was relaxed and no unrelated process was stopped.
+The preceding passing 200-message qualification remains historical evidence;
+this error-presentation source has not received a new passing timing receipt.
+The indexed store and 200-row window are preserved, and a unit check verifies
+that normal live deltas do not notify the error banner/composer.

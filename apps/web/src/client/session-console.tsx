@@ -19,6 +19,7 @@ import {
   useCallback,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
 } from "react";
 import { v4 as randomUUID } from "uuid";
@@ -53,6 +54,8 @@ import { errorMessage, useApi } from "./api.js";
 import { ImageSessionProvider, prepareImageFile, modelImageLimits } from "./image-media.js";
 import { pendingInteractionRefetchInterval } from "./interaction-refresh.js";
 import { InteractionCards } from "./interactions.js";
+import { SessionErrorBanner } from "./session-error.js";
+import { sessionErrorState } from "./session-error-state.js";
 import {
   advanceNativeHistorySignal,
   NativeHistoryPager,
@@ -106,6 +109,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const { client, connectionKey } = useApi();
   const queryClient = useQueryClient();
   const [store] = useState(() => new TranscriptStore());
+  const [errors] = useState(() => sessionErrorState(`${connectionKey}:${bindingIdentity}`));
+  const sessionFailure = useSyncExternalStore(errors.subscribe, errors.snapshot, errors.snapshot);
   const [pager] = useState(() => session ? new NativeHistoryPager(client, session) : null);
   const historyRead = useRef<AbortController | null>(null);
   const historyLoaded = useRef(false);
@@ -243,6 +248,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           // A logical session may retain its ID across native runtime epochs.
           // Ignore buffered events belonging to another concrete binding.
           if (watchedRuntimeEpoch == null || item.runtimeEpoch !== watchedRuntimeEpoch) return;
+          errors.observe(item, session.vendorSessionId);
           queued.push(item);
           if (!frame) {
             frame = requestAnimationFrame(flush);
@@ -289,6 +295,26 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       queued = [];
     };
   }, [bindingIdentity, client, connectionKey, queryClient]);
+
+  // The published item pages omit turn failures. Read native status separately
+  // so a failed session cannot look healthy after reload. This is a bounded
+  // metadata request, never a full-history read or an agent command.
+  useEffect(() => {
+    if (session?.harness !== "codex") return;
+    const controller = new AbortController();
+    const generation = errors.generation;
+    const start = setTimeout(() => {
+      void client.sessions.readNativeHistory.query({
+        sessionId: session.sessionId,
+        request: { harness: "codex", includeTurns: false },
+      }, { signal: controller.signal }).then((result) => {
+        if (controller.signal.aborted) return;
+        const payload = result.payload.json as { thread?: { status?: unknown } } | null;
+        errors.observeStatus(payload?.thread?.status, generation);
+      }).catch(() => { /* History/connection controls own read failures. */ });
+    }, 0);
+    return () => { clearTimeout(start); controller.abort(); };
+  }, [bindingIdentity, client, errors, historyGeneration]);
 
   const readHistory = useCallback(async (all = false, reconcile = false) => {
     if (!pager) return;
@@ -551,7 +577,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               Terminal
             </Tabs.Trigger>
           </Tabs.List>
-          <StatusLabel tone={runtimeTone(session.runtimeStatus)}>{humanizeStatus(session.runtimeStatus)}</StatusLabel>
+          <StatusLabel tone={sessionFailure ? "bad" : runtimeTone(session.runtimeStatus)}>{sessionFailure ? "Error reported" : humanizeStatus(session.runtimeStatus)}</StatusLabel>
           <Popover.Root open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
             <Popover.Trigger asChild><button className="min-h-9 text-xs text-[var(--text-secondary)]" title="Connection and history details" data-testid="session-health">{readOnly ? "Offline" : streamState === "live" ? "Live" : "Connecting"}</button></Popover.Trigger>
             <Popover.Portal><Popover.Content sideOffset={8} collisionPadding={12} className="z-50 w-72 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-xs text-[var(--text-secondary)]">
@@ -580,6 +606,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           ) : null}
         </div>
       </header>
+
+      {sessionFailure ? <SessionErrorBanner failure={sessionFailure} onOpenTerminal={() => setWorkspaceView("terminal")} /> : null}
 
       <Tabs.Content value="chat" className="flex min-h-0 flex-1 flex-col outline-none">
       {historyError ? (

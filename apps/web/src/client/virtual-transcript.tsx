@@ -7,6 +7,7 @@ import { TranscriptImagePreview, isLocalImagePath } from "./image-media.js";
 import { type TimelineEntry } from "./transcript.js";
 import { TranscriptStore } from "./transcript-store.js";
 import { Badge, Button, classes } from "./ui.js";
+import { NativeErrorNotice } from "./session-error.js";
 
 export interface TranscriptHandle { followLatest(): void; }
 
@@ -138,6 +139,9 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
     setExpanded(next);
     store.rememberView(entry.id, { expanded: next });
   }, [lifecycle, entry.id, entry.pending, isFailed, store]);
+  if (entry.failure) return <article data-testid="chat-message" data-role="notice" data-entry-id={entry.id} className="min-w-0 max-w-full">
+    <NativeErrorNotice failure={entry.failure} />
+  </article>;
   if (isExecution) {
     return (
       <article

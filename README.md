@@ -37,6 +37,12 @@ rail and details collapsed initially. Text drafts, image attachments, and uncert
 command IDs survive switching agents in the same tab. They remain in memory and
 do not survive a page reload.
 
+Native failures have a persistent warning and dedicated transcript notice, with
+separate guidance for capacity, usage, rate, budget, context, and sign-in errors.
+The UI preserves Codex's automatic-retry signal and never retries a failed prompt
+on its own. For an earlier error omitted by the published history API, it checks
+native status and directs you to Terminal before continuing.
+
 Long conversations render a measured window of up to 200 messages. Native updates
 touch individual items and are batched before painting; large message bodies use
 bounded parts. The pinned native history API pages oldest first. Opening a thread

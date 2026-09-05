@@ -4,6 +4,7 @@ import type {
   NativePayload,
 } from "@arduano/agent-multiplex-protocol";
 import type { TranscriptImage } from "./image-media.js";
+import { codexFailure, codexFailureId, copilotFailure, failureFromEvent, type NativeFailure } from "./native-errors.js";
 
 export type TimelineKind =
   | "user"
@@ -26,13 +27,14 @@ export interface TimelineEntry {
   readonly sequence?: number | undefined;
   readonly pending?: boolean | undefined;
   readonly images?: readonly TranscriptImage[] | undefined;
+  readonly failure?: NativeFailure | undefined;
 }
 
 type JsonRecord = Record<string, unknown>;
 
 export function entriesFromHistory(result: NativeHistoryResult): TimelineEntry[] {
   const entries = result.harness === "codex"
-    ? codexHistory(result.payload.json)
+    ? codexHistory(result.payload.json, result.vendorSessionId)
     : copilotHistory(result.payload.json);
   return linkCopilotAssets(withImages(entries, result.payload));
 }
@@ -42,6 +44,22 @@ export function projectNativeEvent(
   event: NativeEvent,
   lookup: (id: string) => TimelineEntry | undefined,
 ): TimelineEntry[] {
+  let failure = failureFromEvent(event);
+  if (failure) {
+    const previous = lookup(failure.id);
+    // Some terminal notifications omit the error already announced for this
+    // turn. Settle its retry state without discarding the useful native text.
+    const payload = record(event.payload.json);
+    if (event.harness === "codex" && event.nativeType !== "error" && previous?.failure &&
+        (record(payload?.turn)?.error ?? payload?.error) == null) {
+      const priorPayload = record(previous.raw);
+      const priorError = record(priorPayload?.turn)?.error ?? priorPayload?.error;
+      failure = codexFailure(priorError ?? { message: previous.failure.message, codexErrorInfo: previous.failure.code,
+        additionalDetails: previous.failure.details }, { ...failure, willRetry: false });
+    }
+    return [failureEntry(failure, (record(payload?.turn)?.error ?? payload?.error) == null && previous?.failure
+      ? previous.raw : event.payload.json, event.sequence, previous?.timestamp)];
+  }
   const payload = record(event.payload.json);
   const data = record(payload?.data);
   const nativeId = event.harness === "codex"
@@ -59,15 +77,16 @@ export function projectNativeEvent(
   return withImages([...changed.values()].filter((entry) => entry !== previous), event.payload);
 }
 
-function codexHistory(payload: unknown): TimelineEntry[] {
+function codexHistory(payload: unknown, vendorSessionId: string): TimelineEntry[] {
   const items = array(record(payload)?.data);
   if (items.length > 0) return items.map((entry, index) => {
     const item = record(entry);
     const projected = codexItem(item?.item, undefined, `history:${index}`);
     return projected ? { ...projected, sequence: index, pending: projected.kind === "assistant" && projected.pending ? undefined : projected.pending ?? false } : null;
   }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-  const thread = record(payload)?.thread;
-  const turns = array(record(thread)?.turns);
+  const thread = record(record(payload)?.thread);
+  const threadId = string(thread?.id) ?? vendorSessionId;
+  const turns = array(thread?.turns);
   const entries: TimelineEntry[] = [];
   for (const [turnIndex, rawTurn] of turns.entries()) {
     const turn = record(rawTurn);
@@ -81,6 +100,16 @@ function codexHistory(payload: unknown): TimelineEntry[] {
         `history:${turnIndex}:${itemIndex}`,
       );
       if (projected) entries.push({ ...projected, sequence: turnIndex * 10_000 + itemIndex });
+    }
+    if (turn?.status === "failed") {
+      const turnId = string(turn.id);
+      const failure = codexFailure(turn.error, {
+        id: codexFailureId(threadId, turnId, `history:${turnIndex}`),
+        threadId, turnId, willRetry: false,
+      });
+      const completedAt = number(turn.completedAt);
+      entries.push(failureEntry(failure, rawTurn, turnIndex * 10_000 + array(turn.items).length,
+        completedAt === undefined ? undefined : new Date(completedAt * 1_000).toISOString()));
     }
   }
   return entries;
@@ -239,7 +268,9 @@ function copilotEvent(rawEvent: unknown, sequence?: number): TimelineEntry | nul
     case "session.binary_asset":
       return data?.type === "image" ? { ...base, kind: "tool", title: "Image asset", body: string(data.description) ?? "Native image", pending: false } : null;
     case "session.error":
-      return { ...base, kind: "notice", title: "Session error", body: pretty(data), status: "failed" };
+      return failureEntry(copilotFailure(data, {
+        id: `copilot:${eventId}`, willRetry: data?.willRetry === true,
+      }), rawEvent, sequence, base.timestamp);
     default:
       return null;
   }
@@ -284,17 +315,11 @@ function applyCodexLive(entries: Map<string, TimelineEntry>, event: NativeEvent)
     });
     return;
   }
-  if (event.nativeType === "turn/failed" || event.nativeType === "error") {
-    entries.set(`codex:event:${event.runtimeEpoch}:${event.sequence}`, {
-      id: `codex:event:${event.runtimeEpoch}:${event.sequence}`,
-      kind: "notice",
-      title: "Codex error",
-      body: pretty(event.payload),
-      raw: event.payload,
-      sequence: event.sequence,
-      status: "failed",
-    });
-  }
+}
+
+function failureEntry(failure: NativeFailure, raw: unknown, sequence?: number, timestamp?: string): TimelineEntry {
+  return { id: failure.id, kind: "notice", title: failure.title, body: failure.message,
+    status: "failed", pending: false, failure, raw, sequence, timestamp };
 }
 
 function applyCopilotLive(entries: Map<string, TimelineEntry>, event: NativeEvent): void {

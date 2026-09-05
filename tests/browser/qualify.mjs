@@ -57,6 +57,7 @@ const checks = [];
 const screenshots = [];
 let historyUnavailable = false;
 let historyRequests = 0;
+let nativeStatus = "idle";
 let nativeSequence = 0;
 const subscriptions = new Set();
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
@@ -73,6 +74,10 @@ await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
 }));
 function completeFixtureTurn() {
   const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType: "turn/completed", ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { turn: { id: "fixture-completed", status: "completed", items: [] } } } };
+  for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
+}
+function emitNative(nativeType, payload) {
+  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType, ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { threadId: session.vendorSessionId, ...payload } } };
   for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
 }
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
@@ -100,6 +105,10 @@ await page.route("**/trpc/**", async (route) => {
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
       case "sessions.readNativeHistory":
+        if (input.request.includeTurns === false) {
+          data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { thread: { status: { type: input.sessionId === session.sessionId ? nativeStatus : "idle" }, turns: [] } } } };
+          break;
+        }
         historyRequests += 1;
         if (historyUnavailable && input.sessionId === session.sessionId) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify([{ error: { message: "Disposable new thread has no stored history yet", code: -32603, data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 } } }]) });
         if (input.sessionId === other.sessionId) {
@@ -278,6 +287,56 @@ try {
   await page.waitForTimeout(150);
   assert.equal(historyRequests, settledHistoryRequests, "A successful history read must not repeat on every completed turn");
   checks.push({ name: "unavailable initial history recovers on native lifecycle without repeated full reads", passed: true });
+  const beforeErrors = mutations.length;
+  const capacityFailure = { message: "This model is at capacity. Please try again later.", codexErrorInfo: "serverOverloaded", additionalDetails: "Disposable provider capacity response." };
+  emitNative("error", { turnId: "capacity-turn", error: capacityFailure, willRetry: true });
+  await page.getByTestId("session-error-banner").filter({ hasText: "retrying automatically" }).waitFor();
+  emitNative("turn/completed", { turn: { id: "capacity-turn", status: "failed", error: capacityFailure } });
+  await page.getByTestId("session-error-banner").filter({ hasText: "Wait for model capacity" }).waitFor();
+  assert.equal(await page.getByTestId("native-error-notice").count(), 1, "Error notification and failed completion must share one turn notice");
+  await page.getByTestId("prompt-input").fill("A draft kept while I check the capacity error.");
+  for (const [width, height] of [[1720,1180],[1440,900],[1024,768],[768,1024],[390,844],[844,390]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(100);
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Error overflow at ${width}x${height}`);
+    const transcript = await page.getByTestId("chat-transcript").boundingBox();
+    const send = await page.getByTestId("send-button").boundingBox();
+    assert(transcript && transcript.height >= 120, `Error warning crowded conversation at ${width}x${height}`);
+    assert(send && send.y + send.height <= height, `Error warning crowded Send at ${width}x${height}`);
+    await screenshot(`capacity-error-${width}x${height}`);
+    await axe(`capacity-error-${width}x${height}`);
+    await page.getByTestId("session-error-details").click();
+    await page.getByLabel("Agent error details").getByText(capacityFailure.message, { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector('[data-testid="session-error-details"]') === document.activeElement);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
+  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  assert.equal(await page.getByTestId("session-error-banner").count(), 0);
+  await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
+  await page.getByTestId("session-error-banner").filter({ hasText: "Model at capacity" }).waitFor();
+  assert.equal(await page.getByTestId("prompt-input").inputValue(), "A draft kept while I check the capacity error.");
+  emitNative("thread/status/changed", { status: { type: "idle" } });
+  emitNative("turn/started", { turn: { id: "retry-turn" } });
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByTestId("session-error-banner").count(), 1);
+  emitNative("turn/completed", { turn: { id: "retry-turn", status: "completed" } });
+  await page.getByTestId("session-error-banner").waitFor({ state: "detached" });
+  emitNative("turn/completed", { turn: { id: "usage-turn", status: "failed", error: { message: "Your usage limit has been reached. Resets tomorrow.", codexErrorInfo: "usageLimitExceeded" } } });
+  await page.getByTestId("session-error-banner").filter({ hasText: "Check your usage allowance" }).waitFor();
+  checks.push({ name: "native capacity/usage failures stay visible across navigation, preserve drafts, deduplicate, and clear only on success", passed: true });
+  nativeStatus = "systemError";
+  subscriptions.clear();
+  await page.reload();
+  await page.getByTestId("session-error-banner").filter({ hasText: "Check the error in Terminal" }).waitFor();
+  assert.equal(await page.getByTestId("session-error-banner").getAttribute("data-error-code"), "detailsUnavailable");
+  await screenshot("historical-error-without-details");
+  assert.equal(mutations.length, beforeErrors, "Displaying an error must never issue a prompt, resume, or retry");
+  nativeStatus = "idle";
+  emitNative("turn/completed", { turn: { id: "after-reload", status: "completed" } });
+  await page.getByTestId("session-error-banner").waitFor({ state: "detached" });
+  checks.push({ name: "reload detects native systemError despite idle catalog without inventing missing turn details or issuing mutations", passed: true });
   showOther = false; await refresh();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 1);
 
