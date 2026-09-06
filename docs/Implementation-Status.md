@@ -1,5 +1,23 @@
 # Implementation status — 2026-09-06
 
+## Real Windows Copilot smoke check
+
+The owner authorized one quick real check with `gpt-5.6-luna`. The web UI
+launched **Luna connectivity smoke test** on the installed `work-windows`
+background host in a separate temporary directory. Native history confirms that
+model, one user message, one completed assistant turn returning
+`LUNA_SMOKE_OK_20260906`, zero tool calls and zero session errors. The reply
+rendered in the live gateway UI and survived browser reload. Session
+`01a07697-8f85-71fe-a4e2-b341d68fc630` is now stopped and resumable for inspection.
+No pre-existing agent received a command. This qualifies the basic corporate
+Copilot prompt/reply path; workspace tools, permissions, images and model
+switching remain outside this smoke check. The scrubbed, checksummed receipt is
+`receipts/windows-luna-smoke/2026-09-06T12-05-22Z/`.
+
+The CLI's known Copilot profile-selection defect prevented its `models` path
+from selecting `leo.local/copilot-workspace`; this run used the web UI for
+launch and the CLI's session-specific send/history/stop paths afterward.
+
 ## Windows background task
 
 The work laptop now has the own-user scheduled task **Leo Multiplex -
