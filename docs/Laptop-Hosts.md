@@ -6,6 +6,9 @@ gateway observes all four. Install from the
 [Windows](../deploy/windows/README.md) or [WSL](../deploy/wsl/README.md) runbook.
 Start in foreground terminals for initial testing. The installers create no
 scheduled task or background service and do not change installed personal hosts.
+Both installed work profiles also provide the bespoke
+[command recovery service](Work-Host-Commands.md). The CLI is its normal entry
+point; web exposes it only as an experimental App settings hatch.
 
 ## Join the existing fleet
 
@@ -45,7 +48,10 @@ scheduled task or background service and do not change installed personal hosts.
    ```
 
    Check **all existing hosts plus each new host** in
-   <https://agents.arduano.io>. The gateway image need not change for pairing.
+   <https://agents.arduano.io>. The gateway image must include the work-command
+   feature before importing its new `workHosts` descriptors. Run
+   `leo-agents exec-hosts` and verify each installed work target is available
+   before closing enrollment, so its separate recovery endpoint is pinned too.
 6. Ctrl+C each laptop host and restart its launcher with plain `start` to close
    enrollment. Existing pinned runtime and gateway identities reconnect. Keep
    these state directories and names stable across future restarts.
@@ -70,6 +76,10 @@ After Windows' framework release gate clears, check both OS hosts together:
   should remain visible, with unavailable hosts refusing new actions.
 - Shut down WSL while Windows remains online, then restart WSL and its host.
   Verify separate availability, unchanged session IDs and no automatic retargeting.
+- Run a harmless CLI command on each work target; check output, cancellation,
+  reconnect/status recovery, and the experimental web hatch. Verify personal
+  hosts are absent from `exec-hosts`. A failed Copilot doctor should leave work
+  command recovery available while that foreground host remains running.
 
 The deterministic four-host UI/routing suites exercise outages and reconnection;
 they do not establish actual laptop suspend, corporate auth or network behavior.

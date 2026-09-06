@@ -1,5 +1,13 @@
 # Browser qualification
 
+After `npm run build`, `node tests/browser/work-commands.mjs` checks the
+experimental work-command settings hatch with disposable HTTP/IndexedDB fixtures.
+It covers hidden personal-only targets, reload recovery, exact-ID retry,
+cancel/poll ordering, definite rejections, saved-record review/deletion, endpoint
+changes, text-only bounded output and all six responsive/axe viewports. No
+native shell, agent or model is contacted. Passing manifests live under
+`receipts/work-command-browser/`.
+
 Run `node tests/browser/qualify.mjs` after installing dependencies and a
 Playwright-compatible Chromium browser. Set `LEO_TEST_CHROMIUM` to use an
 existing browser executable.

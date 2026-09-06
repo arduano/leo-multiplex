@@ -96,3 +96,20 @@ identity, duplicate the Windows state, or select another host as an implicit
 fallback. Before upgrades, intentionally stop this host and privately back up
 its full installation/state. Revision/configuration upgrades need a reviewed
 migration; rerunning this setup script with new settings is deliberately rejected.
+
+## Work command recovery
+
+This installer enables a work-only recovery sidecar alongside the foreground
+Copilot host, with its own durable endpoint/pin and UDP 49123. First pairing must
+also confirm `leo-agents exec-hosts` reports `work-wsl` available before closing
+enrollment. Deploy a gateway image containing this feature and merge the complete
+private pairing document, including its `workHosts` descriptor.
+
+The normal workflow is `leo-agents exec --host work-wsl --cwd /home/leo/work
+--text 'git status --short' --request-id work-status-1`. Commands use Bash without
+profile/rc startup, the ordinary Linux account and a directory under an approved
+root. Web exposes a separate **Experimental work commands** hatch in App settings.
+Recovery survives a failed Copilot startup but still needs this WSL distribution,
+foreground host and network online. See
+[work commands](../../docs/Work-Host-Commands.md) for cancellation, limits and
+recovery after an interrupted host process.

@@ -21,6 +21,30 @@ it("imports an existing fleet secret without replacing an initialized host's sec
   expect((await readFile(join(state, "shared-secret"), "utf8")).trim()).toBe(secret);
 });
 
+it("merges both work command pins beside the four core sources and rejects orphan/colliding pins", async () => {
+  const directory = await fixture(), existing = join(directory, "personal.json"), incoming = join(directory, "incoming.json");
+  const source = (sourceId: string, letter: string) => ({ sourceId, endpointId: letter.repeat(52), locator: { kind: "ticket", ticket: "disposable-ticket" } });
+  const work = (platform: "windows" | "wsl", letter: string) => ({ sourceId: `work-${platform}`, name: `Work ${platform}`, platform, endpointId: letter.repeat(52), locator: { kind: "ticket", ticket: "disposable-work-ticket" } });
+  const personal = { version: 1, sharedSecret: secret, sources: [source("main-pc", "a"), source("home-nas", "b")] };
+  await writeFile(existing, JSON.stringify(personal));
+  const run = promisify(execFile);
+  let current = existing;
+  for (const [platform, corePin, workPin] of [["windows", "c", "d"], ["wsl", "e", "f"]] as const) {
+    await writeFile(incoming, JSON.stringify({ version: 1, sharedSecret: secret, sources: [source(`work-${platform}`, corePin)], workHosts: [work(platform, workPin)] }));
+    const output = join(directory, `${platform}.json`);
+    await run(process.execPath, ["scripts/merge-pairing.mjs", current, incoming, output]);
+    current = output;
+  }
+  const merged = JSON.parse(await readFile(current, "utf8"));
+  expect(merged.sources).toEqual([...personal.sources, source("work-windows", "c"), source("work-wsl", "e")]);
+  expect(merged.workHosts).toEqual([work("windows", "d"), work("wsl", "f")]);
+  expect(JSON.parse(await readFile(existing, "utf8"))).toEqual(personal);
+  for (const descriptor of [work("windows", "a"), work("wsl", "d")]) {
+    await writeFile(incoming, JSON.stringify({ version: 1, sharedSecret: secret, sources: [source("work-windows", "c")], workHosts: [descriptor] }));
+    await expect(run(process.execPath, ["scripts/merge-pairing.mjs", existing, incoming, join(directory, "rejected.json")])).rejects.toMatchObject({ code: 1 });
+  }
+});
+
 it("merges a new host while retaining existing sources and refusing conflicts or overwrite", async () => {
   const directory = await fixture(), existing = join(directory, "existing.json"), incoming = join(directory, "incoming.json"), output = join(directory, "output.json");
   const source = (name: string) => ({ sourceId: name, endpointId: `${name}-endpoint`, locator: { kind: "ticket", ticket: `${name}-disposable-ticket` } });

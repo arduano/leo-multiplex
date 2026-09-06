@@ -12,6 +12,8 @@ import {
 import { mobileStorageScope, type MobileNotifications } from "./mobile-notifications.js";
 import { serveMobileRequest } from "./mobile-http.js";
 import { AuthenticationError, createAuthenticator, type AuthenticationConfig, type AccessIdentity } from "./auth.js";
+import type { WorkCommandsPort } from "../../../packages/work-commands/src/contract.js";
+import { serveWorkCommandsRequest } from "./work-commands-http.js";
 
 export function createPersonalHttpSurface(
   projection: AccessGatewayProjection,
@@ -19,6 +21,7 @@ export function createPersonalHttpSurface(
   access: AuthenticationConfig,
   authenticate = createAuthenticator(access),
   mobile?: MobileNotifications,
+  workCommands?: WorkCommandsPort,
 ): GatewayHttpSurface {
   const router = createAccessGatewayRouter(projection, { instanceId });
   const identities = new WeakMap<IncomingMessage, AccessIdentity>();
@@ -58,6 +61,7 @@ export function createPersonalHttpSurface(
       response.end(JSON.stringify({ method: access.mode ?? "cloudflare", storageScope: mobileStorageScope(instanceId, access.email) }) + "\n"); return;
     }
     if (path.startsWith("/api/mobile/")) { await serveMobileRequest(request, response, path, projection, instanceId, access, mobile); return; }
+    if (path.startsWith("/api/work-commands/")) { await serveWorkCommandsRequest(request, response, path, identities.get(request)!, workCommands); return; }
     if (path.startsWith("/trpc/")) { handler(request, response); return; }
     if (request.method !== "GET" && request.method !== "HEAD") {
       response.writeHead(405); response.end(); return;

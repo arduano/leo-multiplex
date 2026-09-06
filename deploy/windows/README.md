@@ -169,3 +169,20 @@ on Windows** because secure opened-file path verification currently requires
 Linux. Copilot's experimental stock TUI is disabled; use structured Chat.
 Windows sudden-power-loss image durability and managed-laptop policy/auth/network
 behavior are outside the automated startup smoke.
+
+## Work command recovery
+
+This installer enables the Windows-only work command sidecar as part of the
+foreground host. It uses UDP 49121 and a separate durable endpoint/pin beside
+the ordinary control/runtime state. First pairing must also confirm
+`leo-agents exec-hosts` reports `work-windows` available before enrollment closes.
+The gateway image must contain this feature; merge the full private pairing file
+so both its control source and `workHosts` descriptor are retained.
+
+Use `leo-agents exec --host work-windows --cwd 'C:\Work' --text 'Get-ChildItem -Name'
+--request-id work-list-1` from an authenticated CLI. Commands use installed Windows
+PowerShell, normal account access and no profile or execution-policy override.
+App settings offers a separate **Experimental work commands** hatch. Copilot
+startup failure leaves recovery online; OS/network/private-state failure does
+not. See [limits, pairing and interrupted-command recovery](../../docs/Work-Host-Commands.md).
+The Windows framework release gate above still applies to the complete host.

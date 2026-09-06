@@ -3,6 +3,7 @@ import { readFile, stat, open, mkdir, lstat, chmod } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { sourceIdSchema } from '@arduano/agent-multiplex-protocol';
 import * as storage from '@arduano/agent-multiplex-storage-sqlite';
+import { validateWorkHostPairings } from '../packages/work-commands/src/contract.ts';
 
 async function privateDirectory(path) {
   if (process.platform === 'win32') {
@@ -44,9 +45,13 @@ try {
     sources.push(source);
   }
   if (new Set(sources.map(source => source.sourceId)).size !== sources.length || new Set(sources.map(source => source.endpointId)).size !== sources.length) throw new Error('duplicate sources');
+  const workHosts = validateWorkHostPairings([
+    ...validateWorkHostPairings(existing.workHosts, existing.sources),
+    ...validateWorkHostPairings(incoming.workHosts, incoming.sources),
+  ], sources);
   await privateDirectory(dirname(outputPath));
   const output = await open(outputPath, 'wx', 0o600);
-  try { await output.writeFile(JSON.stringify({ ...existing, sources }, null, 2) + '\n'); await output.sync(); }
+  try { await output.writeFile(JSON.stringify({ ...existing, sources, ...(workHosts.length ? { workHosts } : {}) }, null, 2) + '\n'); await output.sync(); }
   finally { await output.close(); }
   console.log(`Wrote a new private pairing file with ${sources.length} sources. Original files were preserved.`);
 } catch {

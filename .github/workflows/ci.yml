@@ -52,3 +52,6 @@ jobs:
         # No package installation, native host, authentication or model calls.
         # The real helper's Windows release gate remains enforced separately.
         run: node --test tests/installer-wrappers.mjs
+      - name: Verify work-command PowerShell exit codes and descendant cleanup
+        # Exact shell helper only; no framework overlay or model/auth calls.
+        run: node tests/windows-work-shell-smoke.mjs

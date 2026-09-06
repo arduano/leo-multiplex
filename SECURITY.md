@@ -31,6 +31,28 @@ log in, start enrollment, install global tools or create background services.
 Normal foreground startup keeps enrollment closed; first pairing explicitly
 uses `start --enroll`. Exact reruns preserve the saved identity and configuration.
 
+Only those installed work profiles enable Leo's command recovery sidecar. It has
+a separate application protocol, durable endpoint and single gateway pin; fleet
+secret membership alone grants no execution. All discovery/output/mutation HTTP
+routes require the owner's existing authentication and `terminal-control` scope;
+the normal Origin defenses remain in force. Generic Multiplex and personal
+Codex hosts have no command route. The sidecar remains available after a failed
+Copilot startup and therefore grants host-account execution independently of
+Copilot permission prompts. The CLI is the intended interface; the web hatch is
+explicitly experimental. Neither interface elevates privileges.
+
+Command admission is durable and keyed by immutable UUID/input/endpoint, with
+one active process and bounded runtime/output. Reconnect never blindly retries.
+Interrupted executor state fails closed until local process inspection is
+acknowledged against the stopped writer. Windows uses a kernel process job;
+WSL uses ordinary process groups, which deliberately daemonized commands can
+escape. Approved roots constrain the starting directory only. Inputs/output are
+private host journal data; the CLI retains exact request inputs in its private
+ledger, and web retains pending input for reload recovery in origin storage.
+The gateway does not persist command output. Shell output may contain explicitly
+requested secrets; never publish it as diagnostic evidence. See
+[work host commands](docs/Work-Host-Commands.md) for limits and recovery.
+
 Select exactly one authentication mode per listener. In Cloudflare mode, Access assertions are
 verified at the origin using RS256, the configured issuer, application audience,
 expiry, subject, and allowed email. WebSocket lifetime is limited by JWT expiry.

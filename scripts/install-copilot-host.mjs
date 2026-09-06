@@ -172,7 +172,7 @@ export function validateWslFilesystem(directory, mountInfo) {
 export async function assertHostStopped(stateDirectory) {
   // Read only the framework's separate writer-lock databases, never catalog or
   // vendor history. An active writer holds an exclusive SQLite OS lock.
-  for (const relative of ['control/catalog.sqlite.lock.sqlite', 'runtime/runtime-node.sqlite.lock.sqlite']) {
+  for (const relative of ['control/catalog.sqlite.lock.sqlite', 'runtime/runtime-node.sqlite.lock.sqlite', 'work-commands/operations.sqlite.lock.sqlite']) {
     const filename = join(stateDirectory, relative);
     let info;
     try { info = await lstat(filename); }
@@ -235,6 +235,7 @@ export async function configureInstallation(config, secretFile, dependencies) {
   try {
     const existing = await inspectExistingInstallation(config, secretFile);
     if (secretFile) await dependencies.importEnrollmentSecret(config.environment.LEO_STATE_DIR, secretFile);
+    await dependencies.writePrivateFile(join(config.environment.LEO_STATE_DIR, 'work-commands.json'), `${JSON.stringify({ version: 1, platform: config.platform })}\n`);
     if (!existing) await dependencies.writePrivateFile(join(config.installDirectory, CONFIG_FILE), `${JSON.stringify(config, null, 2)}\n`);
     const launcher = await readFile(join(config.sourceRoot, 'scripts', 'installed-copilot-host.mjs'), 'utf8');
     await dependencies.writePrivateFile(join(config.installDirectory, 'leo-host.mjs'), launcher);

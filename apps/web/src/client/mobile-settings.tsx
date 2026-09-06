@@ -10,6 +10,7 @@ import { currentDeviceId, enableNotifications, mobileRequest, revokeDevice, save
 import { installPwa, updatePwa, usePwa } from "./pwa.js";
 import { clearEmptyDeviceData, deleteDraft, draftStorageUsage, draftVersion, flushDrafts, listDrafts, subscribeDrafts, useSessionDraft, type DraftSummary } from "./session-drafts.js";
 import { dispatchSavedOperation, settleOperation, listOperations, operationFinished, reconcileOperation, type SavedOperation } from "./operation-recovery.js";
+import { WorkCommandsHatch } from "./work-commands.js";
 
 export function MobileSettings({ onClose, offline = false }: { onClose?: (() => void) | undefined; offline?: boolean }) {
   const pwa = usePwa();
@@ -67,6 +68,7 @@ export function MobileSettings({ onClose, offline = false }: { onClose?: (() => 
           {mobile.data?.devices.length ? <div className="mt-4 divide-y divide-[var(--border-subtle)]">{mobile.data.devices.map(device => <div className="flex items-center justify-between gap-2 py-2 text-sm" key={device.id}><span className="min-w-0 truncate">{device.name}{device.id === currentDeviceId() ? " · this device" : ""}</span><Button tone="ghost" disabled={busy} onClick={() => { if (window.confirm(`Stop notifications to ${device.name}?`)) void action(() => revokeDevice(device.id)); }}>Revoke</Button></div>)}</div> : null}
         </section>
       </>}
+      {!offline ? <WorkCommandsHatch /> : null}
       <section className="border-b border-[var(--border-subtle)] py-5">
         <h2 className="mb-2 text-sm font-semibold">Saved drafts</h2>
         <p className="mb-3 text-xs text-[var(--text-secondary)]">{usage || "Loading local storage…"}. Drafts stay on this device; they are not synced to other devices.</p>

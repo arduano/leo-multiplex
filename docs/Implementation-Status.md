@@ -1,5 +1,39 @@
 # Implementation status — 2026-09-06
 
+## Work laptop command candidate
+
+The Windows/WSL installers now enable a bespoke command recovery sidecar. The
+normal interface is `leo-agents exec`, with `exec-hosts`, `exec-status` and
+`exec-cancel`; web keeps a separate experimental App settings hatch. The service
+starts before Copilot doctor/runtime and can remain available when those fail.
+Only these installed work profiles publish command targets. Generic Multiplex,
+personal Codex hosts and the exact published dependency graph are unchanged.
+
+Commands use a separate pinned application protocol and host-owned private
+journal, with durable admission/deduplication, one active command per host,
+bounded output/time and explicit cancellation. Local CLI/browser state saves the
+immutable target/request before submission. A restarted in-flight command becomes
+`outcomeUnknown` and requires local process inspection before new admission.
+The [work-command runbook](Work-Host-Commands.md) owns usage, pairing and recovery.
+
+This is an undeployed candidate. Native Windows installation remains gated on
+the framework's public Windows ACL release. No installed host, gateway or native
+session was changed, and no model call was used. Windows CI checks the exact
+PowerShell/process-job wrapper independently of framework overlays; the full
+Windows executor smoke and physical corporate laptop UAT remain separate gates.
+
+The candidate passes typechecking, all 420 application tests, production/container
+builds, shipped-container authentication/static-asset checks, and the Compose
+DNS/Unix-socket/WebSocket authentication regression. Focused tests include an
+authenticated HTTP → real Iroh → real disposable Bash execution with exact-ID
+deduplication, plus crash recovery and failure-isolated Copilot startup. The WSL
+wrapper suite passes its 14 cases. Browser evidence passes eight work-command
+groups across six viewports at
+`receipts/work-command-browser/2026-09-06T06-38-11.473Z`, 70 general checks at
+`receipts/browser/2026-09-06T06-37-57.002Z`, and 11 durable-draft checks at
+`receipts/durable-drafts/2026-09-06T06-37-13.290Z`. Source and screenshot checksums
+were independently verified; there were no serious or critical axe findings.
+
 ## Windows and WSL installer candidate
 
 The [Windows PowerShell installer](../deploy/windows/install.ps1) and

@@ -12,6 +12,7 @@ export function validateHostCommand(args) {
   if (['help', '--help', 'pairing'].includes(command) && rest.length === 0) return [command];
   if (command === 'doctor' && (rest.length === 0 || (rest.length === 1 && rest[0] === '--json'))) return args;
   if (command === 'start' && (rest.length === 0 || (rest.length === 1 && rest[0] === '--enroll'))) return args;
+  if (command === 'command-recovery' && rest.length === 2 && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(rest[0]) && rest[1] === '--processes-inspected') return args;
   if (command === 'init' && rest.length === 2 && rest[0] === '--secret-file' && rest[1] && !rest[1].startsWith('--')) return args;
   if (command === 'login') {
     const seen = new Set();
@@ -25,7 +26,7 @@ export function validateHostCommand(args) {
     }
     return args;
   }
-  throw new Error('Use help, login, doctor, start, pairing, or init. Arbitrary Node/native commands are not accepted.');
+  throw new Error('Use help, login, doctor, start, pairing, init, or command-recovery. Arbitrary Node/native commands are not accepted.');
 }
 
 export function installedEnvironment(config, environment = process.env) {

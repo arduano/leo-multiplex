@@ -19,6 +19,10 @@ Windows PowerShell/.NET system components, which are not bundled by Leo.
 The laptop installers use the operator's existing Git, Node/npm, Windows
 PowerShell or WSL Bash installations. They do not redistribute those tools or
 download a separate unpinned Copilot executable.
+The work-command sidecar uses the already pinned p2prpc transport, tRPC, Zod and
+framework SQLite package. Its original Windows shell helper invokes installed
+PowerShell/.NET and Windows kernel job APIs; WSL invokes installed Bash. No new
+binary, service dependency or third-party source is redistributed for this path.
 
 The optional NAS Cloudflare Compose deployment references separately distributed
 cloudflare/cloudflared (Apache-2.0) and nginxinc/nginx-unprivileged images (Nginx

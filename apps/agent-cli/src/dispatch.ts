@@ -10,14 +10,16 @@ import { observeTurn, streamEvents, type TurnOutcome } from "./observe.js";
 import { checkedReceipt, dispatchSaved, operationIdentity, reconcile } from "./operations.js";
 import { CliError, result } from "./output.js";
 import { imageCommand, loadImageDescriptors } from "./images.js";
+import type { WorkCommandsPort } from "../../../packages/work-commands/src/contract.js";
+import { workCommand, savedWorkCommand } from "./work-commands.js";
 
-export interface Context { client: AccessClient; origin: string; signal: AbortSignal; ledger: OperationLedger; write: (value: unknown) => Promise<void> }
+export interface Context { client: AccessClient; workCommands?: WorkCommandsPort; origin: string; signal: AbortSignal; ledger: OperationLedger; write: (value: unknown) => Promise<void> }
 export const help = {
   name: "leo-agents", version: 1, output: "JSON; watch emits NDJSON", commands: commandOptions,
-  positionalArguments: { status: "SESSION_ID", history: "SESSION_ID", watch: "SESSION_ID", wait: "SESSION_ID", send: "SESSION_ID", steer: "SESSION_ID", interrupt: "SESSION_ID", stop: "SESSION_ID", resume: "SESSION_ID", command: "SESSION_ID", operation: "REQUEST_ID", questions: "SESSION_ID", resolve: "SESSION_ID INTERACTION_ID", "image-upload": "SESSION_ID", "image-get": "SESSION_ID" },
-  globalOptions: { url: "Gateway origin; LEO_AGENTS_URL or the personal Tailscale gateway", timeout: "Seconds, default 30 (watch/wait/send --wait: 300), maximum 86400", "state-dir": "Private request ledger; LEO_AGENTS_STATE_DIR or XDG state/leo-agents" },
-  rules: ["Mutation commands require a caller-owned --request-id (1–128 ASCII letters/digits/._-).", "Reusing a request ID reconciles the saved operation; it never silently sends again.", "operation REQUEST_ID --retry explicitly reuses the immutable saved request.", "Acknowledgment is not turn completion. send --wait observes the returned Codex turn ID.", "Capacity/native systemError blocks send until reviewed; --allow-error is an explicit override.", "history returns one native page of at most 100 items, oldest first; follow nextCursor.", "wait requires --turn-id. Without a replay cursor, only future events prove completion.", "watch cursor files are scoped to gateway, session and runtime binding. Gaps require reconciliation.", "Images: upload with caller-owned --image-id; save data as descriptor JSON; send with --image-json.", "No automatic resume, prompt retry, or question approval. See docs/Agent-CLI.md." ],
-  exitCodes: { "0": "success", "2": "usage/local input", "3": "authentication", "4": "remote failure", "5": "outcome unknown or stream gap", "6": "timeout/cancelled", "7": "native failure, interrupted, or needs input" },
+  positionalArguments: { "exec-status": "REQUEST_ID", "exec-cancel": "REQUEST_ID", status: "SESSION_ID", history: "SESSION_ID", watch: "SESSION_ID", wait: "SESSION_ID", send: "SESSION_ID", steer: "SESSION_ID", interrupt: "SESSION_ID", stop: "SESSION_ID", resume: "SESSION_ID", command: "SESSION_ID", operation: "REQUEST_ID", questions: "SESSION_ID", resolve: "SESSION_ID INTERACTION_ID", "image-upload": "SESSION_ID", "image-get": "SESSION_ID" },
+  globalOptions: { url: "Gateway origin; LEO_AGENTS_URL or the personal Tailscale gateway", timeout: "Seconds, default 30 (exec: 330; watch/wait/send --wait: 300), maximum 86400", "state-dir": "Private request ledger; LEO_AGENTS_STATE_DIR or XDG state/leo-agents" },
+  rules: ["Mutation commands require a caller-owned --request-id (1–128 ASCII letters/digits/._-).", "Reusing a request ID reconciles the saved operation; it never silently sends again.", "operation REQUEST_ID --retry explicitly reuses the immutable saved request.", "Acknowledgment is not turn completion. send --wait observes the returned Codex turn ID.", "Capacity/native systemError blocks send until reviewed; --allow-error is an explicit override.", "history returns one native page of at most 100 items, oldest first; follow nextCursor.", "wait requires --turn-id. Without a replay cursor, only future events prove completion.", "watch cursor files are scoped to gateway, session and runtime binding. Gaps require reconciliation.", "Images: upload with caller-owned --image-id; save data as descriptor JSON; send with --image-json.", "Work laptops: exec-hosts; exec --host HOST --cwd PATH --text COMMAND --request-id ID [--run-timeout 30].", "exec waits for completion; exec-status ID checks once; exec-status ID --retry explicitly resends only an absent original ID; exec-cancel ID requests cancellation.", "Local timeout or interrupt never cancels remote commands. Reconcile using the saved request ID.", "No automatic resume, prompt retry, or question approval. See docs/Agent-CLI.md." ],
+  exitCodes: { "0": "success or running status snapshot", "2": "usage/local input", "3": "authentication", "4": "remote failure", "5": "outcome unknown or stream gap", "6": "timeout/cancelled", "7": "native failure, interrupted, or needs input" },
 };
 export async function dispatch(args: Arguments, ctx: Context): Promise<unknown> {
   const { client, signal } = ctx;
@@ -25,6 +27,7 @@ export async function dispatch(args: Arguments, ctx: Context): Promise<unknown> 
   const count = command === "resolve" ? 2 : Object.hasOwn(help.positionalArguments, command) ? 1 : 0;
   if (args.positionals.length !== count) throw new CliError("USAGE", `${command} expects ${count} positional argument(s); run leo-agents help`);
   if (command === "help") return help;
+  if (["exec-hosts", "exec", "exec-status", "exec-cancel"].includes(command)) return workCommand(args, ctx);
   if (command === "id") return { requestId: randomUUID() };
   if (command === "hosts") {
     const hosts = await client.runtimeNodes.list.query();
@@ -43,6 +46,7 @@ export async function dispatch(args: Arguments, ctx: Context): Promise<unknown> 
   if (command === "operation") {
     const operation = await ctx.ledger.get(ctx.origin, args.positionals[0]!);
     if (!operation) throw new CliError("UNKNOWN_REQUEST", "No locally saved operation has this request ID for this gateway");
+    if (operation.kind === "work-command") return savedWorkCommand(ctx, operation, args.options.retry === true ? "retry" : "get");
     const record = await reconcile(client, operation);
     const complete = record && ["succeeded", "resolved", "failed", "stale", "expired"].includes(record.state);
     return checkedReceipt(operation, args.options.retry && !complete ? await dispatchSaved(client, operation) : record);

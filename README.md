@@ -12,6 +12,8 @@ Work hosts use corporate GitHub Copilot; personal hosts use Codex. The
 prepare separate identities, saved configuration and foreground launchers for
 the two laptop hosts. The Windows runbook records the pending framework release
 gate; neither installer signs in or starts a host automatically.
+Those two work profiles also expose [single-command recovery](docs/Work-Host-Commands.md)
+through `leo-agents exec`. App settings keeps a separate experimental web hatch.
 
 **Existing Codex and tmux sessions are outside this application's ownership.**
 Setup, tests, deployment, and shutdown never adopt or terminate them. All managed

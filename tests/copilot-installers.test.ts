@@ -113,6 +113,8 @@ it('only dispatches explicit host management commands and defaults to help', () 
   expect(validateHostCommand([])).toEqual(['help']);
   expect(validateHostCommand(['start'])).toEqual(['start']);
   expect(validateHostCommand(['start', '--enroll'])).toEqual(['start', '--enroll']);
+  expect(validateHostCommand(['command-recovery', '11111111-1111-4111-8111-111111111111', '--processes-inspected'])).toHaveLength(3);
+  expect(() => validateHostCommand(['command-recovery', '11111111-1111-4111-8111-111111111111'])).toThrow();
   expect(validateHostCommand(['login', '--device-code', '--host', 'https://company.ghe.com'])).toHaveLength(4);
   expect(() => validateHostCommand(['start', '--enroll', '--enroll'])).toThrow();
   expect(() => validateHostCommand(['-e', 'console.log(1)'])).toThrow();
@@ -128,6 +130,9 @@ describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', (
     expect((await stat(layout.installDirectory)).mode & 0o777).toBe(0o700);
     expect((await stat(layout.configFile)).mode & 0o777).toBe(0o600);
     expect((await stat(join(layout.stateDirectory, 'shared-secret'))).mode & 0o777).toBe(0o600);
+    const marker = join(layout.stateDirectory, 'work-commands.json');
+    expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ version: 1, platform: 'wsl' });
+    expect((await stat(marker)).mode & 0o777).toBe(0o600);
     const stored = await readFile(layout.configFile, 'utf8');
     expect(stored).not.toContain(secret);
     expect(stored).not.toContain(f.input);
@@ -229,14 +234,14 @@ describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', (
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); }
   });
 
-  it('refuses dependency reinstall while the host holds its writer lock, without changing that lock', async () => {
+  it.each([['control', 'catalog.sqlite'], ['work-commands', 'operations.sqlite']])('refuses dependency reinstall while %s holds its writer lock, without changing that lock', async (role, filename) => {
     const f = await fixture();
     const { config, layout } = await preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment });
     await configureInstallation(config, f.input, dependencies);
-    const directory = join(layout.stateDirectory, 'control');
+    const directory = join(layout.stateDirectory, role);
     await mkdir(directory, { mode: 0o700 });
     const { DatabaseSync } = await import('node:sqlite');
-    const lock = new DatabaseSync(join(directory, 'catalog.sqlite.lock.sqlite'));
+    const lock = new DatabaseSync(join(directory, `${filename}.lock.sqlite`));
     lock.exec('PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE');
     try {
       await expect(preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment })).rejects.toThrow('Stop this managed host');
