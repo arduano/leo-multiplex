@@ -95,3 +95,24 @@ export async function removeDocument(scope: string, id: string): Promise<void> {
     tx.onabort = () => reject(tx.error);
   });
 }
+
+/** Check and clear in one transaction: another tab cannot insert work between them. */
+export async function clearEmptyDocuments(scope: string): Promise<void> {
+  const db = await openDraftDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("work", "readwrite");
+    const store = tx.objectStore("work");
+    let failure: Error | undefined;
+    const request = store.index("scope").getAll(scope);
+    request.onsuccess = () => {
+      const entries = request.result as LocalDocument<{ prompt?: string; images?: unknown[]; uncertain?: unknown }>[];
+      if (entries.some(entry => entry.kind === "operation" || entry.value.prompt || entry.value.images?.length || entry.value.uncertain)) {
+        failure = new Error("Review and delete saved drafts and resolve pending actions before clearing device data.");
+        tx.abort(); return;
+      }
+      for (const entry of entries) store.delete([scope, entry.id]);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(failure ?? tx.error);
+  });
+}

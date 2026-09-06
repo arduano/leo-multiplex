@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore, type SetStateAction } from "react";
 import { payloadHash } from "@arduano/agent-multiplex-client/browser";
 import type { CommandEnvelope, ImageDescriptor } from "@arduano/agent-multiplex-protocol";
 import { v4 as randomUUID } from "uuid";
-import { DRAFT_BUDGET_BYTES, documents, readDocument, removeDocument, writeDocument } from "./draft-storage.js";
+import { DRAFT_BUDGET_BYTES, clearEmptyDocuments, documents, readDocument, removeDocument, writeDocument } from "./draft-storage.js";
 
 export interface DraftImage { id: string; file: File; url: string; descriptor?: ImageDescriptor; binding?: string; }
 export interface SessionDraft {
@@ -130,9 +130,9 @@ export async function settleCommandDraft(command: CommandEnvelope, succeeded: bo
 }
 export async function clearEmptyDeviceData(): Promise<void> {
   await flushDrafts();
-  const entries = await documents<SavedDraft>(currentDraftScope());
-  if (entries.some(entry => entry.kind === "operation" || entry.value.prompt || entry.value.images.length || entry.value.uncertain)) throw new Error("Review and delete saved drafts and resolve pending actions before clearing device data.");
-  for (const entry of entries) await deleteDraft(entry.id);
+  await clearEmptyDocuments(currentDraftScope());
+  for (const slot of slots.values()) if (slot.scope === scope && !slot.dirty && !slot.conflicted) await hydrate(slot);
+  changes?.postMessage({ scope }); emit();
 }
 export async function deleteDraft(id: string): Promise<void> {
   const slot = slots.get(`${scope}:${id}`);

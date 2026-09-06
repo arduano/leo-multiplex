@@ -152,6 +152,18 @@ try {
   checks.push("failed image commands retain submitted and newer image bytes and text while clearing the matching uncertainty");
   assert.deepEqual(imageSettlement.mismatch, imageSettlement.mismatchBefore);
   checks.push("a terminal receipt never clears images, text, or uncertainty for a same-ID envelope with a different binding");
+  const clear = await page.evaluate(async () => {
+    const store = await import("/src/client/draft-storage.ts");
+    const empty = { prompt: "", images: [], uncertain: null, uncertainPrompt: null };
+    await store.writeDocument("empty-clear-fixture", "draft:a", "draft", empty, 0);
+    await store.clearEmptyDocuments("empty-clear-fixture");
+    const emptied = (await store.documents("empty-clear-fixture")).length === 0;
+    await store.writeDocument("empty-clear-fixture", "draft:a", "draft", { ...empty, prompt: "New work must survive cleanup" }, 0);
+    let refused = false; try { await store.clearEmptyDocuments("empty-clear-fixture"); } catch { refused = true; }
+    return { emptied, refused, retained: (await store.documents("empty-clear-fixture"))[0].value.prompt };
+  });
+  assert.deepEqual(clear, { emptied: true, refused: true, retained: "New work must survive cleanup" });
+  checks.push("empty-data cleanup checks and deletes atomically and refuses any unsent work");
   const sources = ["apps/web/src/client/draft-storage.ts", "apps/web/src/client/session-drafts.ts", "apps/web/src/client/operation-recovery.ts", "tests/browser/durable-drafts.mjs"];
   const hashes = Object.fromEntries(await Promise.all(sources.map(async path => [path, createHash("sha256").update(await readFile(join(root, path))).digest("hex")])));
   await writeFile(join(output, "manifest.json"), JSON.stringify({ status: "passed", checks, sources: hashes, browser: browser.version() }, null, 2));
