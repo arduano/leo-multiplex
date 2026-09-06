@@ -6,12 +6,16 @@ The work laptop now has the own-user scheduled task **Leo Multiplex -
 work-windows** installed from service source
 `10c7ba30c6ab5989bb5ce8ec15606dfc08704180`. It starts at sign-in with Interactive
 logon and Limited privilege, no password/elevation, no battery stop and no
-execution timeout. Installation confirmed an active runner waiting for the
-foreground host. After the owner stopped that host, **both the Windows runtime
-and command endpoint remained offline**; the real-laptop handoff has not passed.
-The owner reports the installed launcher's generic startup failure, and local
-diagnostics are pending because remote command access is unavailable. The task
-is intended to call the existing launcher with plain `start`, closing enrollment.
+execution timeout. The owner supplied the runner lifecycle confirming takeover:
+waiting ended at 11:08:07 UTC and the same runner recorded `running` at 11:08:13.
+The Windows runtime is reachable again, and the owner confirmed both UDP 49117
+and 49121 belong to the same host process. **Remote command recovery is still
+unavailable**, including after a NAS gateway restart. A 20-second gateway probe
+timed out before reaching transport peer authentication. The saved work ticket
+has no relay route and includes temporary IPv6 ports; stale routing remains a
+hypothesis pending the current laptop pairing. The direct installed doctor
+passes corporate authentication and discovers 21 models. The task calls the
+existing launcher with plain `start`, closing enrollment.
 The installed host source remains
 `0e79d73fc093f7a039694d9686b04c0b5be7c997`; identity, state and Copilot auth were
 preserved. Signed out/asleep is offline; locking or closing unrelated terminals
