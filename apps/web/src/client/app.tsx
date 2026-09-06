@@ -30,6 +30,7 @@ import { ApiProvider, errorMessage, useApi } from "./api.js";
 import { MetadataPanel } from "./metadata-panel.js";
 import { SessionConsole } from "./session-console.js";
 import { retainSessionRows, type RetainedSession } from "./session-retention.js";
+import { readSessionCatalog } from "./session-catalog.js";
 import { SpawnDialog } from "./spawn-dialog.js";
 import { terminalSideChannelCapability } from "./terminal-state.js";
 import { Badge, Button, IconButton, Input, classes } from "./ui.js";
@@ -119,10 +120,7 @@ function Dashboard() {
   const sessions = useQuery({
     queryKey: ["sessions", connectionKey],
     enabled: connected,
-    queryFn: () => client.sessions.search.query({
-      states: ["running", "stopped"],
-      limit: 500,
-    }),
+    queryFn: ({ signal }) => readSessionCatalog((input) => client.sessions.search.query(input, { signal }), signal),
     refetchInterval: 10_000,
   });
 
@@ -136,6 +134,7 @@ function Dashboard() {
           const type = item.change.type;
           if (type.startsWith("session.") || type.startsWith("metadata.")) {
             void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+            void queryClient.invalidateQueries({ queryKey: ["session-link"] });
           }
           if (type.startsWith("runtimeNode.")) {
             void queryClient.invalidateQueries({ queryKey: ["runtime-nodes"] });
@@ -154,15 +153,17 @@ function Dashboard() {
   const directSession = useQuery({
     queryKey: ["session-link", connectionKey, selectedId],
     enabled: connected && selectedId !== null && !(sessions.data?.sessions.some((session) => session.sessionId === selectedId)),
-    queryFn: () => client.sessions.get.query(selectedId!),
+    queryFn: ({ signal }) => client.sessions.get.query(selectedId!, { signal }),
     retry: false,
+    refetchInterval: 10_000,
   });
   const projectionFresh = connected && !sessions.isError && !sources.isError && access.data !== false;
-  const rows = useMemo(() => retainSessionRows(retained, sessions.data?.sessions ?? [], sources.data ?? [], projectionFresh, sessions.dataUpdatedAt >= sources.dataUpdatedAt),
-    [retained, sessions.data, sources.data, projectionFresh, sessions.dataUpdatedAt, sources.dataUpdatedAt]);
+  const mayRemoveAbsent = sessions.data?.complete === true && sessions.dataUpdatedAt >= sources.dataUpdatedAt;
+  const rows = useMemo(() => retainSessionRows(retained, sessions.data?.sessions ?? [], sources.data ?? [], projectionFresh, mayRemoveAbsent),
+    [retained, sessions.data, sources.data, projectionFresh, mayRemoveAbsent]);
   useEffect(() => {
-    setRetained((previous) => retainSessionRows(previous, sessions.data?.sessions ?? [], sources.data ?? [], projectionFresh, sessions.dataUpdatedAt >= sources.dataUpdatedAt));
-  }, [sessions.data, sources.data, projectionFresh, sessions.dataUpdatedAt, sources.dataUpdatedAt]);
+    setRetained((previous) => retainSessionRows(previous, sessions.data?.sessions ?? [], sources.data ?? [], projectionFresh, mayRemoveAbsent));
+  }, [sessions.data, sources.data, projectionFresh, mayRemoveAbsent]);
 
   useEffect(() => {
     if (selectedId || mobile || route.page === "settings") return;
@@ -265,6 +266,7 @@ function Dashboard() {
               runtimeNodes={runtimeNodes.data ?? []}
               connected={connected}
               loading={sessions.isPending}
+              listNotice={sessions.isError ? "Couldn’t refresh the agent list. Retrying…" : sessions.data?.complete === false ? "Showing part of the agent list (up to 500 agents)." : null}
               onSelect={selectSession}
               mobile={mobile}
               filter={filter}
@@ -398,7 +400,7 @@ function ConnectionPanel({ onConnect, status, pending, error }: {
   );
 }
 
-function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, connected, loading, onSelect, mobile, filter, onFilter }: {
+function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, connected, loading, listNotice, onSelect, mobile, filter, onFilter }: {
   readonly actions: PaneActions;
   readonly search: string;
   readonly onSearch: (value: string) => void;
@@ -407,6 +409,7 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
   readonly runtimeNodes: readonly RuntimeNodeDescriptor[];
   readonly connected: boolean;
   readonly loading: boolean;
+  readonly listNotice: string | null;
   readonly onSelect: (id: SessionId) => void;
   readonly mobile: boolean;
   readonly filter: AgentFilter;
@@ -447,6 +450,7 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
       {mobile ? <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2 py-1" role="group" aria-label="Filter agents" data-testid="mobile-agent-filters">
         {([["all", "All"], ["watched", "Watched"], ["needsInput", "Needs input"], ["working", "Working"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => onFilter(value)} className={classes("min-h-11 shrink-0 rounded-md px-3 text-xs", filter === value ? "bg-[var(--surface-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")}>{label}</button>)}
       </div> : null}
+      {listNotice ? <p role="status" className="shrink-0 px-3 py-2 text-xs text-[var(--status-waiting)]" data-testid="session-list-notice">{listNotice}</p> : null}
       <div
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-2"
         role="region"
@@ -801,6 +805,7 @@ async function invalidateFleet(queryClient: ReturnType<typeof useQueryClient>): 
     queryClient.invalidateQueries({ queryKey: ["control-nodes"] }),
     queryClient.invalidateQueries({ queryKey: ["runtime-nodes"] }),
     queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+    queryClient.invalidateQueries({ queryKey: ["session-link"] }),
     queryClient.invalidateQueries({ queryKey: ["interactions"] }),
     queryClient.invalidateQueries({ queryKey: ["metadata"] }),
   ]);

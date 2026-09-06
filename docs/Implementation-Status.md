@@ -737,3 +737,27 @@ session identity is preserved and active/idle, and both managed process
 executables report 0.153.4. Ordinary CLI/tmux sessions were not modified.
 This targeted user-service activation required no sudo/system rebuild and
 avoided unrelated pending Home Manager/NixOS changes.
+
+## Sessions across multiple hosts — 2026-09-06
+
+The UI now follows `sessions.search` continuation cursors across independent
+control sources. A source can return a single row and still have a next page;
+previously creating the first NAS session hid the main-pc list behind that
+ignored cursor. The original Manifold record remained active/idle and readable
+by exact ID throughout the incident.
+
+Each refresh commits its pages together, retains the existing 500-row bound,
+and labels a truncated or failed list. Only a complete, fresh projection may
+remove an absent retained row. Selected exact-ID lookups now refresh on control
+changes, reconnect/manual refresh, and a ten-second fallback poll, so an early
+missing record cannot remain stuck until browser reload. Initial history
+failure also retries when the same binding becomes active in the catalog or
+starts a native turn; successful history is not reloaded on these events.
+
+The fix is isolated from the paused Windows Copilot candidate and uses the
+unchanged published 0.2.0 package graph. Typechecking, 341 tests, the production
+build and shipped-container authentication/static-asset smoke pass. Browser
+regressions cover external two-host creation, pagination, retained selection
+and drafts, both conversations, early missing links, missed status events and
+initial history recovery. No real model calls or production session mutations
+are part of this verification.

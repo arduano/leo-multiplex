@@ -266,7 +266,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           // A new thread may initially reject history. Retry at a native
           // lifecycle boundary, without rereading successful history each turn.
           if ((item.harness !== "codex" || (item.payload.json as { threadId?: unknown } | null)?.threadId === session.vendorSessionId) &&
-              (item.nativeType === "turn/completed" || item.nativeType === "session.idle")) {
+              (item.nativeType === "turn/started" || item.nativeType === "turn/completed" || item.nativeType === "session.idle")) {
             signalHistory("lifecycle");
           }
           if (queued.length >= 64) return new Promise<void>((resolve) => { releaseBackpressure = resolve; });
@@ -283,6 +283,12 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           if (change.type.startsWith("session.")) {
             void queryClient.invalidateQueries({ queryKey: ["sessions"] });
           }
+          // An externally launched session may become readable after our first
+          // history request. Retry at its own ready catalog update, retaining
+          // successful history and leaving changed bindings to their remount.
+          if (change.type === "session.upsert" && change.session.availability === "active" &&
+              sessionBindingIdentity(change.session) === bindingIdentity &&
+              !historyLoaded.current && !historyRead.current) signalHistory("lifecycle");
           if (change.type === "interaction.changed" && change.interaction.sessionId === watchedSessionId) {
             void queryClient.invalidateQueries({ queryKey: ["interactions"] });
           }
