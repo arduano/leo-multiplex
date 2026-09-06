@@ -113,6 +113,17 @@ gateway pairing configuration before restarting the gateway. Back up the private
 configuration first. Keep host identity, enrollment and journals intact; the
 ordinary pairing merger rejects duplicate sources and is not a refresh tool.
 
+Initial tickets can also precede relay discovery. On the installed WSL host,
+startup tickets contained only internal addresses while a disposable transport
+probe acquired a default relay within four seconds. Local maintenance reissued
+signed candidates using the retained endpoint keys and an observed default relay;
+the NAS then verified connectivity through its enrolled identities. A candidate
+route alone is not connectivity evidence. Never export endpoint keys, modify a
+ticket without its signature, or substitute another endpoint. This repaired the
+installed pairing; the source still needs initial relay readiness and automatic
+locator renewal. Preserve the working private gateway configuration across
+restarts instead of replacing it with an incomplete startup pairing file.
+
 All four HTTP routes (`hosts`, `submit`, `get`, `cancel`) under
 `/api/work-commands/` use the existing authenticated gateway listener and require
 `terminal-control`, including output reads. Mutations require the existing exact

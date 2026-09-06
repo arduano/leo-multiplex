@@ -76,12 +76,58 @@ Each OS signs in separately. Leo does not copy OAuth credentials across them.
 Proxy/CA variables are preserved, but inherited profile overrides are rejected
 and personal Codex/provider tokens cannot replace the corporate account binding.
 
+On headless WSL without a system keychain, native Copilot asks whether it may
+store the login in its plaintext configuration. Answer that prompt in a terminal;
+the managed Copilot directory is private to the Linux account. A noninteractive
+device login can succeed at GitHub and still discard the token because it cannot
+ask this question. In that case, repeat login interactively, then verify doctor.
+
 Keep the terminal open and follow
 [pairing and enrollment closure](../../docs/Laptop-Hosts.md#join-the-existing-fleet).
 Then Ctrl+C and `node "$leo_host" start` keeps enrollment closed for normal use.
 Foreground startup creates no scheduled task, systemd service or automatic
 prompt/resume operation. Closing WSL or sleeping the laptop disconnects this
 host; its durable catalog remains local and the web UI retains observed rows.
+
+## Installed laptop background task
+
+The current Ubuntu installation for Linux user `arduano` has a separate own-user
+Windows task, **Leo Multiplex - work-wsl**. It starts at Windows sign-in with
+Interactive logon and Limited privilege, no password/elevation, no battery stop
+and no execution timeout. Its foreground `wsl.exe` waits on the Linux user unit
+`leo-work-wsl.service`, keeping WSL active without an open terminal. Systemd
+services alone do not keep a WSL instance alive. Signing out or sleeping the
+laptop remains offline; locking it does not deliberately stop the task.
+
+The private helpers belong to this particular installed distro/account, separate
+from the clean pinned source checkout. Their reviewed copies are
+[`work-laptop-service.ps1`](work-laptop-service.ps1) and
+[`work-laptop-service.sh`](work-laptop-service.sh); these deliberately fix this
+laptop's distro, Linux account and Node path. From Windows PowerShell:
+
+```powershell
+$wslService = Join-Path $env:LOCALAPPDATA 'leo-multiplex-windows/wsl-service/wsl-user-service.ps1'
+& $wslService -Action Status
+& $wslService -Action Stop
+& $wslService -Action Start
+```
+
+`Stop` requests graceful Linux shutdown and waits for completion. Use Windows
+command recovery for WSL service changes: stopping WSL disconnects its own command
+endpoint. Never use Task Scheduler **End**, `wsl --terminate`, or `wsl --shutdown`
+to manage this host; those can interrupt unrelated work. The separate initial
+enrollment task has no sign-in trigger or retries; normal startup uses plain
+`start`. Windows' existing host task is independent.
+
+The helper pins native Node
+`/home/arduano/.nvm/versions/node/v24.14.0/bin/node` and an explicit Linux PATH;
+removing that Node installation requires a deliberate service update. Linux
+service status exposes bounded lifecycle properties; native output is suppressed.
+Use the installed launcher's `doctor --json` for authentication/model diagnostics.
+
+The installed helpers are an operational setup for this laptop, not a new
+portable service installer or automatic updater. The base installer remains
+foreground-only. Keep the installed source revision and private state intact.
 
 ## Verify and recover
 

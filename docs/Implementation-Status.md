@@ -1,5 +1,52 @@
 # Implementation status — 2026-09-06
 
+## Installed WSL work host
+
+The laptop's existing Ubuntu WSL2 distro now runs **work-wsl** as Linux account
+`arduano`, from exact installed source
+`0e79d73fc093f7a039694d9686b04c0b5be7c997`, native Node 24.14.0 and the published
+framework 0.2.1 graph. Its source is `~/leo-multiplex-source-wsl`; installation
+and independent catalog/auth live under `~/.local/state/leo-multiplex-wsl`.
+Working directories remain unrestricted, including `/mnt/d`. The owner completed
+separate corporate GitHub OAuth. Headless WSL lacked a keychain, so native Copilot
+saved its login in the protected managed home after its normal storage-consent
+prompt. Doctor passes and discovers 21 corporate models; no model prompt was sent.
+
+The own-user Windows sign-in task **Leo Multiplex - work-wsl** keeps a foreground
+WSL invocation waiting on Linux user unit `leo-work-wsl.service`. It uses
+Interactive/Limited scheduling, no timeout/battery stop, and graceful Linux stop.
+The production task is running with enrollment closed after verified enrollment
+of both the control and command endpoints. The Windows task retained its original
+run ID and process; personal hosts and existing native sessions were preserved.
+The [WSL runbook](../deploy/wsl/README.md#installed-laptop-background-task) owns
+the installed helper paths and service controls.
+
+Initial pairing exposed another locator defect: tickets were created before
+Iroh's relay was available. WSL advertised only internal Docker/WSL addresses;
+a disposable transport probe had a relay within four seconds. Private maintenance
+reissued signed locator candidates on the laptop using the unchanged endpoint
+keys and an observed default relay, without copying keys out. Real authenticated
+gateway connections verified those candidates. Only WSL locators and the Windows
+command locator changed; all source identities, existing catalog configuration,
+gateway pins and journals were preserved with private backups. Normal WSL
+stop/start then reconnected successfully using those configured routes.
+This repairs the installed pairing; **automatic initial relay readiness and
+work-command ticket renewal remain follow-ups**, as does physical sleep/network
+UAT. Gateway startup can wait roughly a minute for an unreachable configured
+source, and an unavailable command target can delay the CLI's all-host lookup.
+
+The live desktop/390px phone check shows all four hosts online, WSL's 21 models
+and native modes, and both PowerShell/Bash command targets with no page errors
+or horizontal overflow. Browser evidence is
+`receipts/wsl-host-web-reconciliation/2026-09-06T12-41-50.343Z/`.
+The normal CLI executed harmless Bash successfully from `/mnt/d` after production
+restart. These checks qualify installed visibility, authentication/model discovery,
+service handoff and command access, not an actual WSL agent conversation.
+The scrubbed installed-host receipt and exact service scripts are under
+`receipts/wsl-installed-host/2026-09-06T12-44-30Z/`; both its inventory and the
+browser inventory were independently rehashed. Native PowerShell parsing, Bash
+syntax, typecheck, all 438 application tests and the production build pass.
+
 ## Real Windows Copilot smoke check
 
 The owner authorized one quick real check with `gpt-5.6-luna`. The web UI

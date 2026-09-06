@@ -6,6 +6,8 @@ gateway observes all four. Install from the
 [Windows](../deploy/windows/README.md) or [WSL](../deploy/wsl/README.md) runbook.
 Start in foreground terminals for initial pairing. Windows can then use the
 optional [current-user background task](../deploy/windows/README.md#run-in-the-background-under-your-windows-account).
+The installed Ubuntu host also has a separate
+[own-user WSL task](../deploy/wsl/README.md#installed-laptop-background-task).
 The base installers create no scheduled task or background service and do not
 change installed personal hosts.
 The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
