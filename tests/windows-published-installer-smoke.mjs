@@ -23,6 +23,7 @@ const wrapper = resolve('deploy/windows/install.ps1');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const checks = [];
 let frameworkRelease;
+let globalNpm;
 
 function run(executable, args, label) {
   const result = spawnSync(executable, args, { cwd: source, env: environment, encoding: 'utf8', timeout: 600_000, maxBuffer: 16 * 1024 * 1024 });
@@ -39,6 +40,7 @@ function run(executable, args, label) {
 
 const installArgs = ['-NoProfile', '-NonInteractive', '-File', wrapper, '-Revision', personalSource, '-InstallDir', installation, '-Name', 'windows-install-smoke'];
 try {
+  globalNpm = run(powershell, ['-NoProfile', '-NonInteractive', '-Command', 'npm.cmd --version'], 'Global npm before installation').trim();
   await writeFile(secretFile, privateValue + '\n');
   run(powershell, [...installArgs, '-SecretFile', secretFile, '-Check'], 'Initial installer preflight');
   await assert.rejects(stat(installation), { code: 'ENOENT' });
@@ -76,11 +78,13 @@ try {
   assert.deepEqual((await readdir(state)).sort(), ['shared-secret', 'work-commands.json']);
   checks.push('saved launcher help and rerun preflight preserve configuration/credential without a new secret file, login or startup');
   assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: source, encoding: 'utf8' }).trim(), '');
+  assert.equal(run(powershell, ['-NoProfile', '-NonInteractive', '-Command', 'npm.cmd --version'], 'Global npm after installation').trim(), globalNpm);
+  checks.push('a different global npm bootstraps the cached install tool and remains unchanged');
 } finally {
   await rm(root, { recursive: true, force: true });
 }
 await assert.rejects(stat(root), { code: 'ENOENT' });
-const receipt = { result: 'passed', personalSource, frameworkRelease, personalLockSha256: digest(await readFile('package-lock.json')), node: process.version, platform: process.platform, arch: process.arch, checks, modelCalls: 0, nativeSessionsCreated: 0, retainedCredentials: false, disposableStateRemoved: true, scope: 'published Windows installation, saved launcher help and preflight; corporate OAuth/network/model UAT excluded' };
+const receipt = { result: 'passed', personalSource, frameworkRelease, globalNpm, personalLockSha256: digest(await readFile('package-lock.json')), node: process.version, platform: process.platform, arch: process.arch, checks, modelCalls: 0, nativeSessionsCreated: 0, retainedCredentials: false, disposableStateRemoved: true, scope: 'published Windows installation, saved launcher help and preflight; corporate OAuth/network/model UAT excluded' };
 const directory = join('receipts', 'windows-installer', new Date().toISOString().replaceAll(':', '-'));
 await mkdir(directory, { recursive: true });
 const encoded = JSON.stringify(receipt, null, 2) + '\n';

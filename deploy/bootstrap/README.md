@@ -31,8 +31,10 @@ Windows includes `D:/...`, other drives and UNC shares; WSL includes `/mnt/d/...
 The account's OS access still applies. Optional workspace values explicitly
 narrow starting directories; they do not select temporary data storage.
 
-Use existing company-approved Git, Node.js 24 x64 and the repository's pinned
-npm version. Neither bootstrap installs global tools, changes policy, logs in nor
+Use existing company-approved Git, Node.js 24 x64 and its bundled npm. Dependency
+installation uses the project's npm from its normal cache, so no exact system
+npm version is required. Neither bootstrap installs global tools, changes policy,
+logs in nor
 starts a host. Windows must use the company's approved process for downloaded
 PowerShell scripts; no execution-policy bypass or file unblocking is performed.
 WSL uses Linux tools and a Linux filesystem source directory.

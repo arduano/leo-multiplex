@@ -31,7 +31,8 @@ const npmStub = `
 import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(process.env.WRAPPER_TEST_LOG, JSON.stringify({ tool: 'npm', args, cwd: process.cwd() }) + '\\n');
-const phase = args[0] === '--version' ? 'npm-version' : args[0] === 'ci' ? 'ci' : args.join(' ') === 'run build' ? 'build' : 'unexpected';
+const inner = args[0] === 'exec' ? args.slice(args.indexOf('--') + 2) : args;
+const phase = args[0] === '--version' ? 'npm-version' : inner[0] === 'ci' ? 'ci' : args.join(' ') === 'run build' ? 'build' : 'unexpected';
 if (phase === 'unexpected') process.exit(92);
 if (process.env.WRAPPER_TEST_FAIL === phase) process.exit(37);
 if (phase === 'npm-version') console.log(process.env.WRAPPER_TEST_NPM_VERSION || '${npmVersion}');
@@ -97,8 +98,8 @@ async function fixture(t, platform, options = {}) {
 }
 
 const stages = calls => calls.map(call => call.tool === 'helper' ? call.args[0]
-  : call.args[0] === '--version' ? 'npm-version' : call.args[0] === 'run' ? 'build' : call.args[0]);
-const successfulStages = ['preflight', 'npm-version', 'ci', 'build', 'configure'];
+  : call.args[0] === '--version' ? 'npm-version' : call.args[0] === 'exec' ? 'ci' : call.args[0] === 'run' ? 'build' : call.args[0]);
+const successfulStages = ['preflight', 'ci', 'build', 'configure'];
 const assertSuccess = result => assert.equal(result.status, 0, `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
 
 function assertInstallCalls(calls, f, expectedOptions) {
@@ -106,8 +107,9 @@ function assertInstallCalls(calls, f, expectedOptions) {
   assert.deepEqual(calls.filter(call => call.tool === 'helper').map(call => call.args), [
     ['preflight', ...expectedOptions], ['configure', ...expectedOptions],
   ]);
-  assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'ci').args,
-    ['ci', '--strict-allow-scripts', '--include=dev', '--include=optional']);
+  assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'exec').args,
+    ['exec', '--yes', '--ignore-scripts', `--package=npm@${npmVersion}`, '--', isWindows ? 'npm.cmd' : 'npm',
+      'ci', '--ignore-scripts=false', '--strict-allow-scripts', '--include=dev', '--include=optional']);
   assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'run').args, ['run', 'build']);
   // Compare filesystem identity: Windows accepts both 8.3 and long path names,
   // and Node's JavaScript realpath implementation need not expand the former.
@@ -127,12 +129,12 @@ test('WSL installer preserves literal arguments, installs in order, and never lo
   assertInstallCalls(await f.calls(), f, ['--platform', 'wsl', ...options]);
 });
 
-test('WSL check performs preflight and version checks without installing or configuring', { skip: isWindows }, async t => {
+test('WSL check performs preflight without invoking npm or configuring', { skip: isWindows }, async t => {
   const f = await fixture(t, 'wsl');
   const result = f.run([f.wrapper, '--revision', revision, '--workspace', '/home/user/work', '--check']);
   assertSuccess(result);
   assert.match(result.stdout, /No installation, login or host startup performed/);
-  assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+  assert.deepEqual(stages(await f.calls()), ['preflight']);
 });
 
 for (const phase of successfulStages) {
@@ -144,12 +146,11 @@ for (const phase of successfulStages) {
   });
 }
 
-test('WSL rejects an npm version mismatch before installation', { skip: isWindows }, async t => {
+test('WSL uses cached pinned npm without rejecting a different global npm', { skip: isWindows }, async t => {
   const f = await fixture(t, 'wsl', { npmVersion: '10.0.0' });
   const result = f.run([f.wrapper, '--revision', revision, '--workspace', '/home/user/work']);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /npm 11\.17\.0 is required/);
-  assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+  assertSuccess(result);
+  assertInstallCalls(await f.calls(), f, ['--platform', 'wsl', '--revision', revision, '--workspace', '/home/user/work']);
 });
 
 for (const tool of ['node', 'npm', 'git']) {
@@ -249,7 +250,7 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     });
     assertSuccess(result);
     assert.match(result.stdout, /No installation, login or host startup performed/);
-    assert.deepEqual(stages(await f.calls()), ['npm-version']);
+    assert.deepEqual(stages(await f.calls()), []);
     await assert.rejects(stat(installDirectory), { code: 'ENOENT' });
   });
 
@@ -267,7 +268,7 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     const { result } = await windowsRun(f, shell, { Check: true });
     assertSuccess(result);
     assert.match(result.stdout, /No installation, login or host startup performed/);
-    assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+    assert.deepEqual(stages(await f.calls()), ['preflight']);
   });
 
   for (const phase of successfulStages) {
@@ -288,12 +289,11 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     assert.deepEqual(stages(await f.calls()), ['preflight']);
   });
 
-  test(`${shell} rejects an npm version mismatch before installation`, { skip: !isWindows }, async t => {
+  test(`${shell} uses cached pinned npm without rejecting a different global npm`, { skip: !isWindows }, async t => {
     const f = await fixture(t, 'windows', { npmVersion: '10.0.0' });
     const { result } = await windowsRun(f, shell);
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /npm 11\.17\.0 is required/);
-    assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+    assertSuccess(result);
+    assert.deepEqual(stages(await f.calls()), successfulStages);
   });
 
   test(`${shell} rejects an invalid revision during parameter binding`, { skip: !isWindows }, async t => {

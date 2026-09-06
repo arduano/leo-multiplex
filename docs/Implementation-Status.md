@@ -2,6 +2,13 @@
 
 ## Installation handoff and gateway readiness
 
+Laptop setup no longer compares global npm against the exact release toolchain.
+It uses standard `npm exec` to cache the project's npm for dependency installation,
+keeping locked artifacts and reviewed install scripts intact. Preflight does not
+invoke or download npm. Node 24+ x64 and native OS/path requirements remain; global
+tools are unchanged. The gist will be updated after the cached-npm installer
+passes native Windows qualification.
+
 Installation revision **`dd4820165eddf24066edc4033628a1664b697da1`** passed
 [exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34024286247),
 including 435 application tests, both PowerShell wrappers, the actual published
@@ -100,7 +107,8 @@ existing hosts. The [laptop runbook](Laptop-Hosts.md) owns installation, first
 enrollment, preserving existing NAS sources and the physical-device checks.
 
 Setup requires an explicit clean source revision, public artifact integrity,
-native x64 Node/Git and the pinned npm version. Working directories must exist
+and native x64 Node/Git. The earlier exact global npm requirement is superseded
+by the cached install tool described above. Working directories must exist
 when selected for an agent or command; workspace restrictions are optional.
 It imports the fleet credential by file path and creates a persistent launcher;
 login and foreground startup are separate commands. Exact reruns preserve state,

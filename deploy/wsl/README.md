@@ -9,7 +9,10 @@ sleep/network behavior still need device testing on both systems.
 
 ## Install
 
-Use company-approved Linux Git, Node.js 24 x64 and npm 11.17.0 **inside WSL**.
+Use company-approved Linux Git, Node.js 24 x64 and its bundled npm **inside WSL**.
+Setup uses the project's pinned npm from cache for dependency installation;
+your global npm needs no version change. The lockfile and install-script policy
+remain enforced.
 The script checks existing tools and never runs sudo or installs global tools.
 Clone onto the distro's Linux filesystem, outside the private install directory:
 

@@ -19,8 +19,9 @@ reviewed WSL installer. Keep the source directory for the installed launcher.
 Without --workspace, agents and recovery commands may use any existing absolute
 directory. Explicit --workspace values opt into a starting-directory allowlist.
 --check prepares source and checks prerequisites only; it does not install
-dependencies, write host state, sign in or start the host. The installer reports
-the pinned npm version. Login and enrollment are separate local steps.
+dependencies, write host state, sign in or start the host. Full installation uses
+the project's npm from cache; global npm is unchanged. Login and enrollment are
+separate local steps.
 USAGE
 }
 

@@ -30,10 +30,13 @@ updates are deliberately deferred until laptop UAT.
 
 ## Install from a pinned checkout
 
-Use company-approved **Git, Node.js 24 x64 and npm 11.17.0**. The installer checks
-these tools; it does not install or change global tools. Keep the repository on
-a local drive, outside the installation/state directory, and leave this checkout
-at its installed revision for the launcher to use.
+Use company-approved **Git, Node.js 24 x64 and its bundled npm**. The installer checks
+runtime prerequisites without requiring a particular installed npm version.
+For dependency installation, standard `npm exec` runs the project's pinned npm
+from cache, preserving the lockfile and install-script policy. Global npm stays
+unchanged. Keep the repository on a local drive, outside the installation/state
+directory, and leave this checkout at its installed revision for the launcher
+to use.
 
 ```powershell
 $Revision = '<full 40-character commit from the installation handoff>'
