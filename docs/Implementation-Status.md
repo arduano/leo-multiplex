@@ -579,3 +579,10 @@ online and reachable. The public UI and API paths redirect anonymous requests
 to the owner's Access login. The operator's interactive Access login remains a
 manual final browser check; no real owner JWT was obtained or retained during
 deployment. The tunnel token and Unix socket are both 0600 in private directories.
+
+Source `82da0c3121511c0bbf25b31d9afd123383457cee` passed
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/34003128645), including
+the new Docker proxy regression. Deployed server modules match the tested local
+build byte-for-byte. The original Tailscale WebSocket upgrade and read-only CLI
+host/session queries also passed. Scrubbed, checksummed deployment evidence is
+`receipts/cloudflare-deployment/2026-09-06T01-10-00Z`.
