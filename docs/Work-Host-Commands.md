@@ -42,8 +42,10 @@ exact operation.
 
 - Each work host admits one command at a time. A second command returns `BUSY`;
   it is not queued. Windows and WSL have independent executors.
-- `cwd` must resolve to an existing directory within an installer-approved work
-  root. This is a starting-directory restriction, not a filesystem sandbox.
+- By default, `cwd` may resolve to any existing absolute directory accessible
+  to the host account, including Windows `D:/...` and UNC shares. Optional
+  installer workspace arguments narrow starting directories; they are not a
+  filesystem sandbox.
 - Windows uses system Windows PowerShell with profiles disabled; WSL uses Bash
   with profile and rc loading disabled. Commands are noninteractive, with stdin
   closed. They run as the ordinary host account, without elevation. Do not use
@@ -143,8 +145,9 @@ output/time limits, process-group cancellation, abrupt executor death, recovery,
 real Iroh enrollment/reconnect, authenticated HTTP and client behavior without
 native agents or model calls. Windows CI separately exercises the exact
 PowerShell wrapper with harmless commands and process-job cleanup, without a
-framework overlay. The full Windows journal/executor smoke remains gated on the
-published framework Windows ACL release. Corporate policy may prevent PowerShell
+framework overlay. The full Windows journal/executor source-candidate smoke also
+passes; installation still needs the published framework Windows update.
+Corporate policy may prevent PowerShell
 `Add-Type` or process-job assignment; such commands fail before user input runs.
 Physical laptop suspend, corporate connectivity and installed Windows/WSL UAT
 remain separate checks. No execution-policy, firewall or TLS setting is changed.

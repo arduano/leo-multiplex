@@ -83,7 +83,7 @@ export async function doctor(config: HostConfig, environment: NodeJS.ProcessEnv 
   }
   try {
     for (const root of config.allowedRoots) if (!(await stat(root)).isDirectory()) throw new Error("root");
-    checks.push({ name: "workspaces", status: "pass", message: "All configured workspace roots exist." });
+    checks.push({ name: "workspaces", status: "pass", message: config.unrestrictedPaths ? "Any existing absolute working directory is allowed with this account's normal access." : "All configured workspace roots exist." });
   } catch { checks.push({ name: "workspaces", status: "fail", message: "At least one configured workspace root is missing or inaccessible." }); }
   try {
     const secret = await stat(join(config.stateDirectory, "shared-secret"));

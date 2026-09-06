@@ -9,14 +9,14 @@ writing host state, signing in or starting a host. No policy or global tools are
 changed. Use the company's approved script process if downloaded scripts are
 blocked; this bootstrap does not remove that protection.
 .EXAMPLE
-.\install-windows.ps1 -Revision '<full-commit-sha>' -Workspace 'C:\Work' -SecretFile 'C:\Private\leo-fleet-secret' -Check
+.\install-windows.ps1 -Revision '<full-commit-sha>' -SecretFile 'C:\Private\leo-fleet-secret' -Check
 .EXAMPLE
-.\install-windows.ps1 -Revision '<full-commit-sha>' -Workspace @('C:\Work', 'D:\Projects') -SecretFile 'C:\Private\leo-fleet-secret'
+.\install-windows.ps1 -Revision '<full-commit-sha>' -SecretFile 'C:\Private\leo-fleet-secret'
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$Revision,
-    [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string[]]$Workspace,
+    [string[]]$Workspace = @(),
     [string]$SecretFile,
     [string]$SourceDir,
     [string]$InstallDir,

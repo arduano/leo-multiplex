@@ -48,6 +48,18 @@ afterEach(async () => {
 });
 
 describe.skipIf(process.platform !== "linux")("private work-laptop command executor", () => {
+  it("allows operator-selected existing directories outside explicit roots when unrestricted, while rejecting invalid cwd", async () => {
+    const { options, directory, workspace } = await fixture();
+    const executor = await open({ ...options, allowedRoots: [], unrestrictedPaths: true });
+    for (const cwd of [workspace, directory]) {
+      const item = request(cwd, "pwd");
+      await executor.submit(item);
+      expect(await finished(executor, item.operationId)).toMatchObject({ exitCode: 0, stdout: `${cwd}\n` });
+    }
+    for (const cwd of ["relative", join(directory, "missing"), join(options.stateDirectory, "operations.sqlite")]) {
+      await expect(executor.submit(request(cwd, "exit 0"))).rejects.toMatchObject({ code: "INVALID_CWD" });
+    }
+  });
   it("captures stdout, stderr and native nonzero exit with canonical approved cwd", async () => {
     const { options, workspace, stateDirectory } = await fixture();
     const executor = await open(options);

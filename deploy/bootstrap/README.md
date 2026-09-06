@@ -12,7 +12,7 @@ WSL installation from the native Windows package-release gate.
 
 ```powershell
 .\install-windows.ps1 -Revision '<full 40-character tested revision>' `
-  -Workspace 'C:\Work' -SecretFile 'C:\Private\leo-fleet-secret' -Check
+  -SecretFile 'C:\Private\leo-fleet-secret' -Check
 
 # Remove -Check after preflight succeeds, then use the saved host launcher
 # for corporate Copilot login, doctor and first enrollment.
@@ -20,10 +20,15 @@ WSL installation from the native Windows package-release gate.
 
 ```bash
 bash install-wsl.sh --revision '<full 40-character tested revision>' \
-  --workspace "$HOME/work" --secret-file "$HOME/.private/leo-fleet-secret" --check
+  --secret-file "$HOME/.private/leo-fleet-secret" --check
 
 # Remove --check after preflight succeeds. Login and enrollment are separate.
 ```
+
+Omit `-Workspace`/`--workspace` to allow any existing absolute directory.
+Windows includes `D:/...`, other drives and UNC shares; WSL includes `/mnt/d/...`.
+The account's OS access still applies. Optional workspace values explicitly
+narrow starting directories; they do not select temporary data storage.
 
 Use existing company-approved Git, Node.js 24 x64 and the repository's pinned
 npm version. Neither bootstrap installs global tools, changes policy, logs in nor

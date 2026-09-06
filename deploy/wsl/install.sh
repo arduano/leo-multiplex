@@ -4,13 +4,14 @@ umask 077
 
 usage() {
   cat <<'USAGE'
-Usage: bash deploy/wsl/install.sh --revision <full-commit-sha> --workspace /home/you/work
-       [--workspace /another/root] [--secret-file /private/fleet-secret]
+Usage: bash deploy/wsl/install.sh --revision <full-commit-sha>
+       [--workspace /optional/restricted/root] [--secret-file /private/fleet-secret]
        [--install-dir /home/you/.local/state/leo-multiplex-wsl]
        [--name work-wsl] [--github-host github.com] [--check]
 
 Run from a reviewed, clean checkout using Linux Git, Node 24 and the repository's
 pinned npm version. Uses corporate Copilot, its own Linux state and separate ports.
+Omit --workspace to allow any existing absolute agent/command working directory.
 --check validates prerequisites only. Installation never starts or logs in a host.
 USAGE
 }

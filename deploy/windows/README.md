@@ -47,18 +47,20 @@ cd leo-multiplex
 git checkout --detach $Revision
 
 # Check first; current public framework 0.2.0 deliberately stops here.
-.\deploy\windows\install.ps1 -Revision $Revision -Workspace 'C:\Work' `
+.\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret' -Check
 
 # After the release gate clears, install dependencies, build and save the host.
-.\deploy\windows\install.ps1 -Revision $Revision -Workspace 'C:\Work' `
+.\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret'
 ```
 
-Create the workspace through normal company tooling first. For multiple roots,
-pass `-Workspace @('C:\Work', 'D:\Projects')`. These roots fence Multiplex path
-operations; they are **not** an OS sandbox. Copilot runs under your account with
-native permission questions. The personal Codex YOLO profile does not apply.
+By default, select any existing absolute working directory when creating an
+agent or running a recovery command. `D:/...`, `C:/...`, other drives and UNC
+shares are supported without an installer allowlist or drive enumeration.
+Copilot uses your account's normal access with native permission questions.
+If deliberately wanted later, `-Workspace @('C:\Work', 'D:\Projects')` opts into
+a narrower starting-directory allowlist; it is not an OS sandbox.
 
 The secret file must privately contain the **existing NAS fleet enrollment
 secret**. Follow [fleet pairing](../../docs/Laptop-Hosts.md#join-the-existing-fleet)

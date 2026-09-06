@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { createWorkCommandExecutor } from "../dist/packages/work-commands/src/executor.js";
 
 assert.equal(process.platform, "win32", "This smoke test must run on native Windows");
-const directory = await mkdtemp(join(tmpdir(), "leo-work-command-smoke-"));
+const directory = await mkdtemp(join(process.env.GITHUB_ACTIONS ? 'D:\\' : tmpdir(), "leo-work-command-smoke-"));
 const stateDirectory = join(directory, "private state");
 const execFileAsync = promisify(execFile);
 const psLiteral = text => `'${text.replaceAll("'", "''")}'`;
@@ -31,7 +31,7 @@ const finished = operationId => waitFor(async () => {
   return record?.state !== "running" ? record : null;
 });
 try {
-  executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: [directory], platform: "windows", environment: {
+  executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: [], unrestrictedPaths: true, platform: "windows", environment: {
     ...process.env, LEO_TEST_SECRET: "fixture-private", OPENAI_API_KEY: "fixture-private", GH_TOKEN: "fixture-private", WORK_COMMAND_FIXTURE: "visible",
   } });
   const first = request("[Console]::Write('héllo 🙂'); [Console]::Error.Write('fixture stderr'); exit 7");
@@ -41,6 +41,13 @@ try {
   assert.equal(firstRecord.exitCode, 7);
   assert.equal(firstRecord.stdout, "héllo 🙂");
   assert.equal(firstRecord.stderr, "fixture stderr");
+  checks++;
+  const onOtherDrive = { ...request("[Console]::Write((Get-Location).Path)"), cwd: process.env.USERPROFILE };
+  assert.ok(onOtherDrive.cwd);
+  await executor.submit(onOtherDrive);
+  const otherDriveRecord = await finished(onOtherDrive.operationId);
+  assert.equal(otherDriveRecord.exitCode, 0);
+  assert.equal(otherDriveRecord.stdout.toLowerCase(), onOtherDrive.cwd.toLowerCase());
   checks++;
   assert.deepEqual(await executor.submit(first), firstRecord);
   await assert.rejects(executor.submit({ ...first, command: "Write-Output changed" }), { code: "REQUEST_CONFLICT" });
@@ -90,7 +97,7 @@ try {
   checks++;
 
   await executor.close();
-  executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: [directory], platform: "windows" });
+  executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: [], unrestrictedPaths: true, platform: "windows" });
   assert.deepEqual(await executor.get(first.operationId), firstRecord);
   checks++;
   console.log(`Windows work-command smoke: ${checks} checks passed`);

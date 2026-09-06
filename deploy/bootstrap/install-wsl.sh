@@ -6,16 +6,18 @@ umask 077
 
 usage() {
   cat <<'USAGE'
-Usage: bash install-wsl.sh --revision <full-commit-sha> --workspace /home/you/work
+Usage: bash install-wsl.sh --revision <full-commit-sha>
        --secret-file /home/you/.private/leo-fleet-secret
        [--source-dir /home/you/.local/share/leo-multiplex-source-wsl]
        [--install-dir /home/you/.local/state/leo-multiplex-wsl]
-       [--workspace /another/root] [--name work-wsl]
+       [--workspace /optional/restricted/root] [--name work-wsl]
        [--github-host github.com] [--check]
 
 Run inside WSL with company-approved Linux Git, Node 24 and npm. This downloads
 the exact revision into a separate persistent source checkout, then runs its
 reviewed WSL installer. Keep the source directory for the installed launcher.
+Without --workspace, agents and recovery commands may use any existing absolute
+directory. Explicit --workspace values opt into a starting-directory allowlist.
 --check prepares source and checks prerequisites only; it does not install
 dependencies, write host state, sign in or start the host. The installer reports
 the pinned npm version. Login and enrollment are separate local steps.
@@ -28,7 +30,6 @@ revision=''
 source_dir=''
 install_dir=''
 installer_args=()
-workspace_count=0
 declare -A seen=()
 while (($#)); do
   case "$1" in
@@ -42,7 +43,6 @@ while (($#)); do
         --revision) revision="${2,,}" ;;
         --source-dir) source_dir="$2" ;;
         --install-dir) install_dir="$2"; installer_args+=("$1" "$2") ;;
-        --workspace) workspace_count=$((workspace_count + 1)); installer_args+=("$1" "$2") ;;
         *) installer_args+=("$1" "$2") ;;
       esac
       shift 2 ;;
@@ -53,7 +53,6 @@ while (($#)); do
   esac
 done
 [[ "$revision" =~ ^[a-f0-9]{40}$ ]] || fail '--revision must be the full 40-character tested Git commit SHA.'
-((workspace_count)) || fail 'Supply at least one --workspace absolute directory.'
 for executable in git node npm; do
   command -v "$executable" >/dev/null 2>&1 || fail "Install the company-approved Linux $executable inside WSL first."
 done

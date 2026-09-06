@@ -64,7 +64,9 @@ export async function main(args = process.argv.slice(2), installDirectory = dirn
   } catch { throw new Error('The installed source checkout is unavailable. Restore its exact revision and keep its original location.'); }
   if (revision !== config.revision || dirty) throw new Error('The installed source revision changed or has tracked modifications. Restore the exact clean revision; the host was not started.');
   const installer = await import(pathToFileURL(join(config.sourceRoot, 'scripts/install-copilot-host.mjs')).href);
-  const options = installer.parseInstallerArgs(['preflight', '--platform', config.platform, '--revision', config.revision, '--install-dir', config.installDirectory, '--name', config.environment.LEO_HOST_NAME, '--github-host', config.environment.LEO_COPILOT_GITHUB_HOST, ...JSON.parse(config.environment.LEO_ALLOWED_ROOTS).flatMap(root => ['--workspace', root])]);
+  const roots = JSON.parse(config.environment.LEO_ALLOWED_ROOTS);
+  if (roots !== '*' && (!Array.isArray(roots) || roots.length === 0 || roots.some(root => typeof root !== 'string'))) throw new Error('The saved working-directory policy is invalid.');
+  const options = installer.parseInstallerArgs(['preflight', '--platform', config.platform, '--revision', config.revision, '--install-dir', config.installDirectory, '--name', config.environment.LEO_HOST_NAME, '--github-host', config.environment.LEO_COPILOT_GITHUB_HOST, ...(roots === '*' ? [] : roots.flatMap(root => ['--workspace', root]))]);
   // Recheck source, release boundary, directories and persisted settings before
   // native startup, including after a laptop wakes or source is accidentally moved.
   await installer.preflight(options, { sourceRoot: config.sourceRoot, environment, requireStopped: false });

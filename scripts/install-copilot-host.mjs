@@ -15,7 +15,7 @@ const VERSION = String.raw`(\d+\.\d+\.\d+)`;
 
 export function parseInstallerArgs(args) {
   const phase = args[0];
-  if (phase !== 'preflight' && phase !== 'configure') throw new Error('Use preflight or configure followed by --platform, --revision and --workspace.');
+  if (phase !== 'preflight' && phase !== 'configure') throw new Error('Use preflight or configure followed by --platform and --revision.');
   const result = { phase, workspaces: [], check: false };
   const keys = { '--platform': 'platform', '--revision': 'revision', '--secret-file': 'secretFile', '--install-dir': 'installDirectory', '--name': 'name', '--github-host': 'githubHost' };
   for (let index = 1; index < args.length; index++) {
@@ -37,7 +37,6 @@ export function parseInstallerArgs(args) {
   if (!['windows', 'wsl'].includes(result.platform)) throw new Error('--platform must be windows or wsl.');
   if (!SHA.test(result.revision ?? '')) throw new Error('--revision must be the exact full 40-character Git commit SHA.');
   result.revision = result.revision.toLowerCase();
-  if (!result.workspaces.length) throw new Error('Supply at least one --workspace absolute directory.');
   result.name ??= `work-${result.platform}`;
   if (!result.name.trim() || result.name.length > 100 || /[\x00-\x1f\x7f]/.test(result.name)) throw new Error('The host name must be nonempty printable text, at most 100 characters.');
   result.githubHost ??= 'github.com';
@@ -113,7 +112,9 @@ export function installationLayout(options, environment = process.env, sourceRoo
   const stateDirectory = paths.join(install, 'state');
   return { installDirectory: install, configFile: paths.join(install, CONFIG_FILE), stateDirectory, workspaces, environment: {
     LEO_HARNESS: 'copilot', LEO_STATE_DIR: stateDirectory, LEO_HOST_NAME: options.name,
-    LEO_ALLOWED_ROOTS: JSON.stringify(workspaces), LEO_COPILOT_GITHUB_HOST: options.githubHost,
+    // No explicit workspace means operator-selected paths anywhere on this OS.
+    // Persist the intent, not a snapshot of currently mounted Windows drives.
+    LEO_ALLOWED_ROOTS: JSON.stringify(workspaces.length ? workspaces : '*'), LEO_COPILOT_GITHUB_HOST: options.githubHost,
     LEO_CONTROL_HTTP_PORT: options.platform === 'windows' ? '4317' : '4319',
     LEO_CONTROL_P2P_BIND: options.platform === 'windows' ? '0.0.0.0:49117' : '0.0.0.0:49119',
     LEO_ENROLL_GATEWAYS: '0', LEO_ENROLL_RUNTIMES: '0',

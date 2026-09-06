@@ -29,7 +29,7 @@ export async function startInstalledWorkCommands(config: HostConfig, signal: Abo
   const marker = await installedWorkCommands(config);
   if (!marker || signal.aborted) return undefined;
   const stateDirectory = join(config.stateDirectory, "work-commands");
-  const executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: config.allowedRoots, platform: marker.platform });
+  const executor = await createWorkCommandExecutor({ stateDirectory, allowedRoots: config.allowedRoots, unrestrictedPaths: config.unrestrictedPaths, platform: marker.platform });
   let host: Awaited<ReturnType<typeof createWorkCommandHost>> | undefined;
   try {
     host = await createWorkCommandHost({ stateDirectory, sourceId: config.name, name: config.name,

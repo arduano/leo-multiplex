@@ -12,6 +12,8 @@ import { MAX_COMMAND_BYTES, MAX_OUTPUT_BYTES, workCommandIdSchema, workCommandRe
 export interface WorkCommandExecutorOptions {
   stateDirectory: string;
   allowedRoots: readonly string[];
+  /** Trusted work-host setup, independent of command input. */
+  unrestrictedPaths?: boolean;
   platform: "windows" | "wsl";
   environment?: NodeJS.ProcessEnv;
 }
@@ -119,8 +121,8 @@ export async function acknowledgeWorkCommandRecovery(stateDirectory: string, ope
 
 export async function createWorkCommandExecutor(options: WorkCommandExecutorOptions): Promise<WorkCommandExecutor> {
   if (options.platform === "windows" ? process.platform !== "win32" : process.platform !== "linux") throw new Error("Work command platform does not match this OS");
-  if (options.allowedRoots.length === 0) throw new Error("Work command execution requires approved workspace roots");
-  const roots = await Promise.all(options.allowedRoots.map(async root => {
+  if (!options.unrestrictedPaths && options.allowedRoots.length === 0) throw new Error("Work command execution requires approved workspace roots");
+  const roots = await Promise.all((options.unrestrictedPaths ? [] : options.allowedRoots).map(async root => {
     if (!isAbsolute(root) || !(await stat(root)).isDirectory()) throw new Error("Work command workspace roots must be existing absolute directories");
     return realpath(root);
   }));
@@ -308,8 +310,8 @@ export async function createWorkCommandExecutor(options: WorkCommandExecutorOpti
         try {
           if (!isAbsolute(request.cwd) || !(await stat(request.cwd)).isDirectory()) throw new Error();
           cwd = await realpath(request.cwd);
-          if (!roots.some(root => isWithin(root, cwd, options.platform))) throw new Error();
-        } catch { throw new WorkCommandError("INVALID_CWD", "Command cwd must be an existing directory within an approved workspace root"); }
+          if (!options.unrestrictedPaths && !roots.some(root => isWithin(root, cwd, options.platform))) throw new Error();
+        } catch { throw new WorkCommandError("INVALID_CWD", options.unrestrictedPaths ? "Command cwd must be an existing absolute directory" : "Command cwd must be an existing directory within an approved workspace root"); }
         if (closing) throw new WorkCommandError("CLOSED", "Work command service is closing");
         const record: WorkCommandRecord = {
           ...request, payloadHash: hash, state: "running", stdout: "", stderr: "", truncated: false,

@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$Revision,
-    [Parameter(Mandatory = $true)][string[]]$Workspace,
+    [string[]]$Workspace = @(),
     [string]$SecretFile,
     [string]$InstallDir,
     [string]$Name = 'work-windows',

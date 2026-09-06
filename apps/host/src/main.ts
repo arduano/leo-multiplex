@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { createCodexRuntime } from "@arduano/agent-multiplex-adapter-codex";
 import { CopilotAgentAdapter } from "@arduano/agent-multiplex-adapter-copilot";
 import { runRuntimeNode, type RuntimeComponents, type RuntimeNodeAppConfig } from "@arduano/agent-multiplex-runtime-node";
+import * as runtimeApp from "@arduano/agent-multiplex-runtime-node";
 import { runtimeBackendForAdapter } from "@arduano/agent-multiplex-runtime-node-core";
 import { z } from "zod";
 
@@ -16,6 +17,7 @@ import { hostConfig, type HostConfig } from "./config.js";
 import { assertIsolatedState, prepareManagedCodexConfig } from "./codex-config.js";
 import { privateDirectory, sharedSecret, verifyPrivateTarget } from "./private-state.js";
 import { copilotClientOptions, prepareCopilotHome } from "./copilot.js";
+import { UnrestrictedWorkspacePolicy } from "./workspace-policy.js";
 
 const sourceSchema = z.object({
   version: z.literal(1), endpointId: z.string().min(1),
@@ -67,7 +69,17 @@ export async function createHostComponents(config: HostConfig, environment: Node
   };
 }
 
+/** Keep WSL on the published POSIX root policy; Windows requires the new static hook. */
+export function workspaceRuntimeOptions(config: HostConfig, platform = process.platform, support: unknown = runtimeApp): { pathPolicy?: UnrestrictedWorkspacePolicy } {
+  if (!config.unrestrictedPaths || platform !== "win32") return {};
+  if (!support || typeof support !== "object" || !("runtimePathPolicyInjectionVersion" in support) || support.runtimePathPolicyInjectionVersion !== 1) {
+    throw new Error("Unrestricted Windows directories require the published framework path-policy update");
+  }
+  return { pathPolicy: new UnrestrictedWorkspacePolicy() };
+}
+
 export async function runHost(config: HostConfig, signal: AbortSignal): Promise<void> {
+  const workspaceOptions = workspaceRuntimeOptions(config);
   if (config.harness === "codex") await assertIsolatedState(config.codexConfigFile, config.stateDirectory);
   else await prepareCopilotHome(config);
   const secret = await sharedSecret(config.stateDirectory);
@@ -83,7 +95,7 @@ export async function runHost(config: HostConfig, signal: AbortSignal): Promise<
     reconnectMaxMs: 30_000, maxRunningTerminals: 16,
     copilotExperimentalUiServer: false,
   };
-  await runRuntimeNode(runtimeConfig, signal, { createComponents: () => createHostComponents(config) });
+  await runRuntimeNode(runtimeConfig, signal, { ...workspaceOptions, createComponents: () => createHostComponents(config) });
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(realpathSync(resolve(process.argv[1]))).href : undefined;

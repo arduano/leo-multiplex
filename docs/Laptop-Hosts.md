@@ -15,6 +15,13 @@ Both installed work profiles also provide the bespoke
 [command recovery service](Work-Host-Commands.md). The CLI is its normal entry
 point; web exposes it only as an experimental App settings hatch.
 
+Omit the workspace argument for unrestricted directory selection. Choose any
+existing absolute directory when creating an agent or running a recovery command;
+Windows includes `D:/...`, other drives and UNC shares. Access uses the host
+account's ordinary permissions. Optional workspace arguments opt into narrower
+starting-directory roots. Private state and native auth still use the separate
+installation directory.
+
 ## Join the existing fleet
 
 1. Privately export **only the existing fleet enrollment secret** from the NAS
@@ -70,7 +77,8 @@ Cloudflare Access authenticates the browser edge, independently of host pairing.
 
 After Windows' framework release gate clears, check both OS hosts together:
 
-- Corporate login, model discovery, distinct host names and the expected work roots.
+- Corporate login, model discovery, distinct host names and directory selection,
+  including a Windows workspace on `D:/`.
 - Create a Copilot session on each host; check streaming, native permission and
   input questions, model/mode changes and image uploads. These real prompts are
   the operator's UAT and consume Copilot usage.

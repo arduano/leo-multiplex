@@ -59,9 +59,9 @@ exit [int]$env:BOOTSTRAP_TEST_EXIT
     directory, remote, source, log, environment, revision, git,
     async called() { return JSON.parse(await readFile(log, 'utf8')); },
     async notCalled() { await assert.rejects(stat(log), { code: 'ENOENT' }); },
-    runWsl(args = []) {
+    runWsl(args = [], workspace = true) {
       return spawnSync(bash, [join(sourceRoot, 'deploy/bootstrap/install-wsl.sh'), '--revision', revision.toUpperCase(),
-        '--source-dir', source, '--workspace', '/home/test/work', ...args], {
+        '--source-dir', source, ...(workspace ? ['--workspace', '/home/test/work'] : []), ...args], {
         cwd: directory, env: environment, encoding: 'utf8', timeout: 30_000,
       });
     },
@@ -105,6 +105,12 @@ test('WSL bootstrap fetches one exact pin, preserves literal arguments, and dele
   assert.equal(f.git(['rev-parse', 'HEAD'], f.source).stdout.trim(), f.revision);
   assert.equal((await readFile(join(f.source, '.git', 'leo-bootstrap-revision'), 'utf8')).trim(), f.revision);
   await assert.rejects(stat(join(f.directory, 'should-not-exist')), { code: 'ENOENT' });
+});
+
+test('WSL bootstrap needs no workspace and preserves unrestricted installer defaults', { skip: windows }, async t => {
+  const f = await fixture(t);
+  success(f.runWsl(['--check'], false));
+  assert.deepEqual(await f.called(), ['--revision', f.revision, '--check']);
 });
 
 test('WSL bootstrap reruns the same clean owned source without fetching or changing its revision', { skip: windows }, async t => {
@@ -199,6 +205,12 @@ test('WSL bootstrap fails closed when Git cannot determine checkout cleanliness'
 });
 
 for (const shell of ['powershell.exe', 'pwsh.exe']) {
+  test(`${shell} bootstrap needs no workspace and preserves unrestricted installer defaults`, { skip: !windows }, async t => {
+    const f = await fixture(t);
+    success(await f.runWindows(shell, { Workspace: [], Check: true }));
+    assert.deepEqual((await f.called()).Workspace, []);
+    assert.equal((await f.called()).Check, true);
+  });
   test(`${shell} bootstrap fetches the exact pin and passes literal parameters with Check`, { skip: !windows }, async t => {
     const f = await fixture(t);
     success(await f.runWindows(shell, { Check: true }));

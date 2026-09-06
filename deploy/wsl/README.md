@@ -19,17 +19,19 @@ git clone https://github.com/arduano/leo-multiplex.git "$HOME/leo-multiplex-src"
 cd "$HOME/leo-multiplex-src"
 git checkout --detach "$revision"
 
-bash deploy/wsl/install.sh --revision "$revision" --workspace "$HOME/work" \
+bash deploy/wsl/install.sh --revision "$revision" \
   --secret-file "$HOME/.private/leo-fleet-secret" --check
-bash deploy/wsl/install.sh --revision "$revision" --workspace "$HOME/work" \
+bash deploy/wsl/install.sh --revision "$revision" \
   --secret-file "$HOME/.private/leo-fleet-secret"
 ```
 
-Create the workspace first. Repeat `--workspace` for more roots. Workspaces can
-be approved mounted Windows directories; private installation/state must stay
-on the Linux filesystem. Never share state or a native auth home with Windows,
-copy another host's identities, or use Windows `node.exe`/Git/npm from WSL.
-The roots fence Multiplex path operations; they are not an OS sandbox.
+No workspace argument is needed. Select any existing absolute working directory
+when creating an agent or running a recovery command, including mounted Windows
+paths such as `/mnt/d/...`, using your account's normal access. Optional
+`--workspace /root` values opt into a narrower starting-directory allowlist.
+Private installation/state must stay on the Linux filesystem. Never share state
+or native auth with Windows, copy host identities, or use Windows Node/Git/npm
+inside WSL. Directory policy is not an OS sandbox.
 
 Prepare the secret file through the shared
 [fleet pairing instructions](../../docs/Laptop-Hosts.md#join-the-existing-fleet).
@@ -107,8 +109,7 @@ private pairing document, including its `workHosts` descriptor.
 
 The normal workflow is `leo-agents exec --host work-wsl --cwd /home/leo/work
 --text 'git status --short' --request-id work-status-1`. Commands use Bash without
-profile/rc startup, the ordinary Linux account and a directory under an approved
-root. Web exposes a separate **Experimental work commands** hatch in App settings.
+profile/rc startup, the ordinary Linux account and any existing absolute directory by default. Web exposes a separate **Experimental work commands** hatch in App settings.
 Recovery survives a failed Copilot startup but still needs this WSL distribution,
 foreground host and network online. See
 [work commands](../../docs/Work-Host-Commands.md) for cancellation, limits and

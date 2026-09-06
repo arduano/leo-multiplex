@@ -38,11 +38,20 @@ async function fixture() {
   return { directory, sourceRoot, workspace, input, options, environment, git };
 }
 
-it('requires exact revisions, deliberate workspace roots, and valid corporate host names', () => {
+it('requires exact revisions and corporate hosts while making workspace restrictions optional', () => {
   expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', 'main', '--workspace', '/work'])).toThrow('40-character');
-  expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision])).toThrow('--workspace');
+  expect(parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision]).workspaces).toEqual([]);
   expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision, '--workspace', '/work', '--github-host', 'https://github.com'])).toThrow('--github-host');
   expect(parseInstallerArgs(['preflight', '--platform', 'wsl', '--revision', revision, '--workspace', '/work', '--workspace', '/team', '--check'])).toMatchObject({ phase: 'preflight', name: 'work-wsl', githubHost: 'github.com', check: true, workspaces: ['/work', '/team'] });
+});
+
+it.each(['windows', 'wsl'])('persists unrestricted %s path selection without snapshotting drives or changing state paths', platform => {
+  const options = parseInstallerArgs(['preflight', '--platform', platform, '--revision', revision]);
+  const environment = { HOME: '/home/leo', USERPROFILE: 'C:\\Users\\Leo', LOCALAPPDATA: 'C:\\Users\\Leo\\AppData\\Local' };
+  const layout = installationLayout(options, environment, platform === 'windows' ? 'C:\\source' : '/source');
+  expect(layout.workspaces).toEqual([]);
+  expect(JSON.parse(layout.environment.LEO_ALLOWED_ROOTS)).toBe('*');
+  expect(layout.stateDirectory).toContain('leo-multiplex-');
 });
 
 it('separates Windows and WSL identity directories, names and ports from personal hosts', () => {
@@ -122,6 +131,16 @@ it('only dispatches explicit host management commands and defaults to help', () 
 });
 
 describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', () => {
+  it('installs and reruns the saved launcher without workspace arguments', async () => {
+    const f = await fixture();
+    const options = { ...f.options, workspaces: [] };
+    const { config, layout } = await preflight(options, { sourceRoot: f.sourceRoot, environment: f.environment });
+    await configureInstallation(config, f.input, dependencies);
+    expect(config.environment.LEO_ALLOWED_ROOTS).toBe('"*"');
+    const result = execFileSync(process.execPath, [join(layout.installDirectory, 'leo-host.mjs'), 'help'], { env: f.environment, encoding: 'utf8' });
+    expect(JSON.parse(result)).toMatchObject({ harness: 'copilot', args: ['help'] });
+    await expect(preflight(options, { sourceRoot: f.sourceRoot, environment: f.environment })).resolves.toMatchObject({ config });
+  });
   it('preflights without mutation, installs privately, and preserves identities on exact reruns', async () => {
     const f = await fixture();
     const { config, layout } = await preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment });

@@ -28,6 +28,11 @@ catalog, native auth home and transport identity; WSL state stays on its Linux
 filesystem. Saved launchers refuse conflicting profile environment overrides.
 The scripts import the fleet credential from a file and never log its contents,
 log in, start enrollment, install global tools or create background services.
+By default, work installers allow operator-selected existing working directories
+anywhere the host account can access. Windows uses a trusted static path policy
+across drives (including `D:\`) and UNC shares; WSL uses `/`. Optional workspace
+arguments explicitly narrow starting directories. State/auth-home privacy and
+image snapshot confinement remain separate from working-directory selection.
 Normal foreground startup keeps enrollment closed; first pairing explicitly
 uses `start --enroll`. Exact reruns preserve the saved identity and configuration.
 
@@ -46,7 +51,8 @@ one active process and bounded runtime/output. Reconnect never blindly retries.
 Interrupted executor state fails closed until local process inspection is
 acknowledged against the stopped writer. Windows uses a kernel process job;
 WSL uses ordinary process groups, which deliberately daemonized commands can
-escape. Approved roots constrain the starting directory only. Inputs/output are
+escape. Optional approved roots constrain the starting directory only; default
+work installations have no directory allowlist. Inputs/output are
 private host journal data; the CLI retains exact request inputs in its private
 ledger, and web retains pending input for reload recovery in origin storage.
 The gateway does not persist command output. Shell output may contain explicitly
