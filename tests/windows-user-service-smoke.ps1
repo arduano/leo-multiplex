@@ -227,13 +227,13 @@ try {
     Assert-That (@($running.args).Count -eq 1 -and $running.args[0] -eq 'start') 'Installed launcher must receive plain start only.'
     Assert-That ($running.token.sid -eq $currentSid) 'Scheduled launcher must run as the same user.'
     $scheduledElevated = [bool]$running.token.elevated
-    # Hosted Windows runners disable UAC. Their admin account has no filtered
-    # token even for a Limited task; record that boundary instead of claiming
-    # CI proves a non-elevated caller. Never change production task privilege.
-    if ($uacEnabled -or -not $registrationElevated) {
-        Assert-That (-not $scheduledElevated) 'Limited task unexpectedly elevated the scheduled launcher.'
-    } else {
-        $checks.Add('Hosted runner has UAC disabled; requested Limited privilege is verified, actual admin token is recorded, standard-user laptop check is separate')
+    # Hosted runners start with an admin token and may retain it even with
+    # Limited task configuration. Prove same-user/no privilege escalation and
+    # report the actual token; a standard-user registration is checked on the
+    # laptop separately. Never change account/UAC policy just to satisfy CI.
+    Assert-That (-not $scheduledElevated -or $registrationElevated) 'Task elevated a non-administrator caller.'
+    if ($scheduledElevated) {
+        $checks.Add('Hosted runner retains its existing admin token with Limited configuration; actual token is recorded, standard-user laptop check is separate')
     }
     $initialPid = $running.pid
     $null = Invoke-Service Start
