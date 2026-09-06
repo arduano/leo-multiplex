@@ -258,7 +258,8 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     const f = await fixture(t);
     const result = await f.runWindows(shell, { InstallDir: f.directory });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /separate from host installation\/state/);
+    // Windows PowerShell wraps Write-Error text to the console width.
+    assert.match(result.stderr.replace(/\s+/g, ' '), /separate from host installation\/state/);
     await f.notCalled();
     await assert.rejects(stat(f.source), { code: 'ENOENT' });
   });
@@ -269,7 +270,7 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     await symlink(f.directory, alias, 'junction');
     const result = await f.runWindows(shell, { SourceDir: join(alias, 'never-create-source') });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /must not be junctions or symlinks/);
+    assert.match(result.stderr.replace(/\s+/g, ' '), /must not be junctions or symlinks/);
     await f.notCalled();
     await assert.rejects(stat(join(f.directory, 'never-create-source')), { code: 'ENOENT' });
   });
