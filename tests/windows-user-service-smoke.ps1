@@ -27,6 +27,8 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 $qualificationIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $qualificationPrincipal = [Security.Principal.WindowsPrincipal]::new($qualificationIdentity)
 $registrationElevated = $qualificationPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$uacEnabled = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name EnableLUA).EnableLUA -ne 0
+$scheduledElevated = $null
 $null = New-Item -ItemType Directory -Path $fixtureRoot
 
 function Assert-That([bool]$Condition, [string]$Message) {
@@ -223,13 +225,22 @@ try {
     Wait-Until { $null -ne (Read-JsonFile (Join-Path $installation 'fixture-running.json')) } 'Scheduled fixture launcher did not start after writer release.'
     $running = Read-JsonFile (Join-Path $installation 'fixture-running.json')
     Assert-That (@($running.args).Count -eq 1 -and $running.args[0] -eq 'start') 'Installed launcher must receive plain start only.'
-    Assert-That ($running.token.sid -eq $currentSid -and -not $running.token.elevated) 'Scheduled launcher must run as the same user without an elevated token.'
+    Assert-That ($running.token.sid -eq $currentSid) 'Scheduled launcher must run as the same user.'
+    $scheduledElevated = [bool]$running.token.elevated
+    # Hosted Windows runners disable UAC. Their admin account has no filtered
+    # token even for a Limited task; record that boundary instead of claiming
+    # CI proves a non-elevated caller. Never change production task privilege.
+    if ($uacEnabled -or -not $registrationElevated) {
+        Assert-That (-not $scheduledElevated) 'Limited task unexpectedly elevated the scheduled launcher.'
+    } else {
+        $checks.Add('Hosted runner has UAC disabled; requested Limited privilege is verified, actual admin token is recorded, standard-user laptop check is separate')
+    }
     $initialPid = $running.pid
     $null = Invoke-Service Start
     $null = Invoke-Service Remove -ExpectFailure
     Assert-That ((Read-JsonFile (Join-Path $installation 'fixture-running.json')).pid -eq $initialPid) 'Repeated start must preserve the one existing host.'
     Assert-That ($null -ne (Get-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction SilentlyContinue)) 'Removal must refuse an active host.'
-    $checks.Add('Foreground handoff launches plain start under a non-elevated token; duplicate start and active removal cannot replace it')
+    $checks.Add('Foreground handoff launches plain start as the same account with Limited task configuration; duplicate start and active removal cannot replace it')
 
     $null = Invoke-Service Stop
     Wait-Until {
@@ -282,6 +293,8 @@ $receipt = [ordered]@{
     personalLockSha256 = (Get-FileHash -LiteralPath (Join-Path $repoRoot 'package-lock.json') -Algorithm SHA256).Hash.ToLowerInvariant()
     checks = $checks.ToArray()
     registrationCallerElevated = $registrationElevated
+    uacEnabled = $uacEnabled
+    scheduledProcessElevated = $scheduledElevated
     scheduledLauncherElevated = $false
     modelCalls = 0
     nativeSessionsCreated = 0
