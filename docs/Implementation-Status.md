@@ -672,3 +672,33 @@ interaction phase. Retained heap after switching was 73.2 MB decimal, consistent
 with the accepted cache tradeoff. This qualifies the recorded synthetic Chromium
 fixture, not arbitrary payloads or physical-phone latency. Its receipt is
 `receipts/long-thread/2026-09-06T02-56-56.596Z`.
+
+The final cleanup makes empty-record deletion atomic across browser tabs. Final
+source `f309ffd64f621958b2ccfa7562bbbd581bd0d590` passed
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/34008128181) and runs on
+NAS as image
+`sha256:cb14da65a28746386e38bf92c637f7e2b87d5ed30e08a45e8172df98b30e9982`.
+Its source-matched browser, PWA, durable-draft and layout receipts are
+`receipts/browser/2026-09-06T03-04-13.690Z`,
+`receipts/pwa/2026-09-06T03-04-34.982Z`,
+`receipts/durable-drafts/2026-09-06T03-04-13.762Z` (11 checks), and
+`receipts/transcript-layout/2026-09-06T03-05-07.902Z`.
+The final 50,000-turn run passes at
+`receipts/long-thread/2026-09-06T03-06-27.668Z`: 37.1-second import, 14 ms p95
+concurrent input-to-paint (24.4 ms maximum), 33.3 ms p95 frame interval and
+73.1 MB decimal retained heap. A preceding concurrent run exceeded the import
+long-task bound and remains diagnostic evidence; the isolated rerun used
+unchanged thresholds and did not stop unrelated work.
+
+Only the NAS web/gateway container was recreated through
+`compose.cloudflare.yaml`. The private `.env.before-pwa` backup retains the
+previous deployment reference. Both listener health checks, Cloudflare Access
+redirects (including SW/manifest/mobile routes), owner-only socket/VAPID state,
+Tailscale mobile API, host reachability, and read-only catalog WebSocket pass.
+Served assets and compiled server modules match the tested image/build exactly.
+Main-pc control/runtime PIDs and process start times are unchanged; no production
+session mutation, model call or host rebuild occurred. Final scrubbed,
+checksummed deployment evidence is
+`receipts/pwa-deployment/2026-09-06T03-08-02.078598+00-00`.
+Physical Android installation, OS keyboard/camera behavior and external FCM
+background delivery remain the operator's device check.
