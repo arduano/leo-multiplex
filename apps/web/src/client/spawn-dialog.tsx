@@ -76,9 +76,9 @@ export function SpawnDialog({
     if (!open || launchAttempt.current) return;
     const first = eligible[0];
     if (!first) return;
-    setRuntimeId((current) => eligible.some((node) => node.runtimeNodeId === current)
-      ? current
-      : first.runtimeNodeId);
+    // Pick an initial host only. A disconnect must not redirect an in-progress
+    // form to a different machine or replace its working directory.
+    setRuntimeId((current) => current || first.runtimeNodeId);
   }, [eligible, open]);
 
   useEffect(() => {
@@ -89,8 +89,8 @@ export function SpawnDialog({
 
   useEffect(() => {
     if (launchAttempt.current) return;
-    setCwd(recentWorkdirs(runtime?.runtimeNodeId)[0] ?? "");
-  }, [runtime?.runtimeNodeId]);
+    setCwd(recentWorkdirs(runtimeId)[0] ?? "");
+  }, [runtimeId]);
 
   const launchProfiles = useQuery({
     queryKey: ["launch-profiles", connectionKey, runtimeId, harness],
@@ -275,6 +275,11 @@ export function SpawnDialog({
             Your host is offline. Reconnect it to start a session.
           </div>
         ) : null}
+        {runtimeId && !runtime && eligible.length > 0 ? (
+          <p className="text-sm text-[var(--status-waiting)]" role="status" data-testid="spawn-host-unavailable">
+            The selected host is offline. Reconnect it or choose another host.
+          </p>
+        ) : null}
         <div className="grid gap-4">
           <Field label="Host">
             <span className="relative">
@@ -294,6 +299,7 @@ export function SpawnDialog({
                 }}
                 data-testid="spawn-runtime-select"
               >
+                {runtimeId && !runtime ? <option value={runtimeId} disabled>{runtimeNodes.find((node) => node.runtimeNodeId === runtimeId)?.name ?? "Selected host"} (offline)</option> : null}
                 {eligible.map((node) => <option key={node.runtimeNodeId} value={node.runtimeNodeId}>{node.name}</option>)}
               </Select>
             </span>

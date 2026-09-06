@@ -66,6 +66,32 @@ privately first. To roll back, stop only this project's `cloudflared` and
 gateway processes against the same state. A gateway restart does not restart
 the host's control, runtime, or Codex sessions.
 
+### Hosts that sleep or disconnect
+
+Treat Windows and WSL on the same laptop as two independent hosts: each needs
+its own persistent control/runtime state and transport identity, and its own
+entry in the gateway's pairing document. Preserve existing source entries when
+adding either host. The current `scripts/pair-nas.sh` replaces that document;
+it is an initial single-host delivery helper, not a multi-host merge operation.
+The gateway currently uses one configured transport enrollment secret for its
+sources; prepare new hosts with the matching trust configuration privately.
+
+Each source reconnects independently with backoff capped at 30 seconds after
+failure detection, then refreshes its canonical projection. Two sleeping laptop
+sources do not transfer authority or change routing for the always-on hosts.
+Keep host state and endpoint identities across restarts; never create a new
+catalog or pairing identity just because the laptop woke on another network.
+
+An open browser retains unavailable sessions and drafts, disables their agent
+actions, and restores observation as the source returns. A chosen launch host
+stays selected while offline; the form cannot silently target another machine.
+No prompt, resume or uncertain command is automatically dispatched on reconnect.
+Durable local drafts survive browser suspension/reload; native history is not
+persisted for cold offline viewing. See [offline behavior](../../docs/Mobile-PWA.md#saved-work-and-offline-behavior).
+Physical laptop suspend/wake and Windows/WSL network changes need a device check
+after installation; the four-host fixtures exercise the UI and routing behavior
+without changing production sessions.
+
 ## Tailscale IP access
 
 Use `compose.tailscale.yaml` as the standalone Compose file. Copy

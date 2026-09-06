@@ -737,3 +737,76 @@ session identity is preserved and active/idle, and both managed process
 executables report 0.153.4. Ordinary CLI/tmux sessions were not modified.
 This targeted user-service activation required no sudo/system rebuild and
 avoided unrelated pending Home Manager/NixOS changes.
+
+## Sessions across multiple hosts — 2026-09-06
+
+The UI now follows `sessions.search` continuation cursors across independent
+control sources. A source can return a single row and still have a next page;
+previously creating the first NAS session hid the main-pc list behind that
+ignored cursor. The original Manifold record remained active/idle and readable
+by exact ID throughout the incident.
+
+Each refresh commits its pages together, retains the existing 500-row bound,
+and labels a truncated or failed list. Only a complete, fresh projection may
+remove an absent retained row. Selected exact-ID lookups now refresh on control
+changes, reconnect/manual refresh, and a ten-second fallback poll, so an early
+missing record cannot remain stuck until browser reload. Initial history
+failure also retries when the same binding becomes active in the catalog or
+starts a native turn; successful history is not reloaded on these events.
+
+The fix is isolated from the paused Windows Copilot candidate and uses the
+unchanged published 0.2.0 package graph. Typechecking, 341 tests, the production
+build and shipped-container authentication/static-asset smoke pass. Browser
+regressions cover external two-host creation, pagination, retained selection
+and drafts, both conversations, early missing links, missed status events and
+initial history recovery. No real model calls or production session mutations
+are part of this verification.
+
+The tested fix source `9637bdf` is deployed on NAS as
+`sha256:7ab0b821d20536e5fbe89286557d5fa55b00c1007077b153bc6d05245ba9c135`
+through `compose.cloudflare.yaml`; only its web/gateway container was recreated.
+The private `.env.before-session-state-*` backup retains the previous image.
+All served assets match the production build (HTML comparison removes the
+per-response CSP nonce). Read-only browser checks show both existing sessions,
+their native history and the two-row phone list. Main-pc and NAS control/runtime
+PIDs are unchanged, and public unauthenticated access still redirects to
+Cloudflare Access.
+
+Final browser evidence is `receipts/browser/2026-09-06T04-54-38.097Z`
+(62 checks across six viewports). The scrubbed, checksummed rollout receipt is
+`receipts/session-state-deployment/2026-09-06T04-57-55.834Z`.
+The separate fix review is [PR #2](https://github.com/arduano/leo-multiplex/pull/2).
+
+### Four hosts and laptop sleep — 2026-09-06
+
+Four independent sources now have explicit browser coverage with 100 sessions,
+including colliding native thread/item IDs, host-specific models, drafts,
+history, live events, pagination and six viewport sizes. The fixture repeats
+simultaneous Windows/WSL outages three times with staggered recovery; always-on
+hosts stay usable, unavailable session rows/drafts remain, and reconnects send
+no agent commands. A separate integration test uses the published real role
+services with mock adapters to verify host-specific launch/command/history
+routing and repeated two-source outages without changing authority or identity.
+
+The audit fixed two offline edges: a disappearing launch target previously
+selected another host automatically, and a cached direct-link session outside
+the visible list could retain enabled controls after losing its source. The
+launch form now preserves the selected host and directory while unavailable;
+direct links use the same source-availability protection as listed sessions.
+Agent search also includes the displayed host name.
+
+Typechecking, 342 tests, production/container builds and shipped-container smoke
+pass. General browser evidence is `receipts/browser/2026-09-06T05-07-26.784Z`
+(63 checks); four-host evidence is
+`receipts/browser-multi-host/2026-09-06T05-09-39.462Z` (14 checks).
+These are deterministic UI/role-service checks, not physical Windows/WSL
+suspend/network qualification. The [NAS runbook](../deploy/nas/README.md#hosts-that-sleep-or-disconnect)
+owns persistent identity, multi-host pairing and reconnect guidance.
+
+Source `88abace` is deployed through the existing combined Compose project as
+`sha256:6a1c71076de3a415dbfd2574f30e9894dec6fbf2e48185c87ca3a7cc85ba32a1`.
+Only the web/gateway container was recreated; `.env.before-four-host-*` privately
+retains its predecessor. Served assets match the tested build, both current
+production conversations open, mobile lists both sessions, and both hosts'
+control/runtime PIDs remain unchanged. Scrubbed, checksummed rollout evidence is
+`receipts/four-host-deployment/2026-09-06T05-12-27.886Z`.
