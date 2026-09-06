@@ -34,6 +34,12 @@ verify recovery on a follow-up's native start, output after an automatic retry,
 and a current active-status read after navigation missed the start. Historical
 error notices remain and a later failure displays a new warning.
 
+Subagent checks interleave parent tools and child messages with deliberately
+reused item/turn IDs. Child output and errors must remain in the named Subagents
+view; returning to Chat preserves the parent draft. Child history is explicitly
+partial, and viewing it sends no agent commands. Desktop and mobile screenshots
+and accessibility checks cover the separate view.
+
 Passing screenshots and a manifest covering all UI source, dependency lockfile,
 font/license notices, and screenshot checksums are written under the ignored
 `receipts/browser/` directory. Failed runs retain diagnostic screenshots only.

@@ -81,7 +81,7 @@ await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   }
 }));
 function completeFixtureTurn() {
-  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType: "turn/completed", ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { turn: { id: "fixture-completed", status: "completed", items: [] } } } };
+  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType: "turn/completed", ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { threadId: session.vendorSessionId, turn: { id: "fixture-completed", status: "completed", items: [] } } } };
   for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
 }
 function emitNative(nativeType, payload) {
@@ -203,15 +203,15 @@ async function axe(name) {
 try {
   await page.goto(`http://127.0.0.1:${port}`);
   await waitEnabled("prompt-input", true);
-  await page.locator('[data-entry-id="codex:user-fixture"]').filter({ hasText: "Check that my draft survives a host reconnect." }).waitFor();
-  await page.locator('[data-entry-id="codex:assistant-fixture"]').filter({ hasText: "The conversation remains visible while the host reconnects." }).waitFor();
+  await page.locator('[data-native-item-id="user-fixture"]').filter({ hasText: "Check that my draft survives a host reconnect." }).waitFor();
+  await page.locator('[data-native-item-id="assistant-fixture"]').filter({ hasText: "The conversation remains visible while the host reconnects." }).waitFor();
   assert.equal(await page.getByTestId("chat-message").count(), 2, "Initial native history must be visible before responsive qualification");
   checks.push({ name: "missing catalog summary still loads native history on initial selection", passed: true });
   await page.waitForFunction(() => document.querySelector('[data-testid="session-health"]')?.textContent === "Live");
   checks.push({ name: "native stream is live after the development lifecycle remount", passed: true });
   subscriptions.clear();
   await page.reload();
-  await page.locator('[data-entry-id="codex:assistant-fixture"]').waitFor();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
   checks.push({ name: "reloading a created session with no catalog summary restores its history", passed: true });
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
   await page.locator('input[type="file"]').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
@@ -257,6 +257,63 @@ try {
   await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
   assert.equal(mutations.length, beforeWorkingStates, "Displaying native working state must not issue an agent command");
   checks.push({ name: "working indicator follows running catalog state at the conversation bottom and disappears for idle, error, or offline hosts", passed: true });
+  const beforeChildren = mutations.length;
+  const childThread = "fixture-child-native";
+  const childTurn = "concurrent-turn";
+  const sharedNativeId = "shared-parent-child-item";
+  await page.getByTestId("prompt-input").fill("A parent draft survives reading subagent work.");
+  emitNative("item/completed", { turnId: childTurn, item: { type: "collabAgentToolCall", id: "spawn-child", tool: "spawnAgent", status: "completed", senderThreadId: session.vendorSessionId, receiverThreadIds: [childThread], prompt: "Review the disposable child fixture.", model: "fixture-model", reasoningEffort: "medium", agentsStates: { [childThread]: { status: "running", message: null } } } });
+  emitNative("thread/started", { threadId: childThread, thread: { id: childThread, agentNickname: "Fixture reviewer", agentRole: "reviewer", name: "Disposable child review", source: { subAgent: { thread_spawn: { parent_thread_id: session.vendorSessionId, depth: 1, agent_path: "/root/fixture_reviewer", agent_nickname: "Fixture reviewer", agent_role: "reviewer" } } }, status: { type: "active" }, turns: [] } });
+  // The exact same item and turn IDs deliberately occur in parent and child.
+  // The parent's command must remain a tool as child assistant deltas arrive.
+  emitNative("item/started", { turnId: childTurn, item: { type: "commandExecution", id: sharedNativeId, command: "Parent fixture command remains a tool", status: "inProgress", aggregatedOutput: "Parent command output. " } });
+  emitNative("item/started", { threadId: childThread, turnId: childTurn, item: { type: "agentMessage", id: sharedNativeId, text: "Child-only review starts. ", phase: "commentary" } });
+  emitNative("item/agentMessage/delta", { threadId: childThread, turnId: childTurn, itemId: sharedNativeId, delta: "First isolated child observation." });
+  emitNative("item/agentMessage/delta", { turnId: childTurn, itemId: "parent-progress", delta: "Root-only response continues while the child works." });
+  const rootTranscript = page.getByTestId("chat-transcript");
+  await rootTranscript.getByText("Root-only response continues while the child works.", { exact: true }).waitFor();
+  const rootCommand = rootTranscript.locator(`[data-native-item-id="${sharedNativeId}"]`);
+  assert.equal(await rootCommand.getAttribute("data-role"), "tool", "Child native ID changed its parent's tool role");
+  assert.equal(await rootTranscript.getByText("First isolated child observation.", { exact: false }).count(), 0, "Child output leaked into the parent conversation");
+  assert.equal(await rootTranscript.locator(`[data-native-item-id="${sharedNativeId}"]`).count(), 1, "A reused child item ID duplicated the parent row");
+  await page.getByTestId("session-subagents-tab").click();
+  const childPanel = page.getByTestId("subagents-view");
+  await childPanel.waitFor();
+  await page.getByTestId("subagent-select").selectOption(childThread);
+  await childPanel.getByText("First isolated child observation.", { exact: false }).waitFor();
+  assert((await childPanel.textContent()).includes("Fixture reviewer"), "Selected child nickname is missing");
+  assert.match(await childPanel.getByTestId("subagent-history-note").textContent(), /unavailable|incomplete|partial|observed/i, "Observed child output must not claim to be complete native history");
+  assert.equal(await page.getByTestId("prompt-input").isVisible(), false, "The child observer must not expose the parent composer");
+  assert.equal(await childPanel.getByText("Parent command output.", { exact: false }).count(), 0);
+  const childReply = childPanel.locator(`[data-native-item-id="${sharedNativeId}"]`);
+  assert.equal(await childReply.getAttribute("data-role"), "assistant");
+  const childIdentity = await childReply.getAttribute("data-entry-id");
+  emitNative("item/agentMessage/delta", { threadId: childThread, turnId: childTurn, itemId: sharedNativeId, delta: " Later isolated child delta." });
+  await childReply.filter({ hasText: "Later isolated child delta." }).waitFor();
+  emitNative("error", { threadId: childThread, turnId: childTurn, error: { message: "Disposable child-only capacity failure.", codexErrorInfo: "serverOverloaded" }, willRetry: false });
+  await childPanel.getByTestId("native-error-notice").waitFor();
+  assert.equal(await page.getByTestId("session-error-banner").count(), 0, "A child failure became the parent's error banner");
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await withinViewport("subagents-view", `Subagent observer at ${width}x${height}`);
+    await screenshot(`subagent-observer-${width}x${height}`);
+    await axe(`subagent-observer-${width}x${height}`);
+  }
+  await page.getByTestId("session-chat-tab").click();
+  await waitPrompt("A parent draft survives reading subagent work.");
+  assert.notEqual(await rootCommand.getAttribute("data-entry-id"), childIdentity, "Parent and child share a transcript identity");
+  assert.equal(await rootCommand.getAttribute("data-role"), "tool");
+  assert.equal(await rootTranscript.getByText("Later isolated child delta.", { exact: false }).count(), 0);
+  assert.equal(await rootTranscript.getByTestId("native-error-notice").count(), 0, "Child errors leaked into the parent transcript");
+  assert.equal(await page.getByTestId("session-error-banner").count(), 0);
+  assert.equal(mutations.length, beforeChildren, "Observing child work must not send any agent commands");
+  checks.push({ name: "concurrent parent tools and child replies retain thread-qualified identities, child errors stay isolated, and parent drafts survive observing subagents", passed: true });
+  // Reload the disposable history so the subsequent empty/short fixture checks
+  // keep their established two-message geometry and failure notice counts.
+  subscriptions.clear();
+  await page.reload();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
+  await page.setViewportSize({ width: 1720, height: 1180 });
   await page.getByTestId("prompt-input").fill("A draft that must survive reconnects");
   for (const [width, height] of [[1720,1180],[1440,900],[1024,768],[768,1024],[390,844],[844,390]]) {
     await page.setViewportSize({ width, height });
@@ -325,12 +382,12 @@ try {
   await page.locator('input[type="file"]').setInputFiles({ name: "retained-draft.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove retained-draft.png" }).waitFor();
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
-  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "");
   assert.equal(await page.getByTestId("image-attachments").count(), 0);
   await page.getByTestId("prompt-input").fill("An independent second draft");
   await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
-  await page.locator('[data-entry-id="codex:user-fixture"]').waitFor();
+  await page.locator('[data-native-item-id="user-fixture"]').waitFor();
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "Draft belonging to the first agent");
   await page.getByRole("button", { name: "Remove retained-draft.png" }).waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="image-attachments"] img')].some((image) => image.complete && image.naturalWidth > 0));
@@ -342,7 +399,7 @@ try {
   assert.equal(commands.length, 1, "Synchronous repeated submit dispatched duplicate commands");
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "Dispatch this exact command once");
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
-  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "An independent second draft");
   assert.equal(await page.getByTestId("reconcile-command").count(), 0);
   await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
@@ -357,14 +414,14 @@ try {
   assert.equal(await page.getByTestId("reconcile-command").count(), 0);
   checks.push({ name: "duplicate command dispatch is fenced and lost replies retain exact envelope across session switches", passed: true });
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
-  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
   historyUnavailable = true;
   await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
   await page.getByTestId("history-error").waitFor();
   await page.getByText("Retry loading above. Your session is still selected.", { exact: true }).waitFor();
   historyUnavailable = false;
   completeFixtureTurn();
-  await page.locator('[data-entry-id="codex:assistant-fixture"]').waitFor();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
   assert.equal(await page.getByTestId("history-error").count(), 0);
   const settledHistoryRequests = historyRequests;
   completeFixtureTurn();
@@ -402,7 +459,7 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
-  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
   assert.equal(await page.getByTestId("session-error-banner").count(), 0);
   await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
   await page.getByTestId("session-error-banner").filter({ hasText: "Model at capacity" }).waitFor();
@@ -433,10 +490,10 @@ try {
   await screenshot("historical-error-without-details");
   assert.equal(mutations.length, beforeErrors, "Displaying an error must never issue a prompt, resume, or retry");
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
-  await page.locator('[data-entry-id="codex:other-reply"]').waitFor();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
   nativeStatus = "active";
   await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
-  await page.locator('[data-entry-id="codex:assistant-fixture"]').waitFor();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
   await page.getByTestId("session-error-banner").waitFor({ state: "detached" });
   nativeStatus = "idle";
   checks.push({ name: "reload detects systemError without inventing details, then returning to native active work reconciles the cached warning", passed: true });

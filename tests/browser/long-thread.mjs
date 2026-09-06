@@ -80,7 +80,7 @@ await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   }
 }));
 function sendNative(nativeType, json) {
-  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++eventSequence, nativeType, ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json } };
+  const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++eventSequence, nativeType, ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { threadId: session.vendorSessionId, ...json } } };
   for (const subscription of subscriptions) {
     // Match the selected-session subscription; the catalog watch does not need
     // native payloads. This is the same session filter the gateway enforces.
@@ -251,7 +251,7 @@ try {
   assert.equal(await page.getByTestId("history-pagination").count(), 0, "Complete history still presented as partial");
   await page.waitForFunction(() => {
     const transcript = document.querySelector('[data-testid="chat-transcript"]');
-    const tail = transcript?.querySelector('[data-entry-id="codex:huge-output"]');
+    const tail = transcript?.querySelector('[data-native-item-id="huge-output"]');
     if (!transcript || !tail?.checkVisibility({ contentVisibilityAuto: true })) return false;
     const viewport = transcript.getBoundingClientRect();
     const bounds = tail.getBoundingClientRect();
@@ -260,15 +260,15 @@ try {
   checks.push({ name: "reselected 50,000-turn session automatically loads every native page and displays latest", turns: fixtureTurns, items: fixtureItems, pageRequests: fullRequests.length });
   await boundedDOM("all 100,001 items loaded");
   await scrollTo(0);
-  await page.locator('[data-entry-id="codex:user-0"]').waitFor();
+  await page.locator('[data-native-item-id="user-0"]').waitFor();
   await boundedDOM("first native turn remains accessible");
   await scrollTo(0.5);
   await boundedDOM("middle of the complete thread");
   await scrollTo(1);
-  await page.locator('[data-entry-id="codex:huge-output"]').waitFor();
-  await page.locator('[data-entry-id="codex:huge-output"] summary').click();
+  await page.locator('[data-native-item-id="huge-output"]').waitFor();
+  await page.locator('[data-native-item-id="huge-output"] summary').click();
   await page.getByTestId("long-content-controls").waitFor();
-  const outputBody = page.locator('[data-entry-id="codex:huge-output"] [data-testid="command-output"]');
+  const outputBody = page.locator('[data-native-item-id="huge-output"] [data-testid="command-output"]');
   assert((await outputBody.textContent()).length <= 16_384, "Large output rendered the full native body");
   await page.getByTestId("long-content-controls").getByRole("button", { name: "Latest", exact: true }).click();
   assert((await outputBody.textContent()).endsWith("END OF LARGE FIXTURE OUTPUT"));
@@ -285,11 +285,11 @@ try {
   const typing = page.getByTestId("prompt-input").pressSequentially("An editable draft while thousands of native fragments stream.", { delay: 20 });
   let fragments = 0;
   for (let batch = 0; batch < 90; batch++) {
-    if (batch === 0) sendNative("item/started", { item: { type: "agentMessage", id: "streamed-reply", text: "", phase: "commentary" } });
-    for (let index = 0; index < 24; index++) { sendNative("item/agentMessage/delta", { itemId: "streamed-reply", delta: `chunk ${fragments++} ` }); }
+    if (batch === 0) sendNative("item/started", { turnId: "streamed-turn", item: { type: "agentMessage", id: "streamed-reply", text: "", phase: "commentary" } });
+    for (let index = 0; index < 24; index++) { sendNative("item/agentMessage/delta", { turnId: "streamed-turn", itemId: "streamed-reply", delta: `chunk ${fragments++} ` }); }
     await new Promise((resolve) => setTimeout(resolve, 16));
   }
-  sendNative("item/completed", { item: { type: "agentMessage", id: "streamed-reply", text: "FINAL STREAMED FIXTURE REPLY", phase: "final_answer" } });
+  sendNative("item/completed", { turnId: "streamed-turn", item: { type: "agentMessage", id: "streamed-reply", text: "FINAL STREAMED FIXTURE REPLY", phase: "final_answer" } });
   sendNative("turn/completed", { turn: { id: "streamed-turn", status: "completed", items: [] } });
   await typing;
   await waitCount(fixtureItems + 1);
@@ -308,16 +308,16 @@ try {
   assert(streamMetrics.longTasks.max < 250, `Streaming caused a blocking task over 250ms: ${JSON.stringify(streamMetrics)}`);
   await boundedDOM("streaming plus typing at 100,001 historical items");
   await page.getByTestId("jump-to-latest").click();
-  await page.locator('[data-entry-id="codex:streamed-reply"]').filter({ hasText: "FINAL STREAMED FIXTURE REPLY" }).waitFor();
+  await page.locator('[data-native-item-id="streamed-reply"]').filter({ hasText: "FINAL STREAMED FIXTURE REPLY" }).waitFor();
   checks.push({ name: "streaming keeps draft and older-history anchor, native completion does not reload history", fragments, passed: true });
   await page.getByTestId("prompt-input").fill("");
   await startMetrics();
   const concurrentTyping = page.getByTestId("prompt-input").pressSequentially("A draft stays editable while scrolling and receiving new output.", { delay: 25 });
-  sendNative("item/started", { item: { type: "agentMessage", id: "scrolling-reply", text: "", phase: "commentary" } });
+  sendNative("item/started", { turnId: "scrolling-turn", item: { type: "agentMessage", id: "scrolling-reply", text: "", phase: "commentary" } });
   let scrollingStream = true;
   const concurrentStream = (async () => {
     while (scrollingStream) {
-      for (let index = 0; index < 24; index++) sendNative("item/agentMessage/delta", { itemId: "scrolling-reply", delta: "more disposable output " });
+      for (let index = 0; index < 24; index++) sendNative("item/agentMessage/delta", { turnId: "scrolling-turn", itemId: "scrolling-reply", delta: "more disposable output " });
       await new Promise((resolve) => setTimeout(resolve, 16));
     }
   })();
@@ -325,7 +325,7 @@ try {
     for (let step = 0; step < 10; step++) { await scrollTo(step / 9); await boundedDOM(`scrolling during native stream ${step + 1}`); }
     await concurrentTyping;
   } finally { scrollingStream = false; await concurrentStream; }
-  sendNative("item/completed", { item: { type: "agentMessage", id: "scrolling-reply", text: "SCROLLING STREAM FINISHED", phase: "final_answer" } });
+  sendNative("item/completed", { turnId: "scrolling-turn", item: { type: "agentMessage", id: "scrolling-reply", text: "SCROLLING STREAM FINISHED", phase: "final_answer" } });
   sendNative("turn/completed", { turn: { id: "scrolling-turn", status: "completed", items: [] } });
   await waitCount(fixtureItems + 2);
   const concurrentMetrics = await stopMetrics("streamingWhileScrollingAndTyping");

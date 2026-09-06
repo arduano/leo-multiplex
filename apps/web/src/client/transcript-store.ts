@@ -19,6 +19,10 @@ export class TranscriptStore {
   private orderRevision = 0;
   private readonly lastSequence = new Map<string, number>();
   private readonly rowViews = new Map<string, RowViewState>();
+  // History items/list has no event watermark or assistant completion state.
+  // Keep an independent stream prefix so replay cannot append twice to a
+  // snapshot. Only a known start prefix can overtake it before completion.
+  private readonly hydrating = new Map<string, { snapshot: TimelineEntry; live?: TimelineEntry }>();
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -57,7 +61,17 @@ export class TranscriptStore {
         this.historyIds.push(entry.id);
         if (this.entries.has(entry.id)) moved.add(entry.id);
       }
-      this.put(entry, true);
+      const previous = this.entries.get(entry.id);
+      if (previous?.pending === false && entry.historySnapshot) continue;
+      if (entry.historySnapshot) {
+        const previousHydration = this.hydrating.get(entry.id);
+        const live = previousHydration?.live ?? (previous && !previous.historySnapshot ? previous : undefined);
+        this.hydrating.set(entry.id, { snapshot: entry, ...(live ? { live } : {}) });
+        this.put(this.hydrated(entry, live), true);
+      } else {
+        this.hydrating.delete(entry.id);
+        this.put(entry, true);
+      }
     }
     if (moved.size) {
       let write = 0;
@@ -72,9 +86,22 @@ export class TranscriptStore {
     for (const event of events) {
       if (event.sequence <= (this.lastSequence.get(event.runtimeEpoch) ?? -1)) continue;
       this.lastSequence.set(event.runtimeEpoch, event.sequence);
-      for (const entry of projectNativeEvent(event, (id) => this.entries.get(id))) {
+      for (const entry of projectNativeEvent(event, (id) => {
+        const hydration = this.hydrating.get(id);
+        return hydration ? hydration.live : this.entries.get(id);
+      })) {
         if (!this.entries.has(entry.id)) this.liveIds.push(entry.id);
-        this.put(entry);
+        const hydration = this.hydrating.get(entry.id);
+        if (hydration && entry.pending !== false) {
+          hydration.live = entry;
+          const displayed = this.hydrated(hydration.snapshot, entry);
+          const current = this.entries.get(entry.id);
+          if (displayed.historySnapshot && current?.historySnapshot && displayed.body === current.body) continue;
+          this.put(displayed);
+        } else {
+          this.hydrating.delete(entry.id);
+          this.put(entry);
+        }
         changed = true;
       }
     }
@@ -86,6 +113,14 @@ export class TranscriptStore {
     this.localIds.push(entry.id);
     this.liveRevision += 1;
     this.emit();
+  }
+  private hydrated(snapshot: TimelineEntry, live?: TimelineEntry): TimelineEntry {
+    // Without item/started, deltas might be replay or new suffixes. The API
+    // supplies no safe overlap boundary; display the snapshot until the native
+    // completed item supplies the authoritative replacement. A known stream
+    // prefix resumes normal streaming as soon as it reaches the snapshot.
+    if (live?.streamStarted && live.body.startsWith(snapshot.body)) return live;
+    return snapshot;
   }
   private put(incoming: TimelineEntry, fromHistory = false): void {
     const previous = this.entries.get(incoming.id);

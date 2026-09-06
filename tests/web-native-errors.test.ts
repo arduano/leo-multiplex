@@ -227,7 +227,7 @@ describe("native failure transcript integration", () => {
     const rows = entriesFromHistory(result);
     expect(rows).toHaveLength(4);
     expect(rows[0]).toMatchObject({ kind: "assistant", body: "Partial answer" });
-    expect(rows[1]).toMatchObject({ kind: "notice", title: "Model at capacity", body: capacityError.message, pending: false });
+    expect(rows[1]).toMatchObject({ kind: "notice", title: "Model at capacity", body: capacityError.message, pending: false, threadId: "root-thread", turnId: "turn-1" });
     expect(rows[2]?.failure).toMatchObject({ title: "Codex error", willRetry: false });
     expect(rows[3]?.failure).toBeUndefined();
     expect(rows[1]?.failure?.id).toBe(failureFromEvent(failedCompletion())?.id);
@@ -243,7 +243,7 @@ describe("native failure transcript integration", () => {
       { turnId: "turn-1", item: { id: "answer", type: "agentMessage", text: "The service is overloaded.", phase: "final_answer" } },
     ], nextCursor: null }));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ kind: "assistant", body: "The service is overloaded." });
+    expect(rows[0]).toMatchObject({ kind: "assistant", body: "The service is overloaded.", threadId: "root-thread", turnId: "turn-1", nativeItemId: "answer", historySnapshot: true });
     expect(rows[0]?.failure).toBeUndefined();
   });
 });

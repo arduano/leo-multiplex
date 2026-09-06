@@ -1,4 +1,4 @@
-# Implementation status — 2026-09-05
+# Implementation status — 2026-09-06
 
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
 The NAS gateway is deployed at **http://100.82.173.47:8444/** through Tailscale
@@ -477,3 +477,45 @@ complete history and the viewport at the latest messages. No history/page errors
 or production mutations occurred. Host control/runtime process identities are
 unchanged; only the web/gateway container was recreated. Checksummed rollout evidence is
 `receipts/latest-history-deployment/2026-09-05T23-54-00Z`.
+
+## Separate native threads and stable scrolling
+
+Codex descendants share the logical session's event stream, but now have
+independent transcript stores. Chat shows the parent; the Subagents tab selects
+a named child and its own messages, tools, and errors. Native thread, turn, and
+item IDs jointly identify rows. A child's prompt echo cannot acknowledge a
+parent draft, and child lifecycle events cannot trigger parent history recovery.
+Child selection is for observation; the parent composer remains in Chat.
+
+The published host API exposes only parent history. The child view therefore
+explicitly labels its content as partial activity received while this session
+is open; connection gaps remain visible and invalidate observed child status.
+No vendor history files, extra native connections, or host changes provide an
+alternate history source. A search bounds the child selector after 100 agents.
+
+Paginated item history supplies neither completion state for assistant messages
+nor a native event watermark. The UI no longer treats message phase as completion
+or appends an ambiguous live suffix to a history snapshot. It retains a separate
+stream prefix: a stream observed from item start resumes displaying when it
+catches up with the snapshot, and item completion supplies the final replacement.
+If selection missed the start, that one ambiguous message may retain its snapshot
+until completion. New messages stream normally. This preserves native text
+without guessing replay overlap.
+
+Rows retain Markdown once rendered while mounted, and resize corrections are
+committed as one batch before paint. An upward gesture leaves latest-follow
+even inside the near-bottom threshold; a later downward gesture can resume it.
+Reduced-motion styling disables transitions instead of assigning a small
+nonzero duration to every element: that rule accidentally animated virtual
+positions and produced alternating one-frame jumps. Transcript positions also
+explicitly opt out of transitions.
+The 200-message window, natural-flow layout, native pagination, and bounded body
+parts remain in use.
+
+Typechecking, 277 tests, the production build, and isolated container smoke
+checks pass. Browser qualification passes 48 checks, including child output/error
+isolation and desktop/mobile child views. The layout suite passes 126 checks,
+including 360 frame samples and upward scrolling while new output arrives.
+All six viewport screenshots were inspected. Source-matched receipts are
+`receipts/browser/2026-09-06T00-25-39.783Z` and
+`receipts/transcript-layout/2026-09-06T00-25-02.526Z`.

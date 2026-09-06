@@ -28,6 +28,18 @@ export interface TimelineEntry {
   readonly pending?: boolean | undefined;
   readonly images?: readonly TranscriptImage[] | undefined;
   readonly failure?: NativeFailure | undefined;
+  readonly threadId?: string | undefined;
+  readonly turnId?: string | undefined;
+  readonly nativeItemId?: string | undefined;
+  /** A native history item whose completion is not supplied by its API. */
+  readonly historySnapshot?: boolean | undefined;
+  /** The complete stream prefix is known from item/started. */
+  readonly streamStarted?: boolean | undefined;
+}
+
+/** Native item IDs are scoped to their thread and turn, never a display label. */
+export function codexItemId(nativeItemId: string, threadId?: string, turnId?: string): string {
+  return `codex:${JSON.stringify([threadId ?? null, turnId ?? null, nativeItemId])}`;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -65,10 +77,14 @@ export function projectNativeEvent(
   const nativeId = event.harness === "codex"
     ? string(record(payload?.item)?.id) ?? string(payload?.itemId)
     : string(data?.messageId) ?? string(data?.toolCallId) ?? string(payload?.id);
-  const id = nativeId ? `${event.harness}:${nativeId}` : undefined;
+  const id = nativeId ? event.harness === "codex"
+    ? codexItemId(nativeId, string(payload?.threadId), string(payload?.turnId))
+    : `copilot:${nativeId}` : undefined;
   const previous = id ? lookup(id) : undefined;
   // A replayed delta/start cannot undo a terminal history item.
-  if (previous?.pending === false && (event.nativeType.toLowerCase().endsWith("delta") ||
+  // TranscriptStore keeps any live replay prefix separately from protected
+  // history snapshots. Pure callers must not append into a snapshot either.
+  if ((previous?.pending === false || previous?.historySnapshot) && (event.nativeType.toLowerCase().endsWith("delta") ||
     event.nativeType.endsWith("_delta") || event.nativeType === "item/started")) return [];
   const changed = new Map<string, TimelineEntry>();
   if (previous) changed.set(previous.id, previous);
@@ -81,8 +97,8 @@ function codexHistory(payload: unknown, vendorSessionId: string): TimelineEntry[
   const items = array(record(payload)?.data);
   if (items.length > 0) return items.map((entry, index) => {
     const item = record(entry);
-    const projected = codexItem(item?.item, undefined, `history:${index}`);
-    return projected ? { ...projected, sequence: index, pending: projected.kind === "assistant" && projected.pending ? undefined : projected.pending ?? false } : null;
+    const projected = codexItem(item?.item, undefined, `history:${index}`, vendorSessionId, string(item?.turnId));
+    return projected ? { ...projected, sequence: index, historySnapshot: projected.pending !== false } : null;
   }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
   const thread = record(record(payload)?.thread);
   const threadId = string(thread?.id) ?? vendorSessionId;
@@ -98,8 +114,13 @@ function codexHistory(payload: unknown, vendorSessionId: string): TimelineEntry[
           ? undefined
           : new Date(startedAt * 1_000 + itemIndex).toISOString(),
         `history:${turnIndex}:${itemIndex}`,
+        threadId, string(turn?.id),
       );
-      if (projected) entries.push({ ...projected, sequence: turnIndex * 10_000 + itemIndex });
+      if (projected) {
+        const terminal = turn?.status === "completed" || turn?.status === "failed" || turn?.status === "interrupted";
+        entries.push({ ...projected, sequence: turnIndex * 10_000 + itemIndex,
+          pending: terminal ? false : projected.pending, historySnapshot: !terminal && projected.pending !== false });
+      }
     }
     if (turn?.status === "failed") {
       const turnId = string(turn.id);
@@ -115,18 +136,18 @@ function codexHistory(payload: unknown, vendorSessionId: string): TimelineEntry[
   return entries;
 }
 
-function codexItem(rawItem: unknown, timestamp?: string, fallbackId?: string): TimelineEntry | null {
+function codexItem(rawItem: unknown, timestamp?: string, fallbackId?: string, threadId?: string, turnId?: string): TimelineEntry | null {
   const item = record(rawItem);
   const type = string(item?.type);
   const nativeId = string(item?.id) ?? fallbackId ?? `${type ?? "item"}:${stablePreview(rawItem)}`;
-  const base = { id: `codex:${nativeId}`, timestamp, raw: rawItem };
+  const base = { id: codexItemId(nativeId, threadId, turnId), threadId, turnId, nativeItemId: nativeId, timestamp, raw: rawItem };
   switch (type) {
     case "userMessage": {
       const body = array(item?.content)
         .map((part) => string(record(part)?.text))
         .filter((value): value is string => value !== undefined)
         .join("\n");
-      return { ...base, kind: "user", title: "You", body };
+      return { ...base, kind: "user", title: "You", body, pending: false };
     }
     case "agentMessage":
       return {
@@ -134,7 +155,8 @@ function codexItem(rawItem: unknown, timestamp?: string, fallbackId?: string): T
         kind: "assistant",
         title: "Codex",
         body: string(item?.text) ?? "",
-        pending: (string(item?.phase) ?? "") !== "final_answer",
+        // phase labels the message's purpose, not its completion state.
+        pending: undefined,
       };
     case "reasoning":
       return {
@@ -287,12 +309,14 @@ function applyCodexLive(entries: Map<string, TimelineEntry>, event: NativeEvent)
       item,
       timestampMs === undefined ? undefined : new Date(timestampMs).toISOString(),
       `event:${event.runtimeEpoch}:${event.sequence}`,
+      string(payload?.threadId), string(payload?.turnId),
     );
     if (projected) {
       entries.set(projected.id, {
         ...projected,
         sequence: event.sequence,
         pending: event.nativeType === "item/started" ? true : false,
+        streamStarted: event.nativeType === "item/started", historySnapshot: false,
       });
     }
     return;
@@ -300,12 +324,14 @@ function applyCodexLive(entries: Map<string, TimelineEntry>, event: NativeEvent)
   const itemId = string(payload?.itemId);
   const delta = string(payload?.delta);
   if (itemId && delta !== undefined) {
-    const id = `codex:${itemId}`;
+    const threadId = string(payload?.threadId);
+    const turnId = string(payload?.turnId);
+    const id = codexItemId(itemId, threadId, turnId);
     const previous = entries.get(id);
     const isCommand = event.nativeType.includes("commandExecution");
     entries.set(id, {
       ...previous,
-      id,
+      id, threadId, turnId, nativeItemId: itemId, historySnapshot: false,
       kind: previous?.kind ?? (isCommand ? "tool" : event.nativeType.includes("reasoning") ? "reasoning" : event.nativeType.includes("plan") ? "plan" : "assistant"),
       title: previous?.title ?? (isCommand ? "Command output" : event.nativeType.includes("plan") ? "Plan" : "Codex"),
       body: `${previous?.body ?? ""}${delta}`,
@@ -319,7 +345,7 @@ function applyCodexLive(entries: Map<string, TimelineEntry>, event: NativeEvent)
 
 function failureEntry(failure: NativeFailure, raw: unknown, sequence?: number, timestamp?: string): TimelineEntry {
   return { id: failure.id, kind: "notice", title: failure.title, body: failure.message,
-    status: "failed", pending: false, failure, raw, sequence, timestamp };
+    status: "failed", pending: false, failure, raw, sequence, timestamp, threadId: failure.threadId, turnId: failure.turnId };
 }
 
 function applyCopilotLive(entries: Map<string, TimelineEntry>, event: NativeEvent): void {

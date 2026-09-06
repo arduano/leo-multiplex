@@ -174,7 +174,9 @@ export class NativeHistoryPager {
       if (result.complete === false && !result.nextCursor) throw new Error("Native history omitted its continuation cursor");
       if (!result.complete && result.nextCursor && this.seen.has(result.nextCursor)) throw new Error("Native history repeated its cursor");
       const entries = entriesFromHistory(result).map((entry, index) => ({ ...entry,
-        id: entry.id.startsWith("codex:history:") ? `${entry.id}:page:${cursor ?? "first"}` : entry.id,
+        id: result.harness === "codex" && entry.nativeItemId !== undefined &&
+          typeof (entry.raw as { id?: unknown } | null)?.id !== "string"
+          ? `codex-history:${JSON.stringify([entry.threadId, entry.turnId, cursor ?? null, index])}` : entry.id,
         sequence: this.offset + index,
       }));
       this.offset += entries.length;

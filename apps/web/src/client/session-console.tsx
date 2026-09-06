@@ -57,7 +57,8 @@ import {
   type NativeHistorySignal,
 } from "./native-history.js";
 import type { TimelineEntry } from "./transcript.js";
-import { TranscriptStore } from "./transcript-store.js";
+import { SessionTranscript } from "./session-transcript.js";
+import { SubagentView } from "./subagent-view.js";
 import { VirtualTranscript, type TranscriptHandle } from "./virtual-transcript.js";
 import { useSessionDraft } from "./session-drafts.js";
 import type { TerminalSideChannelCapability } from "./terminal-state.js";
@@ -106,7 +107,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 }) {
   const { client, connectionKey } = useApi();
   const queryClient = useQueryClient();
-  const [store] = useState(() => new TranscriptStore());
+  const [sessionTranscript] = useState(() => new SessionTranscript(session?.vendorSessionId, session?.harness));
+  const store = sessionTranscript.root;
   const [errors] = useState(() => sessionErrorState(`${connectionKey}:${bindingIdentity}`));
   const sessionFailure = useSyncExternalStore(errors.subscribe, errors.snapshot, errors.snapshot);
   const [pager] = useState(() => session ? new NativeHistoryPager(client, session) : null);
@@ -147,7 +149,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState<string | null>(null);
   const slashMenuId = useId();
-  const [workspaceView, setWorkspaceView] = useState<"chat" | "terminal">("chat");
+  const [workspaceView, setWorkspaceView] = useState<"chat" | "subagents" | "terminal">("chat");
   const historyGeneration = session && historySignal?.bindingIdentity === bindingIdentity
     ? historySignal.generation
     : 0;
@@ -207,7 +209,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (!active) return;
       const events = queued;
       queued = [];
-      store.applyEvents(events);
+      sessionTranscript.applyEvents(events);
       setRecentEvents((current) => [...current, ...events.slice(-10).map((event) => ({ kind: event.kind, type: event.nativeType, sequence: event.sequence }))].slice(-40));
     };
     const signalHistory = (cause: "lifecycle" | "reconcile") => {
@@ -244,13 +246,15 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           }
           // A new thread may initially reject history. Retry at a native
           // lifecycle boundary, without rereading successful history each turn.
-          if (item.nativeType === "turn/completed" || item.nativeType === "session.idle") {
+          if ((item.harness !== "codex" || (item.payload.json as { threadId?: unknown } | null)?.threadId === session.vendorSessionId) &&
+              (item.nativeType === "turn/completed" || item.nativeType === "session.idle")) {
             signalHistory("lifecycle");
           }
           if (queued.length >= 64) return new Promise<void>((resolve) => { releaseBackpressure = resolve; });
           return;
         }
         if (item.kind === "nativeGap" && item.sessionId === watchedSessionId) {
+          sessionTranscript.markGap();
           signalHistory("reconcile");
           return;
         }
@@ -268,6 +272,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           }
         }
         if (item.kind === "streamReset") {
+          sessionTranscript.markGap();
           signalHistory("reconcile");
         }
       },
@@ -314,7 +319,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       do {
         const page = await pager.next(controller.signal);
         if (!mounted.current || controller.signal.aborted) return;
-        store.appendHistory(page.entries);
+        sessionTranscript.appendHistory(page.entries);
         historyLoaded.current = true;
         setHistoryCount(store.historyCount);
         setHistoryDone(page.complete);
@@ -563,7 +568,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     <ImageSessionProvider session={session} readOnly={readOnly}><Tabs.Root
       className="flex min-h-0 flex-1 flex-col"
       value={workspaceView}
-      onValueChange={(value) => setWorkspaceView(value as "chat" | "terminal")}
+      onValueChange={(value) => setWorkspaceView(value as "chat" | "subagents" | "terminal")}
       data-testid="session-console"
     >
       <header className="session-header flex min-h-[72px] flex-col items-stretch justify-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5 [@media(max-height:500px)]:min-h-12 [@media(max-height:500px)]:py-0">
@@ -591,6 +596,9 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               <MessageSquareText aria-hidden="true" className="size-3.5" />
               Chat
             </Tabs.Trigger>
+            {session.harness === "codex" ? <Tabs.Trigger value="subagents"
+              className="inline-flex h-7 items-center rounded-[4px] px-2.5 font-medium text-[var(--text-secondary)] outline-none hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[var(--accent)] data-[state=active]:bg-[var(--surface-raised)] data-[state=active]:text-[var(--text-primary)]"
+              data-testid="session-subagents-tab">Subagents</Tabs.Trigger> : null}
             <Tabs.Trigger
               value="terminal"
               className="inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 font-medium text-[var(--text-secondary)] outline-none transition-colors hover:text-[var(--text-primary)] focus-visible:ring-2 focus-visible:ring-[var(--accent)] data-[state=active]:bg-[var(--surface-raised)] data-[state=active]:text-[var(--text-primary)]"
@@ -741,6 +749,9 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 
         </div>
       </div>
+      </Tabs.Content>
+      <Tabs.Content value="subagents" className="flex min-h-0 flex-1 flex-col outline-none">
+        <SubagentView transcript={sessionTranscript} />
       </Tabs.Content>
       <Tabs.Content value="terminal" className="flex min-h-0 flex-1 flex-col outline-none">
         <Suspense fallback={<p className="grid min-h-52 place-items-center text-sm text-[var(--text-muted)]" role="status">Loading terminal controls…</p>}>

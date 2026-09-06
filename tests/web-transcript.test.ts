@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { NativeEvent, SessionRecord } from "@arduano/agent-multiplex-protocol";
 import type { AccessClient } from "@arduano/agent-multiplex-client/browser";
 import { TranscriptStore } from "../apps/web/src/client/transcript-store.js";
-import { type TimelineEntry } from "../apps/web/src/client/transcript.js";
+import { codexItemId, entriesFromHistory, type TimelineEntry } from "../apps/web/src/client/transcript.js";
 import { NativeHistoryPager, advanceNativeHistorySignal, retryNativeHistory } from "../apps/web/src/client/native-history.js";
 
-const entry = (id: string, body = id): TimelineEntry => ({ id: `codex:${id}`, kind: "assistant", title: "Codex", body, raw: {}, pending: false });
+const entry = (id: string, body = id): TimelineEntry => ({ id: codexItemId(id), kind: "assistant", title: "Codex", body, raw: {}, pending: false });
 const event = (sequence: number, nativeType: string, json: unknown): NativeEvent => ({
   kind: "native", harness: "codex", runtimeEpoch: "epoch", sequence, nativeType, payload: { json, images: [] },
 } as NativeEvent);
@@ -31,9 +31,9 @@ describe("indexed transcript", () => {
     store.applyEvents([event(1, "item/agentMessage/delta", { itemId: "c", delta: "stream" })]);
     store.appendHistory([entry("a"), entry("b"), entry("c", "complete")]);
     store.applyEvents([event(2, "item/agentMessage/delta", { itemId: "c", delta: "stale" })]);
-    expect([0, 1, 2].map((index) => store.at(index)?.id)).toEqual(["codex:a", "codex:b", "codex:c"]);
+    expect([0, 1, 2].map((index) => store.at(index)?.id)).toEqual(["a", "b", "c"].map((id) => codexItemId(id)));
     expect(store.count).toBe(3);
-    expect(store.get("codex:c")?.body).toBe("complete");
+    expect(store.get(codexItemId("c"))?.body).toBe("complete");
     expect(store.ordering).toBeGreaterThan(0);
   });
 
@@ -66,6 +66,109 @@ describe("indexed transcript", () => {
     store.applyEvents([event(1, "item/started", { item: { id: "new", type: "userMessage", content: [{ type: "text", text: "Again" }] } })]);
     expect(store.get("local:command")).toBeUndefined();
     expect(store.count).toBe(3);
+  });
+});
+
+describe("Codex thread ownership and snapshot hydration", () => {
+  const history = (text: string, { threadId = "root", turnId = "turn", itemId = "message", terminal = false } = {}) => entriesFromHistory({
+    harness: "codex", vendorSessionId: threadId, complete: true,
+    payload: { encoding: "native-json-images-v1", images: [], json: terminal
+      ? { thread: { id: threadId, turns: [{ id: turnId, status: "completed", items: [{ type: "agentMessage", id: itemId, phase: "commentary", text }] }] } }
+      : { data: [{ turnId, item: { type: "agentMessage", id: itemId, phase: "commentary", text } }] } },
+  });
+  const started = (sequence: number, threadId = "root", turnId = "turn", itemId = "message") => event(sequence, "item/started", {
+    threadId, turnId, item: { type: "agentMessage", id: itemId, text: "", phase: "commentary" },
+  });
+  const delta = (sequence: number, text: string, threadId = "root", turnId = "turn", itemId = "message") => event(sequence, "item/agentMessage/delta", {
+    threadId, turnId, itemId, delta: text,
+  });
+  const completed = (sequence: number, text: string, threadId = "root", turnId = "turn", itemId = "message") => event(sequence, "item/completed", {
+    threadId, turnId, item: { type: "agentMessage", id: itemId, text, phase: "commentary" },
+  });
+
+  it("uses unambiguous native thread and turn identity for live and historical items", () => {
+    const store = new TranscriptStore();
+    store.appendHistory(history("Root", { terminal: true }));
+    store.applyEvents([started(1, "child"), delta(2, "Child", "child"), started(3, "root", "next"), delta(4, "Next", "root", "next")]);
+    expect(store.count).toBe(3);
+    expect(store.at(0)).toMatchObject({ id: codexItemId("message", "root", "turn"), threadId: "root", turnId: "turn", nativeItemId: "message", body: "Root" });
+    expect(store.at(1)).toMatchObject({ threadId: "child", turnId: "turn", body: "Child" });
+    expect(store.at(2)).toMatchObject({ threadId: "root", turnId: "next", body: "Next" });
+    expect(codexItemId("c", "a:b", "c")).not.toBe(codexItemId("c", "a", "b:c"));
+    expect(codexItemId("c", "null", "turn")).not.toBe(codexItemId("c", undefined, "turn"));
+  });
+
+  it("preserves child message position without merging later root or reused-turn content", () => {
+    const store = new TranscriptStore();
+    store.applyEvents([started(1, "child"), started(2, "root"), delta(3, "Child reply", "child"), delta(4, "Root reply")]);
+    expect(store.count).toBe(2);
+    expect(store.at(0)?.body).toBe("Child reply");
+    expect(store.at(1)?.body).toBe("Root reply");
+  });
+
+  it("never appends retained replay to completed historical commentary", () => {
+    const store = new TranscriptStore();
+    store.appendHistory(history("Old commentary"));
+    store.applyEvents([delta(1, "Old commentary"), delta(2, " late replay")]);
+    expect(store.at(0)?.body).toBe("Old commentary");
+    expect(store.at(0)?.pending).toBeUndefined();
+    store.applyEvents([completed(3, "Old commentary")]);
+    store.applyEvents([delta(4, "stale"), started(5)]);
+    expect(store.at(0)).toMatchObject({ body: "Old commentary", pending: false });
+  });
+
+  it("resumes a snapshotted active message when a known replay prefix catches up", () => {
+    const store = new TranscriptStore();
+    store.appendHistory(history("In progress"));
+    store.applyEvents([started(1), delta(2, "In ")]);
+    expect(store.at(0)?.body).toBe("In progress");
+    store.applyEvents([delta(3, "progress and continuing")]);
+    expect(store.at(0)).toMatchObject({ body: "In progress and continuing", pending: true });
+    store.applyEvents([delta(4, " normally")]);
+    expect(store.at(0)?.body).toBe("In progress and continuing normally");
+    store.applyEvents([completed(5, "Finished")]);
+    expect(store.at(0)).toMatchObject({ body: "Finished", pending: false });
+  });
+
+  it("keeps streaming when history arrives after the live start", () => {
+    const store = new TranscriptStore();
+    store.applyEvents([started(1), delta(2, "Known stream")]);
+    store.appendHistory(history("Known"));
+    store.applyEvents([delta(3, " continues")]);
+    expect(store.count).toBe(1);
+    expect(store.historyCount).toBe(1);
+    expect(store.at(0)).toMatchObject({ body: "Known stream continues", pending: true });
+    store.appendHistory(history("Known stream continues", { terminal: true }));
+    store.applyEvents([delta(4, "stale")]);
+    expect(store.at(0)).toMatchObject({ body: "Known stream continues", pending: false });
+  });
+
+  it("holds an ambiguous mid-stream snapshot until authoritative completion without freezing later items", () => {
+    const store = new TranscriptStore();
+    store.applyEvents([delta(1, "unknown suffix")]);
+    store.appendHistory(history("Snapshot so far"));
+    store.applyEvents([delta(2, " might overlap"), started(3, "root", "turn", "next-message"), delta(4, "New live text", "root", "turn", "next-message")]);
+    expect(store.at(0)?.body).toBe("Snapshot so far");
+    expect(store.at(1)).toMatchObject({ body: "New live text", pending: true });
+    store.applyEvents([completed(5, "Authoritative full message")]);
+    expect(store.at(0)).toMatchObject({ body: "Authoritative full message", pending: false });
+  });
+
+  it("does not revive completion when a delayed active snapshot arrives", () => {
+    const store = new TranscriptStore();
+    store.applyEvents([completed(1, "Finished commentary")]);
+    store.appendHistory(history("Partial snapshot"));
+    store.applyEvents([delta(2, "late")]);
+    expect(store.at(0)).toMatchObject({ body: "Finished commentary", pending: false });
+    expect(store.count).toBe(1);
+  });
+
+  it("uses the authoritative terminal turn status without mistaking phase for completion", () => {
+    const flat = history("Unknown lifecycle");
+    const complete = history("Completed commentary", { terminal: true });
+    expect(flat[0]).toMatchObject({ historySnapshot: true });
+    expect(flat[0]?.pending).toBeUndefined();
+    expect(complete[0]).toMatchObject({ pending: false, historySnapshot: false });
   });
 });
 

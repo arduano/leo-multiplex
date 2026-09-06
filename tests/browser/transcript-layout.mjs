@@ -92,6 +92,7 @@ await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   }
 }));
 function sendNative(nativeType, json) {
+  json = { threadId: session.vendorSessionId, ...json };
   const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++eventSequence, nativeType, ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json } };
   for (const subscription of subscriptions) {
     // Match the selected-session subscription; the catalog watch does not need
@@ -218,7 +219,7 @@ async function visibleTool() {
   return page.evaluate(() => {
     const viewport = document.querySelector('[data-testid="chat-transcript"]').getBoundingClientRect();
     const entries = [...document.querySelectorAll('[data-role="tool"]')];
-    return entries.find((entry) => { const box = entry.getBoundingClientRect(); return box.top >= viewport.top && box.bottom < viewport.bottom; })?.dataset.entryId;
+    return entries.find((entry) => entry.checkVisibility({ contentVisibilityAuto: true }) && (() => { const box = entry.getBoundingClientRect(); return box.top >= viewport.top && box.bottom < viewport.bottom; })())?.dataset.nativeItemId;
   });
 }
 const artifacts = [];
@@ -244,13 +245,55 @@ try {
   await assertLayout("native history reconciles the earlier live item by ID");
   await page.waitForFunction(() => {
     const transcript = document.querySelector('[data-testid="chat-transcript"]');
-    const tail = transcript?.querySelector('[data-entry-id="codex:huge-output"]');
+    const tail = transcript?.querySelector('[data-native-item-id="huge-output"]');
     if (!transcript || !tail?.checkVisibility({ contentVisibilityAuto: true })) return false;
     const viewport = transcript.getBoundingClientRect();
     const bounds = tail.getBoundingClientRect();
     return bounds.bottom > viewport.top && bounds.top < viewport.bottom && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 8;
   });
   checks.push({ name: "automatic initial loading displays the last native item after variable-height reconciliation", passed: true });
+
+  // A small upward wheel gesture must leave follow mode even inside the
+  // near-bottom threshold. Later streamed output must not pull it back down.
+  await page.getByTestId("chat-transcript").hover();
+  await page.mouse.wheel(0, -60);
+  await settle(12);
+  const earlierOffset = await page.getByTestId("chat-transcript").evaluate((element) => element.scrollTop);
+  sendNative("item/started", { turnId: "wheel-turn", item: { type: "agentMessage", id: "wheel-reply", text: "New output after scrolling upward.", phase: "commentary" } });
+  await waitCount(fixtureItems + 1);
+  await settle(12);
+  const afterOutputOffset = await page.getByTestId("chat-transcript").evaluate((element) => element.scrollTop);
+  assert(Math.abs(afterOutputOffset - earlierOffset) < 4, "New output cancelled the upward wheel gesture near the bottom");
+  sendNative("item/completed", { turnId: "wheel-turn", item: { type: "agentMessage", id: "wheel-reply", text: "New output after scrolling upward.", phase: "final_answer" } });
+  checks.push({ name: "upward wheel near the bottom remains anchored during new output", passed: true });
+
+  for (const fraction of [0.25, 0.5, 0.75]) {
+    await scrollTo(fraction);
+    const samples = await page.getByTestId("chat-transcript").evaluate(async (element) => {
+      const samples = [];
+      let previous = new Map();
+      element.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, bubbles: true }));
+      for (let frame = 0; frame < 120; frame++) {
+        element.scrollTop += 18;
+        // The task after rAF observes the completed rendering update, including
+        // ResizeObserver. Sampling only before it can report unpainted layouts.
+        await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+        const viewport = element.getBoundingClientRect();
+        const current = new Map([...element.querySelectorAll('[data-testid="chat-message"]')]
+          .filter((row) => row.checkVisibility({ contentVisibilityAuto: true }))
+          .map((row) => [row.dataset.entryId, row.getBoundingClientRect().top])
+          .filter(([, y]) => y > viewport.top - 200 && y < viewport.bottom));
+        const drift = [...current].filter(([id]) => previous.has(id)).map(([id, y]) => y - previous.get(id) + 18).sort((a, b) => a - b);
+        samples.push(drift[Math.floor(drift.length / 2)] ?? 0);
+        previous = current;
+      }
+      return samples;
+    });
+    const reversals = samples.filter((value, index) => index > 0 && Math.abs(value) > 8 && Math.abs(samples[index - 1]) > 8 && value * samples[index - 1] < 0 && Math.abs(value + samples[index - 1]) < 4).length;
+    assert.equal(reversals, 0, `Scrolling alternated between two layouts at ${fraction}: ${JSON.stringify(samples)}`);
+    measurements.scrollFrameSamples = (measurements.scrollFrameSamples ?? 0) + samples.length;
+    checks.push({ name: `continuous scrolling has no frame-to-frame layout bounce at ${fraction}`, frames: samples.length, reversals, passed: true });
+  }
 
   const jumps = [0, 0.95, 0.1, 0.9, 0.2, 0.8, 0.35, 0.65, 0.48, 0.52, 1, 0];
   for (const [index, fraction] of jumps.entries()) {
@@ -276,7 +319,7 @@ try {
   }
 
   await scrollTo(1);
-  const outputRow = page.locator('[data-entry-id="codex:huge-output"]');
+  const outputRow = page.locator('[data-native-item-id="huge-output"]');
   await outputRow.locator("summary").click();
   await assertLayout("expand tool at tail");
   await screenshot("layout-expanded-tool.png");
@@ -294,7 +337,7 @@ try {
     await scrollTo(0.25 + index * 0.04);
     const entryId = await visibleTool();
     if (!entryId) continue;
-    const summary = page.locator(`[data-entry-id="${entryId}"] summary`);
+    const summary = page.locator(`[data-native-item-id="${entryId}"] summary`);
     await summary.click();
     await assertLayout(`expand visible historical tool ${++expandedMiddle}`);
     await summary.click();
@@ -303,7 +346,7 @@ try {
   assert(expandedMiddle >= 1, "Fixture did not exercise a historical tool expansion");
 
   sendNative("item/started", { turnId: "streamed-turn", item: { type: "agentMessage", id: "streamed-reply", text: "", phase: "commentary" } });
-  await waitCount(fixtureItems + 1);
+  await waitCount(fixtureItems + 2);
   let streaming = true;
   const stream = (async () => {
     let index = 0;

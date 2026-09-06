@@ -120,7 +120,9 @@ summary::-webkit-details-marker { display: none; }
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+    /* A nonzero duration gives otherwise unanimated elements an implicit
+       transition on all properties, including virtual-window positions. */
+    transition: none !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }

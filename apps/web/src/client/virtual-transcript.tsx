@@ -1,5 +1,6 @@
 import { memo, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useVirtualizer, type Range } from "@tanstack/react-virtual";
+import { flushSync } from "react-dom";
 import { ArrowDown, ChevronRight } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +28,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
   const viewport = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const userScrolling = useRef(false);
+  const userScrollDirection = useRef<"earlier" | "later" | "unknown">("unknown");
   const touchY = useRef<number | undefined>(undefined);
   const previousActivity = useRef(store.activity);
   const previousCount = useRef(store.count);
@@ -42,10 +44,34 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
       return entry.kind === "tool" || entry.kind === "reasoning" || entry.kind === "subagent" ? 68 : 160;
     },
     rangeExtractor: transcriptRange, paddingStart: 24, paddingEnd: working ? 60 : 24,
-    // Batch height measurements from one commit; flushing each row separately
-    // repeatedly recalculates offsets during a jump deep into a long thread.
+    // Our row observer commits the complete measurement batch once. Flushing
+    // each row separately would repeatedly rebuild the same visible window.
     useFlushSync: false,
   });
+  const rowObserver = useMemo(() => new ResizeObserver((entries) => {
+    // A scroll correction and the offsets it corrects must reach the same
+    // paint. Deferring React's offsets after changing scrollTop makes the
+    // conversation jump out and back on alternating frames.
+    flushSync(() => {
+      for (const entry of entries) {
+        const element = entry.target as HTMLDivElement;
+        const index = Number(element.dataset.index);
+        if (!element.isConnected || store.at(index)?.id !== element.dataset.rowKey) continue;
+        const height = entry.borderBoxSize[0]?.blockSize;
+        if (height !== undefined) virtualizer.resizeItem(index, Math.round(height));
+      }
+    });
+  }), [store, virtualizer]);
+  useEffect(() => () => rowObserver.disconnect(), [rowObserver]);
+  const observeRow = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return;
+    rowObserver.observe(element, { box: "border-box" });
+    return () => rowObserver.unobserve(element);
+  }, [rowObserver]);
+  // Promotion is one-way for a mounted row. Replacing Markdown with a plain
+  // preview as it crosses the viewport changes its height, which changes the
+  // viewport range and can immediately promote it again in a feedback loop.
+  const richRows = useRef(new Set<string | number | bigint>());
   const jump = useCallback(() => {
     following.current = true;
     userScrolling.current = false;
@@ -76,26 +102,29 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
     observer.observe(element);
     return () => observer.disconnect();
   }, [jump]);
-  const beginUserScroll = (towardEarlier = false) => {
+  const beginUserScroll = (direction: "earlier" | "later" | "unknown") => {
     userScrolling.current = true;
-    if (towardEarlier) following.current = false;
+    userScrollDirection.current = direction;
+    if (direction === "earlier") following.current = false;
   };
   const rows = virtualizer.getVirtualItems();
+  const mountedKeys = new Set(rows.map((row) => row.key));
+  for (const key of richRows.current) if (!mountedKeys.has(key)) richRows.current.delete(key);
   return <div className="relative min-h-0 flex-1">
     <div ref={viewport} className="h-full overflow-x-hidden overflow-y-auto overscroll-contain bg-[var(--surface-canvas)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
       style={{ overflowAnchor: "none" }}
-      onWheel={(event) => { if (event.deltaY < 0 || !following.current && event.deltaY > 0) beginUserScroll(event.deltaY < 0); }}
+      onWheel={(event) => { if (event.deltaY) beginUserScroll(event.deltaY < 0 ? "earlier" : "later"); }}
       onTouchStart={(event) => { touchY.current = event.touches[0]?.clientY; }}
       onTouchMove={(event) => {
         const nextY = event.touches[0]?.clientY;
-        if (nextY !== undefined && touchY.current !== undefined && (nextY > touchY.current || !following.current)) beginUserScroll(nextY > touchY.current);
+        if (nextY !== undefined && touchY.current !== undefined && nextY !== touchY.current) beginUserScroll(nextY > touchY.current ? "earlier" : "later");
         touchY.current = nextY;
       }}
-      onPointerDown={(event) => { if (event.target === event.currentTarget) beginUserScroll(); }}
+      onPointerDown={(event) => { if (event.target === event.currentTarget) beginUserScroll("unknown"); }}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
           const earlier = ["ArrowUp", "PageUp", "Home"].includes(event.key) || event.key === " " && event.shiftKey;
-          if (earlier || !following.current) beginUserScroll(earlier);
+          beginUserScroll(earlier ? "earlier" : "later");
         }
       }}
       onScroll={(event) => {
@@ -103,7 +132,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
         // New pages, image measurements, and virtual scroll correction also
         // emit scroll events. Only an operator gesture can leave latest-follow.
         if (userScrolling.current) {
-          following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+          following.current = userScrollDirection.current !== "earlier" && element.scrollHeight - element.scrollTop - element.clientHeight < 120;
           if (following.current) userScrolling.current = false;
         }
         const row = virtualizer.getVirtualItems().find((item) => item.end > element.scrollTop);
@@ -114,16 +143,17 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
       : store.count === 0 ? <div className="mx-auto grid h-full max-w-[72ch] content-center px-6 pb-12 text-sm text-[var(--text-secondary)]">
         <p className="mb-2 text-lg font-medium text-[var(--text-primary)]">{loading ? "Opening conversation…" : unavailable ? "History is unavailable" : "Start a conversation"}</p>
         <p>{loading ? "Reading native history." : unavailable ? "Retry loading above. Your session is still selected." : "Send a message to begin working with this agent."}</p>
-      </div> : <div className="relative mx-auto w-full min-w-0 max-w-[80ch]" style={{ height: virtualizer.getTotalSize() }}>
+      </div> : <div className="relative mx-auto w-full min-w-0 max-w-[80ch] transition-none" style={{ height: virtualizer.getTotalSize() }}>
         {/* One positioned window, with natural flow inside it. A row growing
             during Markdown/image/layout changes must move its neighbors in
             the same browser layout, before ResizeObserver updates estimates. */}
-        <div className="absolute left-0 top-0 w-full min-w-0" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
+        <div className="absolute left-0 top-0 w-full min-w-0 transition-none" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
         {rows.map((row) => {
-          const rich = row.index >= (virtualizer.range?.startIndex ?? 0) - 5 && row.index <= (virtualizer.range?.endIndex ?? 0) + 5;
-          return <div key={row.key} data-index={row.index}
-            ref={virtualizer.measureElement} className="w-full min-w-0 px-4 pb-6 sm:px-8"
-            style={{ contentVisibility: rich ? "visible" : "auto", containIntrinsicBlockSize: `${Math.max(0, row.size - 24)}px` }}>
+          if (row.index >= (virtualizer.range?.startIndex ?? 0) - 5 && row.index <= (virtualizer.range?.endIndex ?? 0) + 5) richRows.current.add(row.key);
+          const rich = richRows.current.has(row.key);
+          return <div key={row.key} data-index={row.index} data-row-key={row.key}
+            ref={observeRow} className="w-full min-w-0 px-4 pb-6 sm:px-8 transition-none"
+            style={{ contentVisibility: "auto", containIntrinsicBlockSize: `auto ${Math.max(0, row.size - 24)}px` }}>
             <TimelineItem entry={store.at(row.index)!} store={store} rich={rich} />
           </div>;
         })}
@@ -181,7 +211,7 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
     setExpanded(next);
     store.rememberView(entry.id, { expanded: next });
   }, [lifecycle, entry.id, entry.pending, isFailed, store]);
-  if (entry.failure) return <article data-testid="chat-message" data-role="notice" data-entry-id={entry.id} className="min-w-0 max-w-full">
+  if (entry.failure) return <article data-testid="chat-message" data-role="notice" data-entry-id={entry.id} data-native-item-id={entry.nativeItemId} data-thread-id={entry.threadId} data-turn-id={entry.turnId} className="min-w-0 max-w-full">
     <NativeErrorNotice failure={entry.failure} />
   </article>;
   if (isExecution) {
@@ -191,6 +221,9 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
         data-testid="chat-message"
         data-role={entry.kind}
         data-entry-id={entry.id}
+        data-native-item-id={entry.nativeItemId}
+        data-thread-id={entry.threadId}
+        data-turn-id={entry.turnId}
       >
         <details className="group min-w-0 max-w-full overflow-hidden" open={expanded} onToggle={(event) => {
           setExpanded(event.currentTarget.open);
@@ -216,6 +249,9 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
       data-testid="chat-message"
       data-role={entry.kind}
       data-entry-id={entry.id}
+      data-native-item-id={entry.nativeItemId}
+      data-thread-id={entry.threadId}
+      data-turn-id={entry.turnId}
     >
       <div className={classes("min-w-0", entry.kind === "user" ? "max-w-[92%] sm:max-w-[88%]" : "flex-1")}>
         <div className={classes("mb-1 flex items-center gap-2", entry.kind === "user" && "justify-end")}>
