@@ -106,6 +106,10 @@ const receipt = { result: 'passed', personalSource, frameworkSource,
   node: process.version, platform: process.platform, arch: process.arch, checks, modelCalls: 0,
   scope: 'source-candidate Windows composition only; public dependency pin is unchanged; corporate login/network/model UAT excluded',
 };
+// The work-only executor needs the same candidate ACL/storage exports as the
+// complete native host. Qualify its actual journal/process path in this job too.
+await import('./windows-work-command-smoke.mjs');
+checks.push('work command journal, output, deduplication, cancellation and process-job cleanup');
 const output = join('receipts', 'windows-host', new Date().toISOString().replaceAll(':', '-'));
 await mkdir(output, { recursive: true });
 const encoded = JSON.stringify(receipt, null, 2) + '\n';
