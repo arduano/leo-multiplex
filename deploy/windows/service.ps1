@@ -11,7 +11,7 @@ requests cooperative shutdown; it never ends a task or kills a process.
 param(
     [ValidateSet('Install', 'Start', 'Stop', 'Status', 'Remove')][string]$Action = 'Install',
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'leo-multiplex-windows'),
-    [string]$RunnerPath = (Join-Path $PSScriptRoot '../../scripts/windows-user-service.mjs'),
+    [string]$RunnerPath,
     [switch]$StartNow
 )
 Set-StrictMode -Version Latest
@@ -66,6 +66,7 @@ try {
     $task = Get-ScheduledTask -TaskPath '\' | Where-Object { $_.TaskName -eq $taskName }
     Test-OwnedTask $task
     if ($Action -eq 'Install') {
+        if (-not $RunnerPath) { $RunnerPath = Join-Path $PSScriptRoot '../../scripts/windows-user-service.mjs' }
         Invoke-Node -Arguments @([IO.Path]::GetFullPath($RunnerPath), 'prepare', $InstallDir)
         $taskAction = New-ScheduledTaskAction -Execute $powershell -Argument $taskArguments -WorkingDirectory $InstallDir
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $sid
