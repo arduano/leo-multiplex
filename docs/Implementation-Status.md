@@ -802,3 +802,11 @@ pass. General browser evidence is `receipts/browser/2026-09-06T05-07-26.784Z`
 These are deterministic UI/role-service checks, not physical Windows/WSL
 suspend/network qualification. The [NAS runbook](../deploy/nas/README.md#hosts-that-sleep-or-disconnect)
 owns persistent identity, multi-host pairing and reconnect guidance.
+
+Source `88abace` is deployed through the existing combined Compose project as
+`sha256:6a1c71076de3a415dbfd2574f30e9894dec6fbf2e48185c87ca3a7cc85ba32a1`.
+Only the web/gateway container was recreated; `.env.before-four-host-*` privately
+retains its predecessor. Served assets match the tested build, both current
+production conversations open, mobile lists both sessions, and both hosts'
+control/runtime PIDs remain unchanged. Scrubbed, checksummed rollout evidence is
+`receipts/four-host-deployment/2026-09-06T05-12-27.886Z`.
