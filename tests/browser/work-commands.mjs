@@ -24,6 +24,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/auth/session') return json({ method: 'cloudflare', storageScope: scope });
   if (url.pathname === '/auth/check') { res.writeHead(204); res.end(); return; }
   if (url.pathname === '/api/mobile/state') return json({ devices: [], watchedSessionIds: [], delivery: { pending: 0 } });
+  if (url.pathname === '/api/mobile/activity') return json({ sessions: [] });
   if (url.pathname === '/api/mobile/config') return json({ enabled: false, origin: '', storageScope: scope });
   if (url.pathname.startsWith('/api/work-commands/')) {
     const route = url.pathname.split('/').at(-1);

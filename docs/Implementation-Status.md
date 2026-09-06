@@ -2,6 +2,17 @@
 
 ## Session status and review markers
 
+Deployed gateway/UI source `2c1c4b86852b8b59e9b9b6eddd230d473ea3f2ca` as image
+`sha256:a66f7d4b8ebc4349b4a1632a14040506f099c127d3c84559a0729dcb8eb579cb`.
+Only `leo-multiplex-web` was replaced; private pairing hashes are unchanged,
+the container is healthy and all four installed hosts are online. The live phone
+check found four sessions, verified the authenticated no-store activity endpoint,
+44px filter targets and no page errors, overflow or mutations. Receipt:
+`receipts/session-status-live/2026-09-06T13-25-07.458Z/`.
+The existing HTTPS/Cloudflare and Tailscale addresses are unchanged. Already idle
+sessions remain Ready until a successful completion is observed; no earlier
+conversation history was scanned to manufacture a completion marker.
+
 The sidebar now exposes All / Needs you / Working / Finished / Watched with
 counts on desktop and mobile. Stable rows show explicit icon/text status,
 activity time, host, harness and workspace folder. Attention and active work
@@ -36,6 +47,8 @@ and remains diagnostics only; the passing rerun used unchanged browser source
 without those concurrent gates. No native agent prompt was sent. Source and
 screenshot inventories are checksummed, and gate output is retained under
 `receipts/session-status-gates/2026-09-06/`.
+The production PWA/service-worker suite also passes all seven checks at
+`receipts/pwa/2026-09-06T13-23-30.509Z/`.
 
 ## Installed WSL work host
 
