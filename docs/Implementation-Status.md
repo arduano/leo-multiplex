@@ -2,28 +2,28 @@
 
 ## Installation handoff and gateway readiness
 
-Laptop setup no longer compares global npm against the exact release toolchain.
-It uses standard `npm exec` to cache the project's npm for dependency installation,
-keeping locked artifacts and reviewed install scripts intact. Preflight does not
-invoke or download npm. Node 24+ x64 and native OS/path requirements remain; global
-tools are unchanged. The gist will be updated after the cached-npm installer
-passes native Windows qualification.
+Laptop setup requires native x64 Node 24+ and Git, without comparing global npm
+against the release toolchain. Standard `npm exec` fetches/caches the project's
+npm for locked dependency installation with reviewed scripts; global npm stays
+unchanged. Preflight does not invoke or download npm.
 
-Installation revision **`dd4820165eddf24066edc4033628a1664b697da1`** passed
-[exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34024286247),
-including 435 application tests, both PowerShell wrappers, the actual published
-Windows installer on D:, saved launcher/rerun and full host/executor checks.
-Successful native receipts are independently rehashed under
-`receipts/published-windows/dd48201-exact/`. The Windows installer inventory is
-`13b6d6a8bcd876a47004856cb2c4e8c0557731c39a1d538fb162b8076d6131c2`;
-the host/executor inventory is
-`3e6d4e642ce2a3692b6172ffed44f70f09f73a846b547745f79d2a1d8e6ed635`.
-The public-source Linux run with WSL detection also passed at
-`receipts/wsl-published-install/2026-09-06T09-15-19.254Z`, inventory
-`fde32e72ef9a191d9710ecb88c6215291f448db4257bff9946112989d50beee5`.
-The gist was updated to that exact installation revision and all three files
-were read back and verified. Its commands use new Windows/WSL source directories
-to preserve checkouts from older failed preflights. Native laptop UAT remains.
+Installation revision **`0e79d73fc093f7a039694d9686b04c0b5be7c997`** passed
+[exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34025984889),
+including 435 application tests, container authentication/proxy checks, both
+PowerShell wrappers and actual published Windows installation with global npm
+**11.15.0 and 12.0.2**. Both jobs installed on disposable D: state, verified the
+saved launcher/rerun and unchanged global npm, then passed native host/restart
+and C:/D: work-command checks. No model calls or corporate login were used.
+All four native receipt inventories were independently rehashed under
+`receipts/published-windows/0e79d73-exact/`. The public-source installer also
+passed on Linux with WSL detection, with independently rehashed evidence at
+`receipts/wsl-published-install/2026-09-06T09-56-59.077Z/`.
+
+The [installer gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+pins that tested installation revision; all three files were read back and
+verified. Its commands use fresh Windows/WSL source directories to preserve
+checkouts from older failed preflights. Corporate auth/network and physical
+laptop UAT remain. Documentation-only follow-ups do not change the gist pin.
 
 The work-host installers now pin all 16 published framework `0.2.1` artifacts,
 with exact URLs, overrides and locked integrities. The signed release completed
