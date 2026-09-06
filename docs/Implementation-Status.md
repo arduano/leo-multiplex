@@ -1,5 +1,41 @@
 # Implementation status — 2026-09-06
 
+## Installation handoff and gateway readiness
+
+The [code-only secret gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+contains pinned download scripts and first-pairing instructions. Its installation
+revision is `f2b9a83adb4a0ebcbb94c6e6949fc3c38f0de691`, with passing
+[application and Windows CI](https://github.com/arduano/leo-multiplex/actions/runs/34018277420).
+Thirteen Linux bootstrap checks and 26 native PowerShell checks pass, alongside
+the existing 14 WSL/22 Windows installer checks and five Windows shell checks.
+A disposable Linux run using WSL detection also fetched the actual public source,
+installed locked dependencies, built, saved a launcher/work-command marker and
+passed rerun preflight without login, startup or model calls. Physical laptop
+auth/network/suspend checks remain the operator's UAT.
+
+WSL can install the published Linux graph. Native Windows remains blocked until
+framework `0.2.1` is published and this consumer pins its artifacts. Framework
+candidate `2184ec56f242b334c3fc3a7afaceb6f3756c01b4` passes its
+[Windows host/executor checks](https://github.com/arduano/agent-multiplex/actions/runs/34018354047),
+607 tests, isolated package verification and deterministic Docker qualification.
+The required exact-main live release qualification still needs fresh model-use
+authorization; no source overlay is used for installation.
+
+The NAS gateway is prepared for both work-host control and command enrollment.
+It runs image
+`sha256:4713a94dd65549c452670c547b0bcc4464021beed58000252552cb37173ef6f9`
+from application source `116fe77996706d77d3b2a716a4cc77d80de1fe07`; the handoff
+revision differs only in PowerShell test assertions. Both origins are healthy,
+22 served assets match the tested build, Cloudflare redirects unsigned requests
+to Access, and both existing hosts remain reachable. Personal host control/runtime
+PIDs and start times are unchanged. `exec-hosts` succeeds with an empty list until
+work pairing arrives. The gateway's previous image/configuration/state are backed
+up privately; no host or native session was restarted. Scrubbed, checksummed
+rollout evidence is `receipts/work-install-deployment/2026-09-06T07-10-35Z`.
+The existing user `leo-agents` links on main-pc and NAS now use the tested
+work-command CLI. Their previous source checkouts and local operation ledgers
+remain in place; read-only host and command-target queries pass on both.
+
 ## Work laptop command candidate
 
 The Windows/WSL installers now enable a bespoke command recovery sidecar. The
@@ -16,11 +52,12 @@ immutable target/request before submission. A restarted in-flight command become
 `outcomeUnknown` and requires local process inspection before new admission.
 The [work-command runbook](Work-Host-Commands.md) owns usage, pairing and recovery.
 
-This is an undeployed candidate. Native Windows installation remains gated on
-the framework's public Windows ACL release. No installed host, gateway or native
-session was changed, and no model call was used. Windows CI checks the exact
-PowerShell/process-job wrapper independently of framework overlays; the full
-Windows executor smoke and physical corporate laptop UAT remain separate gates.
+The gateway is deployed as recorded above; work-host installation and corporate
+laptop UAT remain pending. Native Windows installation requires the framework's
+public Windows ACL release. Windows CI checks the exact PowerShell/process-job
+wrapper independently of framework overlays, and the full source-candidate
+host/executor smoke now also passes. No model call or native session mutation
+was used.
 
 The candidate passes typechecking, all 420 application tests, production/container
 builds, shipped-container authentication/static-asset checks, and the Compose
@@ -55,8 +92,8 @@ The published framework pin remains `0.2.0`; native Windows installation rejects
 that graph before dependencies or state are written. These scripts do not bypass
 the release gate using a source overlay. WSL uses the Linux packages, while both
 hosts still need corporate auth/network/laptop UAT. The installer branch also
-contains the already deployed multi-host session fixes; it has not been deployed
-over the running NAS gateway or personal hosts.
+contains the already deployed multi-host session fixes. Its gateway composition
+is deployed as recorded above; installed personal host services remain unchanged.
 
 Local typecheck, all 378 tests and the production build pass, including 25
 installer tests for private state, same-revision reruns, active-writer refusal,
@@ -110,7 +147,7 @@ workflow lint. Source-candidate CI overlays never change deployment manifests or
 stand in for published artifacts. No installed host, gateway, native session,
 corporate login or model prompt was changed by this work.
 
-Before a laptop installation handoff, publish/qualify the framework patch and
+Before a native Windows installation handoff, publish/qualify the framework patch and
 pin its exact public artifacts here. That release process requires a fresh
 allowance for model-using native qualification. Windows image-path previews
 remain explicitly unsupported, and managed-laptop OAuth/SSO, network policy,

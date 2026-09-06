@@ -6,6 +6,10 @@ tested personal-repository revision from the installation handoff. Download and
 review the script before running it; no credential belongs in a download URL or
 a gist. GitHub secret gists are unlisted, not access-controlled.
 
+The [current downloadable handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+contains the exact tested revision and installation commands. It distinguishes
+WSL installation from the native Windows package-release gate.
+
 ```powershell
 .\install-windows.ps1 -Revision '<full 40-character tested revision>' `
   -Workspace 'C:\Work' -SecretFile 'C:\Private\leo-fleet-secret' -Check
