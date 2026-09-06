@@ -720,3 +720,20 @@ Codex version. Isolated native checks against both the ordinary and Nix-patched
 metadata reads, acknowledged mode/effort changes and shutdown through the released
 adapter. No prompt/model call or production thread was used for these checks.
 The Nix binary receipt is `receipts/codex-upgrade/2026-09-06T03-25-04.128Z`.
+
+Main-pc and home-nas now run managed Codex **0.153.4**. The published pin is
+`72e08a710dd82022b8c76c68ae69c1bff05e4f80`, with passing
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/34008995173),
+335 tests, typechecking and Nix package/unit builds. Both local dotfiles checkouts
+pin that revision; only the Leo input/lock changed. NAS's existing runtime
+Tailscale bind override and provider preparation remain intact.
+
+Only each generated `leo-runtime.service` unit was installed and restarted;
+control catalogs and the NAS web/gateway stayed running. Native/runtime state
+was copied privately after its writers stopped. The one idle main-pc session
+was reattached with an exact-ID resume operation, without sending a prompt;
+NAS had no managed sessions. Both hosts report online/reachable, the original
+session identity is preserved and active/idle, and both managed process
+executables report 0.153.4. Ordinary CLI/tmux sessions were not modified.
+This targeted user-service activation required no sudo/system rebuild and
+avoided unrelated pending Home Manager/NixOS changes.
