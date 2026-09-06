@@ -42,6 +42,14 @@ const timestamp = "2026-09-05T00:00:00.000Z";
 const session = { sessionId: id(4), runtimeNodeId: id(5), metadataAuthority: authority, catalogState: "open", catalogRevision: 1, archivedAt: null, harness: "codex", adapterScopeId: "fixture-codex", vendorSessionId: "fixture-native", bindingRevision: 1, runtimeEpoch: id(6), cwd: "/work/disposable/browser-fixture", availability: "active", runtimeStatus: "idle", harnessSettings: { model: "fixture-model", mode: "default", effort: "medium" }, nativeSummary: null, launchProvenance: null, metadata: { revision: 1, values: { "agent.title": "Review reconnect behavior", "fixture.note": "Disposable browser data" }, keyRevisions: { "agent.title": 1, "fixture.note": 1 } }, createdAt: timestamp, updatedAt: timestamp, lastSeenAt: timestamp, lastActivityAt: timestamp };
 const other = { ...session, sessionId: id(14), vendorSessionId: "other-fixture-native", nativeSummary: { title: "Another disposable agent" }, metadata: { revision: 1, values: { "agent.title": "Another disposable agent" }, keyRevisions: { "agent.title": 1 } } };
 let showOther = false;
+const nasAuthority = { realmId: id(21), controlNodeId: id(22), epochId: id(23) };
+const nasSession = { ...session, sessionId: id(24), runtimeNodeId: id(25), metadataAuthority: nasAuthority, vendorSessionId: "nas-fixture-native", runtimeEpoch: id(26), cwd: "/work/disposable/nas-fixture", metadata: { revision: 1, values: { "agent.title": "Created externally on NAS" }, keyRevisions: { "agent.title": 1 } } };
+const linkedSession = { ...nasSession, sessionId: id(34), vendorSessionId: "nas-linked-fixture-native" };
+let multiHost = false;
+let nasCreated = false;
+const sessionSearchRequests = [];
+let linkedSessionAvailable = false;
+let linkedSessionRequests = 0;
 const commands = [];
 const models = [
   { harness: "codex", id: "fixture-model", name: "Fixture model", description: "The general-purpose disposable model.", native: { id: "catalog-record-general", model: "fixture-model", hidden: false, isDefault: true, defaultReasoningEffort: "medium", inputModalities: ["text", "image"], supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced fixture reasoning." }, { reasoningEffort: "high", description: "Thorough fixture reasoning." }] } },
@@ -53,10 +61,12 @@ let releaseSetting;
 let pendingSetting;
 const runtime = { runtimeNodeId: id(5), name: "Disposable test host", presence: "online", reachability: "reachable", runtimeNodeBootId: id(7), capabilities: [], harnesses: [{ harness: "codex", available: true, capabilities: [] }] };
 const source = { sourceId: "fixture", displayName: "Disposable test host", endpointId: "fixture", state: "selected", manifest: { coveredControlNodeIds: [id(2)] }, updatedAt: timestamp };
+const nasRuntime = { ...runtime, runtimeNodeId: id(25), name: "Disposable NAS host", runtimeNodeBootId: id(27) };
+const nasSource = { ...source, sourceId: "nas-fixture", displayName: "Disposable NAS host", endpointId: "nas-fixture", manifest: { coveredControlNodeIds: [id(22)] } };
 const profile = { providerId: "leo.local", profileId: "workspace", contractVersion: 1, requestSchemaHash: "a".repeat(64), implementationVersion: "1.0.0", harnesses: ["codex"], available: true, capabilities: [] };
-const copilotRuntime = { ...runtime, runtimeNodeId: id(25), name: "Disposable Windows laptop", harnesses: [{ harness: "copilot", available: true, capabilities: [] }] };
-const dualRuntime = { ...runtime, runtimeNodeId: id(26), name: "Disposable dual host", harnesses: [...runtime.harnesses, ...copilotRuntime.harnesses] };
-const unconfiguredRuntime = { ...copilotRuntime, runtimeNodeId: id(27), name: "Disposable unconfigured laptop" };
+const copilotRuntime = { ...runtime, runtimeNodeId: id(45), name: "Disposable Windows laptop", harnesses: [{ harness: "copilot", available: true, capabilities: [] }] };
+const dualRuntime = { ...runtime, runtimeNodeId: id(46), name: "Disposable dual host", harnesses: [...runtime.harnesses, ...copilotRuntime.harnesses] };
+const unconfiguredRuntime = { ...copilotRuntime, runtimeNodeId: id(47), name: "Disposable unconfigured laptop" };
 const copilotProfile = { ...profile, profileId: "copilot-workspace", requestSchemaHash: "b".repeat(64), harnesses: ["copilot"] };
 const copilotModels = [{ harness: "copilot", id: "corporate-fixture-model", name: "Corporate fixture model" }];
 let showCopilotHosts = false;
@@ -74,6 +84,7 @@ let historyRequests = 0;
 let nativeStatus = "idle";
 let nativeSequence = 0;
 const subscriptions = new Set();
+let controlSequence = 0;
 await page.routeWebSocket("**/trpc", (socket) => socket.onMessage((message) => {
   if (message === "PING") return socket.send("PONG");
   for (const request of [JSON.parse(message)].flat()) {
@@ -93,6 +104,10 @@ function completeFixtureTurn() {
 function emitNative(nativeType, payload) {
   const data = { kind: "native", sessionId: session.sessionId, harness: "codex", runtimeEpoch: session.runtimeEpoch, sequence: ++nativeSequence, nativeType, ephemeral: false, provenance: { originControlNodeId: authority.controlNodeId, authority }, payload: { encoding: "native-json-images-v1", images: [], json: { threadId: session.vendorSessionId, ...payload } } };
   for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
+}
+function emitSessionChanged(changed) {
+  const data = { kind: "control", eventId: id(100 + ++controlSequence), feedId: id(8), cursor: controlSequence, provenance: { originControlNodeId: changed.metadataAuthority.controlNodeId, authority: changed.metadataAuthority }, change: { type: "session.upsert", session: changed } };
+  for (const subscription of subscriptions) if (subscription.input?.sessions === "all" || subscription.input?.sessions?.includes?.(changed.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
 }
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
 await page.route("**/auth/session", (route) => route.fulfill({ status: login ? 200 : 401, contentType: "application/json", body: JSON.stringify({ method: "tailscale", storageScope: "a".repeat(43) }) }));
@@ -121,10 +136,19 @@ await page.route("**/trpc/**", async (route) => {
     let data;
     switch (path) {
       case "system.describe": data = { componentKind: "access-gateway", protocolVersion: 5 }; break;
-      case "sources.list": data = [{ ...source, state: online ? "selected" : "unavailable", manifest: online ? source.manifest : null }]; break;
-      case "controlNodes.list": data = online ? [{ controlNodeId: id(2) }] : []; break;
-      case "runtimeNodes.list": data = online ? showCopilotHosts ? [runtime, copilotRuntime, dualRuntime, unconfiguredRuntime] : [runtime] : []; break;
-      case "sessions.search": data = { sessions: online && !empty ? showOther ? [session, other] : [session] : [], nextCursor: null }; break;
+      case "sources.list": data = [{ ...source, state: online ? "selected" : "unavailable", manifest: online ? source.manifest : null }, ...(multiHost ? [nasSource] : [])]; break;
+      case "controlNodes.list": data = online ? [{ controlNodeId: id(2) }, ...(multiHost ? [{ controlNodeId: id(22) }] : [])] : []; break;
+      case "runtimeNodes.list": data = online ? [runtime, ...(multiHost ? [nasRuntime] : []), ...(showCopilotHosts ? [copilotRuntime, dualRuntime, unconfiguredRuntime] : [])] : []; break;
+      case "sessions.search":
+        sessionSearchRequests.push(input);
+        // Independent control sources can each contribute less than the page
+        // limit. A short first page is not the complete gateway catalog.
+        data = !online || empty ? { sessions: [], nextCursor: null }
+          : multiHost && nasCreated ? input.cursor === "fixture-main-pc-page"
+            ? { sessions: [session], nextCursor: null }
+            : { sessions: [nasSession], nextCursor: "fixture-main-pc-page" }
+          : { sessions: showOther ? [session, other] : [session], nextCursor: null };
+        break;
       case "harness.models": data = models; break;
       case "launchProfiles.models": {
         const chosenProfile = input.harness === "copilot" ? copilotProfile : profile;
@@ -133,13 +157,19 @@ await page.route("**/trpc/**", async (route) => {
         data = input.harness === "copilot" ? copilotModels : models; break;
       }
       case "launchProfiles.list": {
-        const chosenRuntime = [runtime, copilotRuntime, dualRuntime, unconfiguredRuntime].find(candidate => candidate.runtimeNodeId === input.runtimeNodeId);
+        const chosenRuntime = [runtime, nasRuntime, copilotRuntime, dualRuntime, unconfiguredRuntime].find(candidate => candidate.runtimeNodeId === input.runtimeNodeId);
         assert(chosenRuntime?.harnesses.some(entry => entry.harness === input.harness), "Queried a harness unavailable on the selected host");
         data = input.runtimeNodeId === unconfiguredRuntime.runtimeNodeId ? [] : input.harness === "copilot" ? [copilotProfile] : [profile]; break;
       }
+
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
       case "sessions.readNativeHistory":
+        if (input.sessionId === nasSession.sessionId || input.sessionId === linkedSession.sessionId) {
+          const selected = input.sessionId === linkedSession.sessionId ? linkedSession : nasSession;
+          data = { harness: "codex", vendorSessionId: selected.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: input.request.includeTurns === false ? { thread: { status: { type: "idle" }, turns: [] } } : { data: [{ turnId: "nas-turn", item: { type: "agentMessage", id: selected === linkedSession ? "nas-linked-reply" : "nas-reply", phase: "final_answer", text: "The externally created NAS conversation is ready." } }], nextCursor: null } } };
+          break;
+        }
         if (input.request.includeTurns === false) {
           data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { thread: { status: { type: input.sessionId === session.sessionId ? nativeStatus : "idle" }, turns: [] } } } };
           break;
@@ -152,7 +182,12 @@ await page.route("**/trpc/**", async (route) => {
         }
         data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "turn-fixture", item: { type: "userMessage", id: "user-fixture", content: [{ type: "text", text: "Check that my draft survives a host reconnect." }] } }, { turnId: "turn-fixture", item: { type: "agentMessage", id: "assistant-fixture", text: "The conversation remains visible while the host reconnects.\n\n- Preserve your draft\n- Keep stale sessions labeled\n- Resume actions after reconnection\n\n```text\n/work/disposable/long-directory-name/verification/unchanged-operation-identity\n```" } }], nextCursor: null } } }; break;
       case "commands.get": data = null; break;
-      case "sessions.get": data = input === other.sessionId ? other : session; break;
+      case "sessions.get":
+        if (input === linkedSession.sessionId) {
+          linkedSessionRequests += 1;
+          data = linkedSessionAvailable ? linkedSession : null;
+        } else data = input === nasSession.sessionId ? nasSession : input === other.sessionId ? other : session;
+        break;
       case "sessions.execute":
         commands.push(input);
         if (commands.length === 1) return route.abort("failed");
@@ -243,6 +278,80 @@ try {
   await page.reload();
   await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
   checks.push({ name: "reloading a created session with no catalog summary restores its history", passed: true });
+  // Add a second independent host before an external client creates anything.
+  // The creation below arrives only through the live feed.
+  multiHost = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByTestId("runtime-node-card").filter({ hasText: "Disposable NAS host" }).waitFor();
+  const beforeExternalSession = mutations.length;
+  const beforeExternalSearch = sessionSearchRequests.length;
+  const mainCard = page.locator(`[data-testid="session-card"][data-session-id="${session.sessionId}"]`);
+  const nasCard = page.locator(`[data-testid="session-card"][data-session-id="${nasSession.sessionId}"]`);
+  await page.getByTestId("prompt-input").fill("Keep the main-pc draft while a NAS agent appears.");
+  nasCreated = true;
+  emitSessionChanged(nasSession);
+  await nasCard.waitFor();
+  await eventually(() => sessionSearchRequests.slice(beforeExternalSearch).some((request) => request.cursor === "fixture-main-pc-page"), "The live catalog refresh ignored the next independent control-source page");
+  assert.equal(await mainCard.count(), 1, "An external NAS launch removed the existing main-pc session");
+  assert.equal(await mainCard.getAttribute("aria-current"), "true", "The external launch changed the selected agent");
+  await waitPrompt("Keep the main-pc draft while a NAS agent appears.");
+  await nasCard.click();
+  assert.equal(await nasCard.getAttribute("aria-current"), "true");
+  await page.locator('[data-native-item-id="nas-reply"]').filter({ hasText: "The externally created NAS conversation is ready." }).waitFor();
+  await waitEnabled("prompt-input", true);
+  await mainCard.click();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
+  await waitPrompt("Keep the main-pc draft while a NAS agent appears.");
+  await nasCard.click();
+  await page.locator('[data-native-item-id="nas-reply"]').waitFor();
+  assert.equal(await page.getByTestId("session-card").count(), 2);
+  await screenshot("multi-host-external-session");
+  await axe("multi-host-external-session");
+  assert.equal(mutations.length, beforeExternalSession, "Receiving or selecting an external session sent an agent command");
+  checks.push({ name: "an external NAS launch traverses short control-source pages, preserves main-pc selection and drafts, and both conversations remain selectable without refresh", passed: true });
+  // A newly shared link can precede its first catalog read. Keep this exact-ID
+  // row outside search so recovery has to invalidate the selected-link query.
+  await page.evaluate((sessionId) => { location.hash = `#/agents/${sessionId}`; }, linkedSession.sessionId);
+  await eventually(() => linkedSessionRequests > 0, "Opening the newly shared link did not request its exact session ID");
+  await page.getByText("This agent is unavailable. Return to Agents to choose another.", { exact: true }).waitFor();
+  const beforeLinkedRecovery = linkedSessionRequests;
+  linkedSessionAvailable = true;
+  emitSessionChanged(linkedSession);
+  await page.locator('[data-native-item-id="nas-linked-reply"]').waitFor();
+  await waitEnabled("prompt-input", true);
+  assert(linkedSessionRequests > beforeLinkedRecovery, "The live session event did not invalidate an initially missing selected-link result");
+  linkedSession.runtimeStatus = "running";
+  emitSessionChanged(linkedSession);
+  await page.getByTestId("agent-working-indicator").waitFor();
+  const beforeLinkedPoll = linkedSessionRequests;
+  linkedSession.runtimeStatus = "idle";
+  // Drop this state-change event deliberately. The selected exact-ID lookup
+  // must recover through its own poll while the session stays outside search.
+  await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
+  assert(linkedSessionRequests > beforeLinkedPoll, "A missed selected-link event did not recover through polling");
+  await page.getByTestId("prompt-input").fill("Keep my direct-link draft while the laptop sleeps.");
+  nasSource.state = "unavailable";
+  await refresh();
+  await page.getByTestId("stale-session-notice").waitFor();
+  assert.equal(await page.getByTestId("send-button").isDisabled(), true, "An exact-ID session outside search remained writable after its source went offline");
+  await waitPrompt("Keep my direct-link draft while the laptop sleeps.");
+  nasSource.state = "selected";
+  await refresh();
+  await page.getByTestId("stale-session-notice").waitFor({ state: "detached" });
+  await waitPrompt("Keep my direct-link draft while the laptop sleeps.");
+  checks.push({ name: "an exact-ID session outside search retains its draft and becomes read-only while its owning source is unavailable", passed: true });
+  assert.equal(mutations.length, beforeExternalSession, "Recovering a newly shared session link sent an agent command");
+  checks.push({ name: "a newly shared session link with an initial missing record recovers on its control event without reloading or requiring a search row", passed: true });
+  checks.push({ name: "selected session links track live status changes and recover a deliberately missed event through polling", passed: true });
+  await mainCard.click();
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
+  await page.getByTestId("prompt-input").fill("");
+  nasCreated = false;
+  emitSessionChanged(session);
+  await nasCard.waitFor({ state: "detached" });
+  multiHost = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByTestId("runtime-node-card").filter({ hasText: "Disposable NAS host" }).waitFor({ state: "detached" });
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
   await page.getByTestId('image-file-input').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove tailscale-http.png" }).waitFor();
@@ -552,6 +661,20 @@ try {
   await page.waitForTimeout(150);
   assert.equal(historyRequests, settledHistoryRequests, "A successful history read must not repeat on every completed turn");
   checks.push({ name: "unavailable initial history recovers on native lifecycle without repeated full reads", passed: true });
+  await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
+  await page.locator('[data-native-item-id="other-reply"]').waitFor();
+  historyUnavailable = true;
+  await page.getByTestId("session-card").filter({ hasText: "Review reconnect behavior" }).click();
+  await page.getByTestId("history-error").waitFor();
+  historyUnavailable = false;
+  emitSessionChanged(session);
+  await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
+  assert.equal(await page.getByTestId("history-error").count(), 0);
+  const readyHistoryRequests = historyRequests;
+  emitSessionChanged(session);
+  await page.waitForTimeout(150);
+  assert.equal(historyRequests, readyHistoryRequests, "Catalog updates must not reread successful history");
+  checks.push({ name: "initial history failure recovers when the same session becomes ready in the catalog without a completed native turn or a reload", passed: true });
   const beforeErrors = mutations.length;
   const capacityFailure = { message: "This model is at capacity. Please try again later.", codexErrorInfo: "serverOverloaded", additionalDetails: "Disposable provider capacity response." };
   session.runtimeStatus = "running"; await refresh();

@@ -16,6 +16,9 @@ and `@github/copilot` 1.0.81, whose upstream license is in its `LICENSE.md`.
 Their existing dependency graph and native platform packages remain unmodified;
 redistribution retains those notices. Windows ACL validation uses installed
 Windows PowerShell/.NET system components, which are not bundled by Leo.
+The laptop installers use the operator's existing Git, Node/npm, Windows
+PowerShell or WSL Bash installations. They do not redistribute those tools or
+download a separate unpinned Copilot executable.
 
 The optional NAS Cloudflare Compose deployment references separately distributed
 cloudflare/cloudflared (Apache-2.0) and nginxinc/nginx-unprivileged images (Nginx

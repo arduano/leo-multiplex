@@ -1,4 +1,5 @@
 import type { SessionRecord, SourceDiagnostic } from "@arduano/agent-multiplex-protocol";
+import { SESSION_LIST_LIMIT } from "./session-catalog.js";
 
 export interface RetainedSession {
   readonly session: SessionRecord;
@@ -24,6 +25,6 @@ export function retainSessionRows(
     if (fresh && mayRemoveAbsent && authoritative.has(row.session.metadataAuthority.controlNodeId)) continue;
     rows.push({ session: row.session, stale: true });
   }
-  // The host query itself is bounded to 500 rows. Keep cached rows bounded too.
-  return rows.slice(0, 500);
+  // The paginated fleet refresh and its presentation cache share one bound.
+  return rows.slice(0, SESSION_LIST_LIMIT);
 }

@@ -1,5 +1,40 @@
 # Implementation status — 2026-09-06
 
+## Windows and WSL installer candidate
+
+The [Windows PowerShell installer](../deploy/windows/install.ps1) and
+[WSL Bash installer](../deploy/wsl/install.sh) prepare corporate Copilot hosts
+named `work-windows` and `work-wsl`. They use separate private state, native
+account bindings, saved configuration and ports. Personal Codex remains on the
+existing hosts. The [laptop runbook](Laptop-Hosts.md) owns installation, first
+enrollment, preserving existing NAS sources and the physical-device checks.
+
+Setup requires an explicit clean source revision, public artifact integrity,
+native x64 Node/Git, the pinned npm version and an existing work directory.
+It imports the fleet credential by file path and creates a persistent launcher;
+login and foreground startup are separate commands. Exact reruns preserve state,
+conflicting configuration/credentials are rejected, and enrollment remains closed
+unless the operator explicitly starts with `--enroll`. No global tool, execution
+policy, firewall, scheduled task or installed personal service is changed.
+
+The published framework pin remains `0.2.0`; native Windows installation rejects
+that graph before dependencies or state are written. These scripts do not bypass
+the release gate using a source overlay. WSL uses the Linux packages, while both
+hosts still need corporate auth/network/laptop UAT. The installer branch also
+contains the already deployed multi-host session fixes; it has not been deployed
+over the running NAS gateway or personal hosts.
+
+Local typecheck, all 378 tests and the production build pass, including 25
+installer tests for private state, same-revision reruns, active-writer refusal,
+source drift, account/environment isolation and graceful console shutdown.
+The standalone shell suite passes 14 WSL wrapper cases and includes native
+Windows PowerShell/PowerShell cases in CI, without installing model dependencies.
+Combined browser evidence passes 70 checks at
+`receipts/browser/2026-09-06T05-31-44.699Z` and 14 four-host checks at
+`receipts/browser-multi-host/2026-09-06T05-29-17.537Z`. The merge's browser fixtures
+now use distinct NAS/Windows runtime IDs. No model calls or corporate credentials
+were used, and no installed host or existing session was changed.
+
 ## Corporate Copilot candidate
 
 The Windows x64 Copilot path is prepared on `copilot-windows-host`, with
@@ -784,3 +819,76 @@ session identity is preserved and active/idle, and both managed process
 executables report 0.153.4. Ordinary CLI/tmux sessions were not modified.
 This targeted user-service activation required no sudo/system rebuild and
 avoided unrelated pending Home Manager/NixOS changes.
+
+## Sessions across multiple hosts — 2026-09-06
+
+The UI now follows `sessions.search` continuation cursors across independent
+control sources. A source can return a single row and still have a next page;
+previously creating the first NAS session hid the main-pc list behind that
+ignored cursor. The original Manifold record remained active/idle and readable
+by exact ID throughout the incident.
+
+Each refresh commits its pages together, retains the existing 500-row bound,
+and labels a truncated or failed list. Only a complete, fresh projection may
+remove an absent retained row. Selected exact-ID lookups now refresh on control
+changes, reconnect/manual refresh, and a ten-second fallback poll, so an early
+missing record cannot remain stuck until browser reload. Initial history
+failure also retries when the same binding becomes active in the catalog or
+starts a native turn; successful history is not reloaded on these events.
+
+The fix is isolated from the paused Windows Copilot candidate and uses the
+unchanged published 0.2.0 package graph. Typechecking, 341 tests, the production
+build and shipped-container authentication/static-asset smoke pass. Browser
+regressions cover external two-host creation, pagination, retained selection
+and drafts, both conversations, early missing links, missed status events and
+initial history recovery. No real model calls or production session mutations
+are part of this verification.
+
+The tested fix source `9637bdf` is deployed on NAS as
+`sha256:7ab0b821d20536e5fbe89286557d5fa55b00c1007077b153bc6d05245ba9c135`
+through `compose.cloudflare.yaml`; only its web/gateway container was recreated.
+The private `.env.before-session-state-*` backup retains the previous image.
+All served assets match the production build (HTML comparison removes the
+per-response CSP nonce). Read-only browser checks show both existing sessions,
+their native history and the two-row phone list. Main-pc and NAS control/runtime
+PIDs are unchanged, and public unauthenticated access still redirects to
+Cloudflare Access.
+
+Final browser evidence is `receipts/browser/2026-09-06T04-54-38.097Z`
+(62 checks across six viewports). The scrubbed, checksummed rollout receipt is
+`receipts/session-state-deployment/2026-09-06T04-57-55.834Z`.
+The separate fix review is [PR #2](https://github.com/arduano/leo-multiplex/pull/2).
+
+### Four hosts and laptop sleep — 2026-09-06
+
+Four independent sources now have explicit browser coverage with 100 sessions,
+including colliding native thread/item IDs, host-specific models, drafts,
+history, live events, pagination and six viewport sizes. The fixture repeats
+simultaneous Windows/WSL outages three times with staggered recovery; always-on
+hosts stay usable, unavailable session rows/drafts remain, and reconnects send
+no agent commands. A separate integration test uses the published real role
+services with mock adapters to verify host-specific launch/command/history
+routing and repeated two-source outages without changing authority or identity.
+
+The audit fixed two offline edges: a disappearing launch target previously
+selected another host automatically, and a cached direct-link session outside
+the visible list could retain enabled controls after losing its source. The
+launch form now preserves the selected host and directory while unavailable;
+direct links use the same source-availability protection as listed sessions.
+Agent search also includes the displayed host name.
+
+Typechecking, 342 tests, production/container builds and shipped-container smoke
+pass. General browser evidence is `receipts/browser/2026-09-06T05-07-26.784Z`
+(63 checks); four-host evidence is
+`receipts/browser-multi-host/2026-09-06T05-09-39.462Z` (14 checks).
+These are deterministic UI/role-service checks, not physical Windows/WSL
+suspend/network qualification. The [NAS runbook](../deploy/nas/README.md#hosts-that-sleep-or-disconnect)
+owns persistent identity, multi-host pairing and reconnect guidance.
+
+Source `88abace` is deployed through the existing combined Compose project as
+`sha256:6a1c71076de3a415dbfd2574f30e9894dec6fbf2e48185c87ca3a7cc85ba32a1`.
+Only the web/gateway container was recreated; `.env.before-four-host-*` privately
+retains its predecessor. Served assets match the tested build, both current
+production conversations open, mobile lists both sessions, and both hosts'
+control/runtime PIDs remain unchanged. Scrubbed, checksummed rollout evidence is
+`receipts/four-host-deployment/2026-09-06T05-12-27.886Z`.
