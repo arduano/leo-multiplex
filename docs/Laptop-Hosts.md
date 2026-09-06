@@ -4,8 +4,10 @@ Both work environments use the corporate GitHub Copilot account. Personal Codex
 stays on main-pc and home-nas. Each work host owns its catalog and state; the NAS
 gateway observes all four. Install from the
 [Windows](../deploy/windows/README.md) or [WSL](../deploy/wsl/README.md) runbook.
-Start in foreground terminals for initial testing. The installers create no
-scheduled task or background service and do not change installed personal hosts.
+Start in foreground terminals for initial pairing. Windows can then use the
+optional [current-user background task](../deploy/windows/README.md#run-in-the-background-under-your-windows-account).
+The base installers create no scheduled task or background service and do not
+change installed personal hosts.
 The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
 checkout at the exact revision in the installation handoff, then run these
 installers. They preserve existing source and state; keep their source checkout

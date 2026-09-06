@@ -164,3 +164,15 @@ Push delivery permits only canonical HTTPS FCM endpoints, validates P-256 keys,
 never follows redirects, and bounds delivery bytes, retries, pending work and
 deduplication. Push failures do not interrupt domain-stream ingestion. Revoke
 lost devices from App settings. See [Android app](docs/Mobile-PWA.md).
+
+## Windows current-user background task
+
+The optional Windows service add-on registers a Task Scheduler logon task for
+only the current user SID, with Interactive logon and Limited privilege. It uses
+no password, elevation, policy override, firewall change or shared native auth.
+The task calls the existing pinned private launcher with plain `start`, never
+`--enroll`. It runs while signed in, including locked; it does not run signed out.
+Graceful local service control uses private files fenced to the current run,
+not a network listener or process-ID kill. Recovery commands may request a
+scheduled maintenance handoff but cannot survive terminating their own host.
+Unrelated tasks, hosts and native sessions are outside this task's lifecycle.

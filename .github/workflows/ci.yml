@@ -33,6 +33,8 @@ jobs:
         run: node --test tests/installer-wrappers.mjs
       - name: Verify WSL installation bootstrap with disposable local Git sources
         run: node --test tests/installation-bootstraps.mjs
+      - name: Verify Windows user-task runner with disposable local fixtures
+        run: node --test tests/windows-user-service.test.mjs
       - name: Build deployment container
         run: docker build --tag leo-multiplex:ci .
       - name: Exercise shipped assets and fail-closed authentication

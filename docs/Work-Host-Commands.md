@@ -77,6 +77,10 @@ host starts its recovery service before checking Copilot authentication; a faile
 Copilot doctor or runtime leaves command recovery available. After repairing
 Copilot, restart that particular foreground host. Recovery cannot repair a host
 whose OS, network, saved launcher, private state or transport cannot start.
+The optional [Windows user task](../deploy/windows/README.md#run-in-the-background-under-your-windows-account)
+keeps the whole host independent of an open terminal and provides graceful local
+stop control. Install and start its waiting runner before closing the initial
+foreground host, since that foreground process still owns remote recovery.
 
 The service has its own durable endpoint identity and single pinned gateway,
 under `<host-state>/work-commands`. Windows uses UDP 49121 and WSL UDP 49123.
@@ -154,3 +158,15 @@ Corporate policy may prevent PowerShell
 `Add-Type` or process-job assignment; such commands fail before user input runs.
 Physical laptop suspend, corporate connectivity and installed Windows/WSL UAT
 remain separate checks. No execution-policy, firewall or TLS setting is changed.
+
+## Remote maintenance
+
+A recovery command can download/build a reviewed release and register a separate
+scheduled maintenance task. It cannot safely perform the stop-and-switch from
+inside its own process tree: Windows commands own kill-on-close process jobs,
+and stopping the host also interrupts the recovery command and its receipt.
+An updater must finish admission first, run independently through Task Scheduler,
+gracefully stop the host, preserve and back up all private state, then switch an
+explicit source pin and verify restart. The current installers refuse in-place
+revision changes; a supported automated update workflow is not implemented yet.
+Use no automatic agent resume or model prompts as an update health check.

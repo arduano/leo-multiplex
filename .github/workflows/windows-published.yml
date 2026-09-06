@@ -48,6 +48,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm.cmd run typecheck
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify user-task installation and graceful handoff with disposable state
+        if: steps.release.outputs.ready == 'true'
+        shell: powershell
+        run: .\tests\windows-user-service-smoke.ps1
       - name: Qualify native host and work commands without model calls
         if: steps.release.outputs.ready == 'true'
         env:
@@ -67,5 +71,6 @@ jobs:
           path: |
             receipts/windows-installer/
             receipts/windows-host/
+            receipts/windows-user-service/
           if-no-files-found: error
           retention-days: 30

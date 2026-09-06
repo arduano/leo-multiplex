@@ -25,8 +25,8 @@ The first target is Windows x64, Node 24, a local NTFS state directory, and an
 interactive standard-user login. Windows ARM64 has no pinned Iroh binary. The
 Windows PowerShell/.NET ACL check must be allowed by corporate policy. It never
 changes execution policy, disables TLS validation, or changes firewall rules.
-The initial host runs in the foreground; scheduled tasks/services and automatic
-updates are deliberately deferred until laptop UAT.
+Initial pairing runs in the foreground. The optional current-user background
+task below starts at sign-in; updates remain an explicit maintenance operation.
 
 ## Install from a pinned checkout
 
@@ -130,6 +130,63 @@ failed the combined-host Windows smoke, while the default passed. The control
 HTTP listener remains loopback-only. Copilot HTTP proxy connectivity does not
 establish Iroh direct/relay reachability to the NAS; Cloudflare Access protects
 the browser edge, not this transport.
+
+## Run in the background under your Windows account
+
+After pairing, use the reviewed `deploy/windows/service.ps1` and its matching
+`scripts/windows-user-service.mjs` from the service handoff. This add-on uses the
+existing installed launcher and preserves its exact source pin, identity and
+Copilot sign-in; there is no host reinstallation.
+
+```powershell
+.\deploy\windows\service.ps1 -Action Install -StartNow
+```
+
+The task is named **Leo Multiplex - work-windows** (using your configured host
+name). It runs at normal user privilege, without a password or administrator
+rights, starts when that account signs in, and continues while locked. It has
+no run-time limit or battery-stop rule. Windows sleep/sign-out takes the host
+offline. Task Scheduler can restart a failed runner up to three times, one
+minute apart; it does not automatically resume an agent or send a prompt.
+
+Install and start the task **before closing the initial foreground host**. The
+background runner waits for that host's writer locks. Once it reports waiting,
+press Ctrl+C in the old terminal once. It then takes over with enrollment closed.
+The original foreground host owns command recovery until this handoff, so
+closing it before the task is installed would remove remote installation access.
+After handoff, ordinary terminal closure has no effect on the background task.
+
+```powershell
+$LeoRunner = Join-Path $env:LOCALAPPDATA 'leo-multiplex-windows\service\runner.mjs'
+node.exe $LeoRunner status
+node.exe $LeoRunner stop
+# After graceful shutdown, start it again:
+Start-ScheduledTask -TaskName 'Leo Multiplex - work-windows'
+```
+
+Use the runner's `stop` command for planned shutdown. Task Scheduler's **End**
+action is forceful and is not the routine stop path. Local status/control files
+are private and contain no Copilot output or credentials. The task uses the
+account's sign-in environment; shell-only proxy/CA settings must be configured
+through the normal company-approved user environment when needed.
+
+### Updates and recovery commands
+
+Recovery commands can stage a reviewed update and schedule its application;
+there is no automatic push updater yet. Do not `git pull` or run `npm ci` in the
+live pinned checkout: the installed launcher deliberately refuses changed source.
+A supported update must build a separate exact checkout, finish the recovery
+command, then let an independent scheduled task stop the host gracefully,
+back up the complete private state, switch the saved source revision, restart
+with enrollment closed, and check readiness. Keep account, state and identities.
+Code rollback alone cannot undo database migrations.
+
+The updater must be started by Task Scheduler, outside the recovery command's
+process tree. Command descendants are killed when that command exits, so an
+ordinary detached `Start-Process` is not a durable update handoff. Updating or
+stopping the whole host briefly disconnects recovery. A stopped OS, signed-out
+account or unavailable network still needs local recovery before remote commands
+can work again.
 
 ## Diagnose and recover
 

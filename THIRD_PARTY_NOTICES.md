@@ -23,6 +23,8 @@ The work-command sidecar uses the already pinned p2prpc transport, tRPC, Zod and
 framework SQLite package. Its original Windows shell helper invokes installed
 PowerShell/.NET and Windows kernel job APIs; WSL invokes installed Bash. No new
 binary, service dependency or third-party source is redistributed for this path.
+The optional Windows background task uses installed Windows Task Scheduler,
+PowerShell and Node.js; no separate service manager is bundled.
 
 The optional NAS Cloudflare Compose deployment references separately distributed
 cloudflare/cloudflared (Apache-2.0) and nginxinc/nginx-unprivileged images (Nginx
