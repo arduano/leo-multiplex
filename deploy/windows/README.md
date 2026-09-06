@@ -7,36 +7,36 @@ The laptop owns its control catalog, runtime journals and native session state.
 
 ## Release status
 
-**Do not install this as a working native Windows host yet.** The currently pinned
-public framework graph (`0.2.0`) lacks Windows private-state support. Its update
-is prepared in the framework repository, with a native Windows CI smoke. The
-personal host fails closed when that update is missing. A qualified framework
-patch release and this consumer's exact dependency update are required before
-these instructions become the installation handoff. Linux tests and browser
-fixtures alone do not establish Windows support.
+The current source pins published framework **0.2.2**, adding native Copilot
+permission controls to the Windows private-state and path-policy support. The
+[downloadable installer handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+records the exact installation revision.
 
-The source candidate passed [native Windows CI](https://github.com/arduano/agent-multiplex/actions/runs/34011570520):
-framework `96e2d3e165d7448dbf9cca41658a8467893fd5e7` with personal host
-`b1b31996f1dff9eba024d14491258c081dd6db1d`. The run checks private state, SQLite,
-uploaded-image retention, SDK startup, full control/runtime registration, graceful
-stop and a restart with enrollment closed. It uses no corporate credentials,
-creates no native conversation, and sends no prompts. Its checksummed receipts
-are attached to that run. This source overlay is CI-only; installation still
-requires published framework artifacts.
+[Published Windows qualification](https://github.com/arduano/leo-multiplex/actions/runs/34024286247) runs checks for all 16 public
+artifact integrities, executes the actual installer on disposable `D:` state,
+verifies saved private configuration and launcher help, removes the transfer
+secret, and passes rerun preflight using the saved copy. The same run verifies
+host registration, graceful stop/restart with enrollment closed, directory
+selection across C:/D: and nine real harmless work-command executor checks.
+There is no source overlay, corporate login or model call in this qualification.
+Corporate OAuth/network/share/suspend behavior remains laptop UAT.
 
 The first target is Windows x64, Node 24, a local NTFS state directory, and an
 interactive standard-user login. Windows ARM64 has no pinned Iroh binary. The
 Windows PowerShell/.NET ACL check must be allowed by corporate policy. It never
 changes execution policy, disables TLS validation, or changes firewall rules.
-The initial host runs in the foreground; scheduled tasks/services and automatic
-updates are deliberately deferred until laptop UAT.
+Initial pairing runs in the foreground. The optional current-user background
+task below starts at sign-in; updates remain an explicit maintenance operation.
 
 ## Install from a pinned checkout
 
-Use company-approved **Git, Node.js 24 x64 and npm 11.17.0**. The installer checks
-these tools; it does not install or change global tools. Keep the repository on
-a local drive, outside the installation/state directory, and leave this checkout
-at its installed revision for the launcher to use.
+Use company-approved **Git, Node.js 24 x64 and its bundled npm**. The installer checks
+runtime prerequisites without requiring a particular installed npm version.
+For dependency installation, standard `npm exec` runs the project's pinned npm
+from cache, preserving the lockfile and install-script policy. Global npm stays
+unchanged. Keep the repository on a local drive, outside the installation/state
+directory, and leave this checkout at its installed revision for the launcher
+to use.
 
 ```powershell
 $Revision = '<full 40-character commit from the installation handoff>'
@@ -44,19 +44,21 @@ git clone https://github.com/arduano/leo-multiplex.git
 cd leo-multiplex
 git checkout --detach $Revision
 
-# Check first; current public framework 0.2.0 deliberately stops here.
-.\deploy\windows\install.ps1 -Revision $Revision -Workspace 'C:\Work' `
+# Check the exact public dependency graph and local prerequisites first.
+.\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret' -Check
 
-# After the release gate clears, install dependencies, build and save the host.
-.\deploy\windows\install.ps1 -Revision $Revision -Workspace 'C:\Work' `
+# Install dependencies, build and save the host.
+.\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret'
 ```
 
-Create the workspace through normal company tooling first. For multiple roots,
-pass `-Workspace @('C:\Work', 'D:\Projects')`. These roots fence Multiplex path
-operations; they are **not** an OS sandbox. Copilot runs under your account with
-native permission questions. The personal Codex YOLO profile does not apply.
+By default, select any existing absolute working directory when creating an
+agent or running a recovery command. `D:/...`, `C:/...`, other drives and UNC
+shares are supported without an installer allowlist or drive enumeration.
+Copilot uses your account's normal access with native permission questions.
+If deliberately wanted later, `-Workspace @('C:\Work', 'D:\Projects')` opts into
+a narrower starting-directory allowlist; it is not an OS sandbox.
 
 The secret file must privately contain the **existing NAS fleet enrollment
 secret**. Follow [fleet pairing](../../docs/Laptop-Hosts.md#join-the-existing-fleet)
@@ -129,6 +131,63 @@ HTTP listener remains loopback-only. Copilot HTTP proxy connectivity does not
 establish Iroh direct/relay reachability to the NAS; Cloudflare Access protects
 the browser edge, not this transport.
 
+## Run in the background under your Windows account
+
+After pairing, use the reviewed `deploy/windows/service.ps1` and its matching
+`scripts/windows-user-service.mjs` from the service handoff. This add-on uses the
+existing installed launcher and preserves its exact source pin, identity and
+Copilot sign-in; there is no host reinstallation.
+
+```powershell
+.\deploy\windows\service.ps1 -Action Install -StartNow
+```
+
+The task is named **Leo Multiplex - work-windows** (using your configured host
+name). It runs at normal user privilege, without a password or administrator
+rights, starts when that account signs in, and continues while locked. It has
+no run-time limit or battery-stop rule. Windows sleep/sign-out takes the host
+offline. Task Scheduler can restart a failed runner up to three times, one
+minute apart; it does not automatically resume an agent or send a prompt.
+
+Install and start the task **before closing the initial foreground host**. The
+background runner waits for that host's writer locks. Once it reports waiting,
+press Ctrl+C in the old terminal once. It then takes over with enrollment closed.
+The original foreground host owns command recovery until this handoff, so
+closing it before the task is installed would remove remote installation access.
+After handoff, ordinary terminal closure has no effect on the background task.
+
+```powershell
+$LeoRunner = Join-Path $env:LOCALAPPDATA 'leo-multiplex-windows\service\runner.mjs'
+node.exe $LeoRunner status
+node.exe $LeoRunner stop
+# After graceful shutdown, start it again:
+Start-ScheduledTask -TaskName 'Leo Multiplex - work-windows'
+```
+
+Use the runner's `stop` command for planned shutdown. Task Scheduler's **End**
+action is forceful and is not the routine stop path. Local status/control files
+are private and contain no Copilot output or credentials. The task uses the
+account's sign-in environment; shell-only proxy/CA settings must be configured
+through the normal company-approved user environment when needed.
+
+### Updates and recovery commands
+
+Recovery commands can stage a reviewed update and schedule its application;
+there is no automatic push updater yet. Do not `git pull` or run `npm ci` in the
+live pinned checkout: the installed launcher deliberately refuses changed source.
+A supported update must build a separate exact checkout, finish the recovery
+command, then let an independent scheduled task stop the host gracefully,
+back up the complete private state, switch the saved source revision, restart
+with enrollment closed, and check readiness. Keep account, state and identities.
+Code rollback alone cannot undo database migrations.
+
+The updater must be started by Task Scheduler, outside the recovery command's
+process tree. Command descendants are killed when that command exits, so an
+ordinary detached `Start-Process` is not a durable update handoff. Updating or
+stopping the whole host briefly disconnects recovery. A stopped OS, signed-out
+account or unavailable network still needs local recovery before remote commands
+can work again.
+
 ## Diagnose and recover
 
 `doctor --json` emits a bounded report with fixed failure text, versions and model
@@ -169,3 +228,20 @@ on Windows** because secure opened-file path verification currently requires
 Linux. Copilot's experimental stock TUI is disabled; use structured Chat.
 Windows sudden-power-loss image durability and managed-laptop policy/auth/network
 behavior are outside the automated startup smoke.
+
+## Work command recovery
+
+This installer enables the Windows-only work command sidecar as part of the
+foreground host. It uses UDP 49121 and a separate durable endpoint/pin beside
+the ordinary control/runtime state. First pairing must also confirm
+`leo-agents exec-hosts` reports `work-windows` available before enrollment closes.
+The gateway image must contain this feature; merge the full private pairing file
+so both its control source and `workHosts` descriptor are retained.
+
+Use `leo-agents exec --host work-windows --cwd 'C:\Work' --text 'Get-ChildItem -Name'
+--request-id work-list-1` from an authenticated CLI. Commands use installed Windows
+PowerShell, normal account access and no profile or execution-policy override.
+App settings offers a separate **Experimental work commands** hatch. Copilot
+startup failure leaves recovery online; OS/network/private-state failure does
+not. See [limits, pairing and interrupted-command recovery](../../docs/Work-Host-Commands.md).
+The complete host uses the qualified published framework graph recorded above.

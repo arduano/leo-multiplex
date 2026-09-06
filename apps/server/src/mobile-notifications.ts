@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { AccessGatewayProjection } from "@arduano/agent-multiplex-gateway-core";
 import type { AccessStreamItem, InteractionRecord, SessionRecord, SourceId } from "@arduano/agent-multiplex-protocol";
 import { failureFromEvent } from "../../../packages/native-errors/src/index.js";
+import { SESSION_ACTIVITY_LIMIT, activityMatchesSession, type SessionActivity, type SessionActivityBinding, type SessionActivityKind, type SessionActivityResponse } from "../../../packages/session-activity/src/contract.js";
 
 export const MOBILE_LIMITS = { pending: 1_000, devices: 32, watches: 2_000, payloadBytes: 2_048, dedupeMs: 7 * 86_400_000, dedupeRecords: 100_000, attempts: 6 } as const;
 export const mobileCategoriesSchema = z.object({ completion: z.boolean(), input: z.boolean(), error: z.boolean() }).strict();
@@ -30,9 +31,10 @@ export interface MobileNotification {
 export type PushSender = (subscription: MobileDeviceInput["subscription"], payload: string, ttlSeconds: number, topic: string) => Promise<void>;
 interface DeviceRow { id: string; name: string; enabled: number; categories: string; subscription: string; created_at: number; last_seen_at: number }
 interface DeliveryRow { id: number; device_id: string; event_id: string; session_id: string | null; payload: string; expires_at: number; attempts: number }
-interface ThinSession {
+interface ThinSession extends SessionActivityBinding {
   id: string; sourceId: SourceId; binding: string; epoch: string | null; harness: SessionRecord["harness"]; vendorId: string; title: string;
-  copilotTurn?: string; copilotFailed?: boolean;
+  turn?: string | undefined; failed?: boolean | undefined; retrying?: boolean | undefined; sequence?: number | undefined;
+  runtimeStatus: SessionRecord["runtimeStatus"];
 }
 
 export function mobileStorageScope(instanceId: string, ownerEmail: string): string {
@@ -102,8 +104,8 @@ function createPushSender(keys: { publicKey: string; privateKey: string }, owner
   };
 }
 
-/** Personal operational state only. Never stores catalog records, native
- * payloads, messages, paths, credentials, or another projection subscription. */
+/** Personal operational state only. Stores one bounded status observation per
+ * session, never catalog authority, native payloads, messages, paths or credentials. */
 export class MobileNotifications {
   readonly #db: DatabaseSync;
   readonly #sender: PushSender;
@@ -139,6 +141,12 @@ export class MobileNotifications {
         CREATE INDEX mobile_dedupe_age ON mobile_dedupe(created_at);
         INSERT INTO mobile_migrations VALUES('001-notifications'); COMMIT;`);
     }
+    if (!this.#db.prepare("SELECT 1 FROM mobile_migrations WHERE name=?").get("002-session-activity")) {
+      this.#db.exec(`BEGIN;
+        CREATE TABLE mobile_activity(session_id TEXT PRIMARY KEY,binding TEXT NOT NULL,payload TEXT NOT NULL,observed_at INTEGER NOT NULL,native_sequence INTEGER,turn_id TEXT);
+        CREATE INDEX mobile_activity_recent ON mobile_activity(observed_at);
+        INSERT INTO mobile_migrations VALUES('002-session-activity'); COMMIT;`);
+    }
     for (const row of this.#db.prepare("SELECT session_id FROM mobile_watches").all()) this.#watched.add(String(row.session_id));
     this.#prune();
     if (options.automaticDelivery !== false) {
@@ -154,6 +162,10 @@ export class MobileNotifications {
   state() {
     return { devices: (this.#db.prepare("SELECT * FROM mobile_devices ORDER BY created_at").all() as unknown as DeviceRow[]).map(publicDevice),
       watchedSessionIds: [...this.#watched], delivery: { pending: this.#count("mobile_delivery"), ...(this.#lastError ? { lastError: this.#lastError } : {}) } };
+  }
+  activity(): SessionActivityResponse {
+    return { sessions: this.#db.prepare("SELECT payload FROM mobile_activity ORDER BY observed_at DESC,rowid DESC LIMIT ?").all(SESSION_ACTIVITY_LIMIT)
+      .map(row => JSON.parse(String(row.payload)) as SessionActivity) };
   }
   putDevice(id: string, input: MobileDeviceInput): MobileDevice {
     input = mobileDeviceInputSchema.parse(input);
@@ -182,7 +194,7 @@ export class MobileNotifications {
     } else {
       this.#db.prepare("DELETE FROM mobile_watches WHERE session_id=?").run(sessionId);
       this.#db.prepare("DELETE FROM mobile_delivery WHERE session_id=?").run(sessionId);
-      this.#watched.delete(sessionId); this.#sessions.delete(sessionId);
+      this.#watched.delete(sessionId);
     }
     return [...this.#watched];
   }
@@ -193,14 +205,40 @@ export class MobileNotifications {
   }
 
   /** Called after a successful snapshot, never while owning its native payloads. */
-  synchronize(sourceId: SourceId, projection: Pick<AccessGatewayProjection, "listSessions" | "listInteractions">): void {
+  synchronize(sourceId: SourceId, projection: Pick<AccessGatewayProjection, "listSessions" | "listInteractions">, coveredControlNodeIds: readonly string[]): void {
     this.#ready.delete(sourceId);
-    for (const session of projection.listSessions()) if (this.#watched.has(session.sessionId)) this.#remember(session, sourceId);
+    const covered = new Set(coveredControlNodeIds);
+    const sourceSessions = projection.listSessions().filter(session => covered.has(session.metadataAuthority.controlNodeId));
+    const ids = new Set<string>(sourceSessions.map(session => session.sessionId));
+    for (const [id, session] of this.#sessions) if (session.sourceId === sourceId && !ids.has(id)) {
+      this.#sessions.delete(id);
+      this.#forgetActivity(id);
+    }
+    for (const session of sourceSessions) {
+      this.#remember(session, sourceId);
+      const known = this.#sessions.get(session.sessionId);
+      // A catalog snapshot has no native active-turn identity. Work may have
+      // advanced while disconnected; keep sequence fences, not an old turn fence.
+      if (known) { known.turn = undefined; known.retrying = false; }
+    }
+    const interactions = projection.listInteractions();
+    const pending = new Set<string>();
     // A pending question that existed before connection/watch is a baseline, not
     // a new notification. Persisting its identity also fences later upserts.
-    for (const interaction of projection.listInteractions()) {
+    for (const interaction of interactions) {
       const session = this.#sessions.get(interaction.sessionId);
-      if (session && interaction.runtimeEpoch === session.epoch) this.#seen(this.#interactionId(session, interaction));
+      if (session?.sourceId !== sourceId || interaction.runtimeEpoch !== session.epoch || interaction.harness !== session.harness) continue;
+      const eventId = this.#interactionId(session, interaction);
+      this.#seen(eventId);
+      if (interaction.state === "pending" && this.#blockingRootInteraction(session, interaction)) pending.add(eventId);
+    }
+    // A fresh source snapshot can disprove an old in-progress hint after events
+    // were missed offline. It cannot prove that the work completed successfully.
+    for (const session of sourceSessions) {
+      const activity = this.#activityFor(session.sessionId);
+      if (activity?.kind === "working" && session.runtimeStatus !== "running" || activity?.kind === "input" && !pending.has(activity.eventId)) {
+        this.#forgetActivity(session.sessionId);
+      }
     }
   }
   unavailable(sourceId: SourceId): void { this.#ready.delete(sourceId); }
@@ -212,52 +250,104 @@ export class MobileNotifications {
     if (item.kind === "heartbeat") { this.#ready.add(sourceId); return; }
     if (item.kind === "control" && item.change.type === "session.upsert") {
       const record = item.change.session;
-      if (this.#watched.has(record.sessionId)) this.#remember(record, sourceId);
+      this.#remember(record, sourceId);
       return;
     }
     if (item.kind === "control" && item.change.type === "interaction.changed") {
       const interaction = item.change.interaction;
       const session = this.#sessions.get(interaction.sessionId);
-      if (!session || interaction.runtimeEpoch !== session.epoch || interaction.harness !== session.harness) return;
-      const json = object(interaction.payload.json);
-      const params = object(json?.params) ?? json;
+      if (!session || session.sourceId !== sourceId || interaction.runtimeEpoch !== session.epoch || interaction.harness !== session.harness) return;
       if (interaction.state !== "pending") {
         this.#db.prepare("DELETE FROM mobile_delivery WHERE event_id=?").run(this.#interactionId(session, interaction));
+        const activity = this.#activityFor(session.id);
+        if (activity?.eventId === this.#interactionId(session, interaction)) this.#forgetActivity(session.id, false);
         return;
       }
-      if (params?.isBlocking === false ||
-          typeof params?.threadId === "string" && params.threadId !== session.vendorId || typeof json?.agentId === "string") return;
+      if (!this.#blockingRootInteraction(session, interaction)) return;
+      if (this.#ready.has(sourceId)) this.#recordActivity(session, this.#interactionId(session, interaction), "input", "Needs your input");
+      else this.#invalidateBaselineActivity(session.id, this.#interactionId(session, interaction));
       this.#signal(session, this.#interactionId(session, interaction), "input", "Needs your input", this.#ready.has(sourceId));
       return;
     }
     if (item.kind !== "native") return;
     const session = this.#sessions.get(item.sessionId);
-    if (!session || item.runtimeEpoch !== session.epoch || item.harness !== session.harness) return;
+    if (!session || session.sourceId !== sourceId || item.runtimeEpoch !== session.epoch || item.harness !== session.harness || item.sequence <= (session.sequence ?? -1)) return;
+    session.sequence = item.sequence;
     const payload = object(item.payload.json);
     if (item.harness === "codex" && payload?.threadId !== session.vendorId || item.harness === "copilot" && typeof payload?.agentId === "string") return;
     const turn = object(payload?.turn);
     const data = object(payload?.data);
     const ready = this.#ready.has(sourceId);
-    if (item.harness === "copilot" && item.nativeType === "assistant.turn_start") {
-      // Copilot turnId is a loop counter, not globally unique; the native event
-      // UUID identifies this concrete turn across restarts.
-      session.copilotTurn = string(payload?.id) ?? `${item.runtimeEpoch}:${item.sequence}`;
-      session.copilotFailed = false;
+    if (!ready && item.harness === "codex" && item.nativeType === "thread/status/changed" && object(payload?.status)?.type === "active") {
+      this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:active:${item.sequence}`));
+      session.failed = false; session.retrying = false; session.turn = undefined;
       return;
     }
+    if (item.harness === "codex" && item.nativeType === "turn/started" || item.harness === "copilot" && item.nativeType === "assistant.turn_start") {
+      // Copilot turnId is a loop counter, not globally unique; the native event
+      // UUID identifies this concrete turn across restarts.
+      const next = item.harness === "codex" ? string(turn?.id) : string(payload?.id) ?? `${item.runtimeEpoch}:${item.sequence}`;
+      const newTurn = next !== session.turn;
+      if (newTurn) { session.failed = false; session.retrying = false; }
+      session.turn = next;
+      if (ready && !session.failed && !session.retrying) this.#recordActivity(session, hash(`${session.binding}:working:${session.turn ?? item.sequence}`), "working", "Working", item.sequence);
+      if (!ready && newTurn) this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:working:${session.turn ?? item.sequence}`));
+      if (newTurn) this.#cancelSuperseded(session.id);
+      return;
+    }
+    if (item.harness === "codex" && item.nativeType === "turn/completed" && session.turn && turn?.id !== session.turn) return;
     const failure = failureFromEvent(item);
+    if (failure && item.harness === "codex" && session.turn && failure.turnId && failure.turnId !== session.turn) return;
+    if (failure && item.harness === "codex" && !session.turn && failure.turnId) session.turn = failure.turnId;
+    if (failure?.willRetry) {
+      session.retrying = true;
+      if (ready) this.#recordActivity(session, hash(`${session.binding}:retry:${failure.id}`), "working", "Retrying", item.sequence);
+      else this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:retry:${failure.id}`));
+      this.#cancelSuperseded(session.id);
+      return;
+    }
     if (failure && !failure.willRetry) {
-      if (item.harness === "copilot") session.copilotFailed = true;
+      session.failed = true; session.retrying = false;
+      const eventId = hash(`${session.binding}:error:${failure.id}`);
+      if (ready) this.#recordActivity(session, eventId, "error", failure.title, item.sequence);
+      else this.#invalidateBaselineActivity(session.id, eventId);
       this.#signal(session, hash(`${session.binding}:error:${failure.id}`), "error", failure.title, ready);
       return;
     }
-    if (item.harness === "codex" && item.nativeType === "turn/completed" && turn?.status === "completed" && typeof turn.id === "string") {
-      this.#signal(session, hash(`${session.binding}:completion:${turn.id}`), "completion", "Finished working", ready);
+    if (session.retrying && (item.harness === "codex" && typeof payload?.delta === "string" && payload.delta.length > 0 &&
+        (!session.turn || payload.turnId === session.turn) && ["item/agentMessage/delta", "item/plan/delta", "item/reasoning/textDelta", "item/reasoning/summaryTextDelta"].includes(item.nativeType) ||
+        item.harness === "copilot" && item.nativeType === "assistant.message")) {
+      session.retrying = false; session.failed = false;
+      if (ready) this.#recordActivity(session, hash(`${session.binding}:progress:${item.sequence}`), "working", "Working", item.sequence);
+      else this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:progress:${item.sequence}`));
     }
-    if (item.harness === "copilot" && item.nativeType === "session.idle" && session.copilotTurn) {
-      if (data?.aborted !== true && !session.copilotFailed) this.#signal(session,
-        hash(`${session.binding}:completion:${session.copilotTurn}`), "completion", "Finished working", ready);
-      delete session.copilotTurn; delete session.copilotFailed;
+    if (item.harness === "codex" && item.nativeType === "turn/completed" && turn?.status === "completed" && typeof turn.id === "string") {
+      const eventId = hash(`${session.binding}:completion:${turn.id}`);
+      session.failed = false; session.retrying = false;
+      if (ready) this.#recordActivity(session, eventId, "completion", "Finished", item.sequence);
+      else this.#invalidateBaselineActivity(session.id, eventId);
+      this.#signal(session, eventId, "completion", "Finished working", ready);
+    }
+    if (item.harness === "codex" && item.nativeType === "turn/completed" && turn?.status === "interrupted") {
+      if (ready) this.#recordActivity(session, hash(`${session.binding}:interrupted:${turn.id}`), "interrupted", "Interrupted", item.sequence);
+      else this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:interrupted:${turn.id}`));
+      this.#cancelSuperseded(session.id);
+    }
+    if (item.harness === "copilot" && item.nativeType === "session.idle" && !session.turn && data?.aborted !== true && this.#activityFor(session.id)?.kind === "working") {
+      this.#forgetActivity(session.id);
+    }
+    if (item.harness === "copilot" && item.nativeType === "session.idle" && (session.turn || data?.aborted === true)) {
+      if (data?.aborted === true) {
+        if (ready) this.#recordActivity(session, hash(`${session.binding}:interrupted:${session.turn ?? string(payload?.id) ?? item.sequence}`), "interrupted", "Interrupted", item.sequence);
+        else this.#invalidateBaselineActivity(session.id, hash(`${session.binding}:interrupted:${session.turn ?? string(payload?.id) ?? item.sequence}`));
+        this.#cancelSuperseded(session.id);
+      } else if (!session.failed) {
+        const eventId = hash(`${session.binding}:completion:${session.turn}`);
+        if (ready) this.#recordActivity(session, eventId, "completion", "Finished", item.sequence);
+        else this.#invalidateBaselineActivity(session.id, eventId);
+        this.#signal(session, eventId, "completion", "Finished working", ready);
+      }
+      session.turn = undefined; session.retrying = false;
     }
   }
 
@@ -300,15 +390,73 @@ export class MobileNotifications {
     const prior = this.#sessions.get(session.sessionId);
     const binding = hash(JSON.stringify([session.sessionId, session.runtimeNodeId, session.adapterScopeId, session.harness, session.vendorSessionId, session.bindingRevision, session.runtimeEpoch]));
     const title = string(session.metadata.values["agent.title"]) ?? string(object(session.nativeSummary)?.title) ?? string(object(session.nativeSummary)?.name);
-    this.#sessions.set(session.sessionId, { ...(prior?.binding === binding ? prior : {}), id: session.sessionId,
+    const stored = this.#db.prepare("SELECT binding,payload,native_sequence,turn_id FROM mobile_activity WHERE session_id=?").get(session.sessionId);
+    const observation = stored ? JSON.parse(String(stored.payload)) as SessionActivity : undefined;
+    if (observation && (!activityMatchesSession(observation, session) || session.catalogState === "archived")) this.#forgetActivity(session.sessionId);
+    const restorable = stored?.binding === binding && observation && session.catalogState !== "archived";
+    const remembered: ThinSession = { ...(prior?.binding === binding ? prior : restorable ? {
+      sequence: stored.native_sequence == null ? undefined : Number(stored.native_sequence),
+      turn: stored.turn_id == null || session.harness === "copilot" && (observation.kind === "completion" || observation.kind === "interrupted") ? undefined : String(stored.turn_id), failed: observation.kind === "error",
+    } : {}), id: session.sessionId, sessionId: session.sessionId, runtimeNodeId: session.runtimeNodeId,
+      adapterScopeId: session.adapterScopeId, vendorSessionId: session.vendorSessionId, bindingRevision: session.bindingRevision, runtimeEpoch: session.runtimeEpoch,
       sourceId: sourceId ?? prior?.sourceId ?? "" as SourceId, binding, epoch: session.runtimeEpoch, harness: session.harness,
-      vendorId: session.vendorSessionId, title: bounded(title ?? `${session.harness} agent`, 160) });
+      vendorId: session.vendorSessionId, title: bounded(title ?? `${session.harness} agent`, 160), runtimeStatus: session.runtimeStatus };
+    this.#sessions.set(session.sessionId, remembered);
+    // Catalog idle never proves success. Positive new work may invalidate an old
+    // terminal observation after a missed start, but does not manufacture one.
+    if (restorable && (!prior || prior.runtimeStatus !== "running") && session.runtimeStatus === "running" && observation.kind !== "working") {
+      this.#forgetActivity(session.sessionId); remembered.failed = false; remembered.retrying = false; remembered.turn = undefined;
+    }
+    if (restorable && observation.kind === "working" && prior?.runtimeStatus === "running" && session.runtimeStatus !== "running") {
+      this.#forgetActivity(session.sessionId);
+    }
+    while (this.#sessions.size > MOBILE_LIMITS.watches + SESSION_ACTIVITY_LIMIT) {
+      const oldest = [...this.#sessions.keys()].find(id => !this.#watched.has(id));
+      if (!oldest) break;
+      this.#sessions.delete(oldest);
+    }
+  }
+  #activityFor(sessionId: string): SessionActivity | undefined {
+    const row = this.#db.prepare("SELECT payload FROM mobile_activity WHERE session_id=?").get(sessionId);
+    return row ? JSON.parse(String(row.payload)) as SessionActivity : undefined;
+  }
+  #recordActivity(session: ThinSession, eventId: string, kind: SessionActivityKind, label: string, sequence?: number): void {
+    const previous = this.#activityFor(session.id);
+    if (previous?.eventId === eventId && previous.kind === kind) return;
+    const now = this.#now();
+    const payload: SessionActivity = { sessionId: session.sessionId, runtimeNodeId: session.runtimeNodeId, adapterScopeId: session.adapterScopeId,
+      vendorSessionId: session.vendorSessionId, bindingRevision: session.bindingRevision, runtimeEpoch: session.runtimeEpoch, harness: session.harness,
+      eventId, kind, label, occurredAt: new Date(now).toISOString() };
+    this.#db.prepare(`INSERT INTO mobile_activity VALUES(?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET binding=excluded.binding,payload=excluded.payload,observed_at=excluded.observed_at,native_sequence=excluded.native_sequence,turn_id=excluded.turn_id`)
+      .run(session.id, session.binding, JSON.stringify(payload), now, sequence ?? session.sequence ?? null, session.turn ?? null);
+    this.#db.prepare("DELETE FROM mobile_activity WHERE session_id IN (SELECT session_id FROM mobile_activity ORDER BY observed_at DESC,rowid DESC LIMIT -1 OFFSET ?)").run(SESSION_ACTIVITY_LIMIT);
+    // Pending push is a current attention hint: never deliver an obsolete turn
+    // after another event has already superseded it on this session.
+    this.#db.prepare("DELETE FROM mobile_delivery WHERE session_id=? AND event_id<>?").run(session.id, eventId);
+  }
+  #forgetActivity(sessionId: string, cancelDelivery = true): void {
+    this.#db.prepare("DELETE FROM mobile_activity WHERE session_id=?").run(sessionId);
+    if (cancelDelivery) this.#cancelSuperseded(sessionId);
+  }
+  #cancelSuperseded(sessionId: string): void {
+    this.#db.prepare("DELETE FROM mobile_delivery WHERE session_id=?").run(sessionId);
   }
   #interactionId(session: ThinSession, interaction: InteractionRecord): string {
     return hash(`${session.binding}:input:${interaction.interactionId}`);
   }
+  #blockingRootInteraction(session: ThinSession, interaction: InteractionRecord): boolean {
+    const json = object(interaction.payload.json);
+    const params = object(json?.params) ?? json;
+    return params?.isBlocking !== false && !(typeof params?.threadId === "string" && params.threadId !== session.vendorId) && typeof json?.agentId !== "string";
+  }
+  #invalidateBaselineActivity(sessionId: string, eventId: string): void {
+    // Baseline replay may retire old observations, but never creates a new
+    // Finished/unread marker or a push notification for historical work.
+    const activity = this.#activityFor(sessionId);
+    if (activity && activity.eventId !== eventId) this.#forgetActivity(sessionId);
+  }
   #signal(session: ThinSession, eventId: string, kind: Exclude<MobileKind, "test">, body: string, ready: boolean): void {
-    if (this.#seen(eventId) || !ready) return;
+    if (!this.#watched.has(session.id) || this.#seen(eventId) || !ready) return;
     const devices = (this.#db.prepare("SELECT * FROM mobile_devices WHERE enabled=1").all() as unknown as DeviceRow[])
       .filter((device) => (JSON.parse(device.categories) as MobileDevice["categories"])[kind]);
     this.#queue({ eventId, title: session.title, body, sessionId: session.id, kind }, devices);
@@ -326,7 +474,8 @@ export class MobileNotifications {
     this.#prune();
     const now = this.#now();
     const expires = now + (signal.kind === "completion" || signal.kind === "test" ? 3_600_000 : 86_400_000);
-    const payload: MobileNotification = { version: 1, ...signal, tag: `leo-${signal.eventId}`, createdAt: new Date(now).toISOString(), expiresAt: new Date(expires).toISOString() };
+    const payload: MobileNotification = { version: 1, ...signal, tag: signal.sessionId ? `leo-session-${hash(signal.sessionId)}` : `leo-${signal.eventId}`,
+      createdAt: new Date(now).toISOString(), expiresAt: new Date(expires).toISOString() };
     const serialized = JSON.stringify(payload);
     if (Buffer.byteLength(serialized) > MOBILE_LIMITS.payloadBytes) throw new TypeError("Notification exceeds payload limit");
     for (const device of devices) {

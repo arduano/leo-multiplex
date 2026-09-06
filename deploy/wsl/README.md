@@ -9,7 +9,10 @@ sleep/network behavior still need device testing on both systems.
 
 ## Install
 
-Use company-approved Linux Git, Node.js 24 x64 and npm 11.17.0 **inside WSL**.
+Use company-approved Linux Git, Node.js 24 x64 and its bundled npm **inside WSL**.
+Setup uses the project's pinned npm from cache for dependency installation;
+your global npm needs no version change. The lockfile and install-script policy
+remain enforced.
 The script checks existing tools and never runs sudo or installs global tools.
 Clone onto the distro's Linux filesystem, outside the private install directory:
 
@@ -19,17 +22,19 @@ git clone https://github.com/arduano/leo-multiplex.git "$HOME/leo-multiplex-src"
 cd "$HOME/leo-multiplex-src"
 git checkout --detach "$revision"
 
-bash deploy/wsl/install.sh --revision "$revision" --workspace "$HOME/work" \
+bash deploy/wsl/install.sh --revision "$revision" \
   --secret-file "$HOME/.private/leo-fleet-secret" --check
-bash deploy/wsl/install.sh --revision "$revision" --workspace "$HOME/work" \
+bash deploy/wsl/install.sh --revision "$revision" \
   --secret-file "$HOME/.private/leo-fleet-secret"
 ```
 
-Create the workspace first. Repeat `--workspace` for more roots. Workspaces can
-be approved mounted Windows directories; private installation/state must stay
-on the Linux filesystem. Never share state or a native auth home with Windows,
-copy another host's identities, or use Windows `node.exe`/Git/npm from WSL.
-The roots fence Multiplex path operations; they are not an OS sandbox.
+No workspace argument is needed. Select any existing absolute working directory
+when creating an agent or running a recovery command, including mounted Windows
+paths such as `/mnt/d/...`, using your account's normal access. Optional
+`--workspace /root` values opt into a narrower starting-directory allowlist.
+Private installation/state must stay on the Linux filesystem. Never share state
+or native auth with Windows, copy host identities, or use Windows Node/Git/npm
+inside WSL. Directory policy is not an OS sandbox.
 
 Prepare the secret file through the shared
 [fleet pairing instructions](../../docs/Laptop-Hosts.md#join-the-existing-fleet).
@@ -71,12 +76,58 @@ Each OS signs in separately. Leo does not copy OAuth credentials across them.
 Proxy/CA variables are preserved, but inherited profile overrides are rejected
 and personal Codex/provider tokens cannot replace the corporate account binding.
 
+On headless WSL without a system keychain, native Copilot asks whether it may
+store the login in its plaintext configuration. Answer that prompt in a terminal;
+the managed Copilot directory is private to the Linux account. A noninteractive
+device login can succeed at GitHub and still discard the token because it cannot
+ask this question. In that case, repeat login interactively, then verify doctor.
+
 Keep the terminal open and follow
 [pairing and enrollment closure](../../docs/Laptop-Hosts.md#join-the-existing-fleet).
 Then Ctrl+C and `node "$leo_host" start` keeps enrollment closed for normal use.
 Foreground startup creates no scheduled task, systemd service or automatic
 prompt/resume operation. Closing WSL or sleeping the laptop disconnects this
 host; its durable catalog remains local and the web UI retains observed rows.
+
+## Installed laptop background task
+
+The current Ubuntu installation for Linux user `arduano` has a separate own-user
+Windows task, **Leo Multiplex - work-wsl**. It starts at Windows sign-in with
+Interactive logon and Limited privilege, no password/elevation, no battery stop
+and no execution timeout. Its foreground `wsl.exe` waits on the Linux user unit
+`leo-work-wsl.service`, keeping WSL active without an open terminal. Systemd
+services alone do not keep a WSL instance alive. Signing out or sleeping the
+laptop remains offline; locking it does not deliberately stop the task.
+
+The private helpers belong to this particular installed distro/account, separate
+from the clean pinned source checkout. Their reviewed copies are
+[`work-laptop-service.ps1`](work-laptop-service.ps1) and
+[`work-laptop-service.sh`](work-laptop-service.sh); these deliberately fix this
+laptop's distro, Linux account and Node path. From Windows PowerShell:
+
+```powershell
+$wslService = Join-Path $env:LOCALAPPDATA 'leo-multiplex-windows/wsl-service/wsl-user-service.ps1'
+& $wslService -Action Status
+& $wslService -Action Stop
+& $wslService -Action Start
+```
+
+`Stop` requests graceful Linux shutdown and waits for completion. Use Windows
+command recovery for WSL service changes: stopping WSL disconnects its own command
+endpoint. Never use Task Scheduler **End**, `wsl --terminate`, or `wsl --shutdown`
+to manage this host; those can interrupt unrelated work. The separate initial
+enrollment task has no sign-in trigger or retries; normal startup uses plain
+`start`. Windows' existing host task is independent.
+
+The helper pins native Node
+`/home/arduano/.nvm/versions/node/v24.14.0/bin/node` and an explicit Linux PATH;
+removing that Node installation requires a deliberate service update. Linux
+service status exposes bounded lifecycle properties; native output is suppressed.
+Use the installed launcher's `doctor --json` for authentication/model diagnostics.
+
+The installed helpers are an operational setup for this laptop, not a new
+portable service installer or automatic updater. The base installer remains
+foreground-only. Keep the installed source revision and private state intact.
 
 ## Verify and recover
 
@@ -96,3 +147,19 @@ identity, duplicate the Windows state, or select another host as an implicit
 fallback. Before upgrades, intentionally stop this host and privately back up
 its full installation/state. Revision/configuration upgrades need a reviewed
 migration; rerunning this setup script with new settings is deliberately rejected.
+
+## Work command recovery
+
+This installer enables a work-only recovery sidecar alongside the foreground
+Copilot host, with its own durable endpoint/pin and UDP 49123. First pairing must
+also confirm `leo-agents exec-hosts` reports `work-wsl` available before closing
+enrollment. Deploy a gateway image containing this feature and merge the complete
+private pairing document, including its `workHosts` descriptor.
+
+The normal workflow is `leo-agents exec --host work-wsl --cwd /home/leo/work
+--text 'git status --short' --request-id work-status-1`. Commands use Bash without
+profile/rc startup, the ordinary Linux account and any existing absolute directory by default. Web exposes a separate **Experimental work commands** hatch in App settings.
+Recovery survives a failed Copilot startup but still needs this WSL distribution,
+foreground host and network online. See
+[work commands](../../docs/Work-Host-Commands.md) for cancellation, limits and
+recovery after an interrupted host process.

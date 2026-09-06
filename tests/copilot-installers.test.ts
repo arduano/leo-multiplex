@@ -38,11 +38,20 @@ async function fixture() {
   return { directory, sourceRoot, workspace, input, options, environment, git };
 }
 
-it('requires exact revisions, deliberate workspace roots, and valid corporate host names', () => {
+it('requires exact revisions and corporate hosts while making workspace restrictions optional', () => {
   expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', 'main', '--workspace', '/work'])).toThrow('40-character');
-  expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision])).toThrow('--workspace');
+  expect(parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision]).workspaces).toEqual([]);
   expect(() => parseInstallerArgs(['configure', '--platform', 'wsl', '--revision', revision, '--workspace', '/work', '--github-host', 'https://github.com'])).toThrow('--github-host');
   expect(parseInstallerArgs(['preflight', '--platform', 'wsl', '--revision', revision, '--workspace', '/work', '--workspace', '/team', '--check'])).toMatchObject({ phase: 'preflight', name: 'work-wsl', githubHost: 'github.com', check: true, workspaces: ['/work', '/team'] });
+});
+
+it.each(['windows', 'wsl'])('persists unrestricted %s path selection without snapshotting drives or changing state paths', platform => {
+  const options = parseInstallerArgs(['preflight', '--platform', platform, '--revision', revision]);
+  const environment = { HOME: '/home/leo', USERPROFILE: 'C:\\Users\\Leo', LOCALAPPDATA: 'C:\\Users\\Leo\\AppData\\Local' };
+  const layout = installationLayout(options, environment, platform === 'windows' ? 'C:\\source' : '/source');
+  expect(layout.workspaces).toEqual([]);
+  expect(JSON.parse(layout.environment.LEO_ALLOWED_ROOTS)).toBe('*');
+  expect(layout.stateDirectory).toContain('leo-multiplex-');
 });
 
 it('separates Windows and WSL identity directories, names and ports from personal hosts', () => {
@@ -86,11 +95,12 @@ it('rejects shared WSL state filesystems outside the conventional /mnt prefix', 
   expect(() => validateWslFilesystem('/home/leo/shared drive/state', mount('/home/leo/shared\\040drive', '9p'))).toThrow('shared mount');
 });
 
-it('gates Windows on the published release before private-state work, and rejects mutable dependencies', async () => {
+it('validates the current public graph and rejects mutable dependencies', async () => {
   const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
   const lock = JSON.parse(await readFile(join(source, 'package-lock.json'), 'utf8'));
-  expect(validateRelease(pkg, lock, 'wsl')).toBe('0.2.0');
-  expect(() => validateRelease(pkg, lock, 'windows')).toThrow('Windows installation is blocked');
+  const pinned = lock.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].version;
+  expect(validateRelease(pkg, lock, 'wsl')).toBe(pinned);
+  if (pinned !== '0.2.0') expect(validateRelease(pkg, lock, 'windows')).toBe(pinned);
   const modified = structuredClone(lock);
   modified.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].resolved = 'file:../candidate.tgz';
   expect(() => validateRelease(pkg, modified, 'wsl')).toThrow('public release');
@@ -100,6 +110,19 @@ it('gates Windows on the published release before private-state work, and reject
   const linked = structuredClone(lock);
   linked.packages['node_modules/untrusted'] = { link: true, resolved: '../candidate' };
   expect(() => validateRelease(pkg, linked, 'wsl')).toThrow('immutable');
+});
+
+it.each(['0.2.0', '0.2.1'])('preserves the Windows release boundary with an explicit %s graph', async version => {
+  const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(join(source, 'package-lock.json'), 'utf8'));
+  for (const name of Object.keys(pkg.dependencies).filter(name => name.startsWith('@arduano/agent-multiplex-'))) {
+    const url = `https://github.com/arduano/agent-multiplex/releases/download/v${version}/${name.slice(1).replace('/', '-')}-${version}.tgz`;
+    pkg.dependencies[name] = pkg.overrides[name] = lock.packages[''].dependencies[name] = url;
+    Object.assign(lock.packages[`node_modules/${name}`], { version, resolved: url });
+  }
+  expect(validateRelease(pkg, lock, 'wsl')).toBe(version);
+  if (version === '0.2.0') expect(() => validateRelease(pkg, lock, 'windows')).toThrow('Windows installation is blocked: published framework 0.2.0');
+  else expect(validateRelease(pkg, lock, 'windows')).toBe(version);
 });
 
 it('checks the exact clean checkout instead of accepting a moving branch or tracked edits', () => {
@@ -113,6 +136,8 @@ it('only dispatches explicit host management commands and defaults to help', () 
   expect(validateHostCommand([])).toEqual(['help']);
   expect(validateHostCommand(['start'])).toEqual(['start']);
   expect(validateHostCommand(['start', '--enroll'])).toEqual(['start', '--enroll']);
+  expect(validateHostCommand(['command-recovery', '11111111-1111-4111-8111-111111111111', '--processes-inspected'])).toHaveLength(3);
+  expect(() => validateHostCommand(['command-recovery', '11111111-1111-4111-8111-111111111111'])).toThrow();
   expect(validateHostCommand(['login', '--device-code', '--host', 'https://company.ghe.com'])).toHaveLength(4);
   expect(() => validateHostCommand(['start', '--enroll', '--enroll'])).toThrow();
   expect(() => validateHostCommand(['-e', 'console.log(1)'])).toThrow();
@@ -120,6 +145,16 @@ it('only dispatches explicit host management commands and defaults to help', () 
 });
 
 describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', () => {
+  it('installs and reruns the saved launcher without workspace arguments', async () => {
+    const f = await fixture();
+    const options = { ...f.options, workspaces: [] };
+    const { config, layout } = await preflight(options, { sourceRoot: f.sourceRoot, environment: f.environment });
+    await configureInstallation(config, f.input, dependencies);
+    expect(config.environment.LEO_ALLOWED_ROOTS).toBe('"*"');
+    const result = execFileSync(process.execPath, [join(layout.installDirectory, 'leo-host.mjs'), 'help'], { env: f.environment, encoding: 'utf8' });
+    expect(JSON.parse(result)).toMatchObject({ harness: 'copilot', args: ['help'] });
+    await expect(preflight(options, { sourceRoot: f.sourceRoot, environment: f.environment })).resolves.toMatchObject({ config });
+  });
   it('preflights without mutation, installs privately, and preserves identities on exact reruns', async () => {
     const f = await fixture();
     const { config, layout } = await preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment });
@@ -128,6 +163,9 @@ describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', (
     expect((await stat(layout.installDirectory)).mode & 0o777).toBe(0o700);
     expect((await stat(layout.configFile)).mode & 0o777).toBe(0o600);
     expect((await stat(join(layout.stateDirectory, 'shared-secret'))).mode & 0o777).toBe(0o600);
+    const marker = join(layout.stateDirectory, 'work-commands.json');
+    expect(JSON.parse(await readFile(marker, 'utf8'))).toEqual({ version: 1, platform: 'wsl' });
+    expect((await stat(marker)).mode & 0o777).toBe(0o600);
     const stored = await readFile(layout.configFile, 'utf8');
     expect(stored).not.toContain(secret);
     expect(stored).not.toContain(f.input);
@@ -229,14 +267,14 @@ describe.skipIf(process.platform !== 'linux')('Linux filesystem installation', (
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill(); }
   });
 
-  it('refuses dependency reinstall while the host holds its writer lock, without changing that lock', async () => {
+  it.each([['control', 'catalog.sqlite'], ['work-commands', 'operations.sqlite']])('refuses dependency reinstall while %s holds its writer lock, without changing that lock', async (role, filename) => {
     const f = await fixture();
     const { config, layout } = await preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment });
     await configureInstallation(config, f.input, dependencies);
-    const directory = join(layout.stateDirectory, 'control');
+    const directory = join(layout.stateDirectory, role);
     await mkdir(directory, { mode: 0o700 });
     const { DatabaseSync } = await import('node:sqlite');
-    const lock = new DatabaseSync(join(directory, 'catalog.sqlite.lock.sqlite'));
+    const lock = new DatabaseSync(join(directory, `${filename}.lock.sqlite`));
     lock.exec('PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE');
     try {
       await expect(preflight(f.options, { sourceRoot: f.sourceRoot, environment: f.environment })).rejects.toThrow('Stop this managed host');

@@ -5,6 +5,7 @@ import { CliError } from "./output.js";
 
 export function operationIdentity(operation: SavedOperation) {
   const p = operation.payload as Record<string, unknown>;
+  if (operation.kind === "work-command") return { requestId: operation.requestId, kind: operation.kind, operationId: (p.request as { operationId?: string } | undefined)?.operationId, target: p.target };
   return { requestId: operation.requestId, kind: operation.kind, operationId: p.commandId ?? p.launchId ?? p.interactionId, sessionId: p.sessionId };
 }
 export async function reconcile(client: AccessClient, operation: SavedOperation) {
@@ -45,6 +46,7 @@ export async function dispatchSaved(client: AccessClient, operation: SavedOperat
   }
 }
 export function commandInput(operation: SavedOperation) {
+  if (operation.kind !== "command") throw new CliError("REQUEST_KIND", "Use the matching operation handler for this saved request");
   const type = (operation.payload as { operation?: string }).operation;
   return type === "stop" ? stopCommandSchema.parse(operation.payload) : type === "resume" ? resumeCommandSchema.parse(operation.payload) : commandEnvelopeSchema.parse(operation.payload);
 }

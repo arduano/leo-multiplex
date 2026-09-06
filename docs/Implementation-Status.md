@@ -1,5 +1,330 @@
 # Implementation status — 2026-09-06
 
+
+## Native Copilot YOLO controls
+
+The current source pins all 16 published framework `0.2.2` artifacts and Copilot
+SDK `1.0.13`, retaining CLI `1.0.81` and transport `0.2.1`. The framework uses the
+CLI's native `permissions.getMode/setMode` RPCs; the former SDK's generated
+allow-all methods were incompatible with this CLI. Permission settings remain
+independent of interaction mode and user questions. The host reports native
+acknowledged state, fences stale updates, and preserves uncertain command IDs.
+
+The composer exposes a compact YOLO control and a Permissions tab with **Ask for
+approval** and **YOLO**. `/yolo` toggles known state; `/yolo on` and `/yolo off`
+choose explicitly. Unsupported/offline hosts cannot mutate the setting. Draft
+text and images survive settings changes. The [workspace command guide](Workspace-Commands.md)
+owns usage, and [security](../SECURITY.md) records the native permission boundary.
+
+The owner explicitly waived model-using release qualification for this update.
+Framework `v0.2.2` source `1baacd49d44f9fe3d10f52b5fab0a8175d35a508` passed CI,
+Windows startup and no-model native permission checks, CodeQL, and deterministic
+Docker tree/100-agent checks. This is not a passing model qualification claim.
+Candidate UI qualification passed ten checks across all six viewports, including
+keyboard access/focus restoration, preserved drafts, native failures and unknown
+outcomes, with no serious/critical axe violations. Receipt:
+`receipts/copilot-yolo-candidate/browser-copilot-yolo/2026-09-06T14-34-31.136Z/`.
+The full candidate browser regression also passed. These disposable candidates
+used packed release artifacts for testing; installed deployments use only the
+published graph and their exact recorded source revision.
+
+The ordinary public-artifact install passes typechecking, all **479 tests**, and
+the production build. All 16 lockfile integrities match the signed release's
+artifact manifest; publication completed in
+[run 34039674529](https://github.com/arduano/agent-multiplex/actions/runs/34039674529).
+Model-using qualification was explicitly waived and no model prompt was sent.
+
+## Session status and review markers
+
+Deployed gateway/UI source `2c1c4b86852b8b59e9b9b6eddd230d473ea3f2ca` as image
+`sha256:a66f7d4b8ebc4349b4a1632a14040506f099c127d3c84559a0729dcb8eb579cb`.
+Only `leo-multiplex-web` was replaced; private pairing hashes are unchanged,
+the container is healthy and all four installed hosts are online. The live phone
+check found four sessions, verified the authenticated no-store activity endpoint,
+44px filter targets and no page errors, overflow or mutations. Receipt:
+`receipts/session-status-live/2026-09-06T13-25-07.458Z/`.
+The existing HTTPS/Cloudflare and Tailscale addresses are unchanged. Already idle
+sessions remain Ready until a successful completion is observed; no earlier
+conversation history was scanned to manufacture a completion marker.
+
+The sidebar now exposes All / Needs you / Working / Finished / Watched with
+counts on desktop and mobile. Stable rows show explicit icon/text status,
+activity time, host, harness and workspace folder. Attention and active work
+sort first, then unseen results. Successful native completion is distinct from
+idle, stopped, interrupted and offline. Opening a visible conversation clears
+its event-specific New marker in this browser; phone list navigation and hidden
+windows do not. Desktop and phone offer the same explicit watch opt-in.
+
+The existing accepted-event notification observer now retains up to 500 small
+binding-fenced observations, including for unwatched sessions, through appended
+SQLite migration `002-session-activity`. The foreground UI polls the authenticated
+activity endpoint every five seconds. There is no background history fanout or
+new native subscription. Push remains watched-only; new work and resolved input
+cancel obsolete queued alerts. Source synchronization respects each host's
+covered controls, and replay/snapshots retire disproved progress without claiming
+success. Codex child turns and Copilot child events cannot alter root outcomes;
+the selected Copilot error banner received the same child-event fence.
+The [mobile guide](Mobile-PWA.md) owns review, notification and replay semantics.
+
+Typecheck, all **471 tests**, and production build pass. Deterministic sidebar
+qualification uses 100 sessions/four hosts and passes 12 checks across all six
+viewports, with no serious/critical axe violations:
+`receipts/browser-session-status/2026-09-06T13-13-34.803Z/`.
+The complete UI regression suite passes at
+`receipts/browser/2026-09-06T13-15-15.559Z/`.
+The 50,000-turn/100,001-item production fixture passes its original timing and
+200-mounted-message bounds at `receipts/long-thread/2026-09-06T13-18-52.744Z/`:
+concurrent scroll/stream/type p95 frame interval 16.8 ms, input paint 13.8 ms,
+and no long tasks in that phase; full-history retained JS heap is 71.5 MiB.
+An earlier run overlapping the repository gates exceeded the frame threshold
+and remains diagnostics only; the passing rerun used unchanged browser source
+without those concurrent gates. No native agent prompt was sent. Source and
+screenshot inventories are checksummed, and gate output is retained under
+`receipts/session-status-gates/2026-09-06/`.
+The production PWA/service-worker suite also passes all seven checks at
+`receipts/pwa/2026-09-06T13-23-30.509Z/`.
+
+## Installed WSL work host
+
+The laptop's existing Ubuntu WSL2 distro now runs **work-wsl** as Linux account
+`arduano`, from exact installed source
+`0e79d73fc093f7a039694d9686b04c0b5be7c997`, native Node 24.14.0 and the published
+framework 0.2.1 graph. Its source is `~/leo-multiplex-source-wsl`; installation
+and independent catalog/auth live under `~/.local/state/leo-multiplex-wsl`.
+Working directories remain unrestricted, including `/mnt/d`. The owner completed
+separate corporate GitHub OAuth. Headless WSL lacked a keychain, so native Copilot
+saved its login in the protected managed home after its normal storage-consent
+prompt. Doctor passes and discovers 21 corporate models; no model prompt was sent.
+
+The own-user Windows sign-in task **Leo Multiplex - work-wsl** keeps a foreground
+WSL invocation waiting on Linux user unit `leo-work-wsl.service`. It uses
+Interactive/Limited scheduling, no timeout/battery stop, and graceful Linux stop.
+The production task is running with enrollment closed after verified enrollment
+of both the control and command endpoints. The Windows task retained its original
+run ID and process; personal hosts and existing native sessions were preserved.
+The [WSL runbook](../deploy/wsl/README.md#installed-laptop-background-task) owns
+the installed helper paths and service controls.
+
+Initial pairing exposed another locator defect: tickets were created before
+Iroh's relay was available. WSL advertised only internal Docker/WSL addresses;
+a disposable transport probe had a relay within four seconds. Private maintenance
+reissued signed locator candidates on the laptop using the unchanged endpoint
+keys and an observed default relay, without copying keys out. Real authenticated
+gateway connections verified those candidates. Only WSL locators and the Windows
+command locator changed; all source identities, existing catalog configuration,
+gateway pins and journals were preserved with private backups. Normal WSL
+stop/start then reconnected successfully using those configured routes.
+This repairs the installed pairing; **automatic initial relay readiness and
+work-command ticket renewal remain follow-ups**, as does physical sleep/network
+UAT. Gateway startup can wait roughly a minute for an unreachable configured
+source, and an unavailable command target can delay the CLI's all-host lookup.
+
+The live desktop/390px phone check shows all four hosts online, WSL's 21 models
+and native modes, and both PowerShell/Bash command targets with no page errors
+or horizontal overflow. Browser evidence is
+`receipts/wsl-host-web-reconciliation/2026-09-06T12-41-50.343Z/`.
+The normal CLI executed harmless Bash successfully from `/mnt/d` after production
+restart. These checks qualify installed visibility, authentication/model discovery,
+service handoff and command access, not an actual WSL agent conversation.
+The scrubbed installed-host receipt and exact service scripts are under
+`receipts/wsl-installed-host/2026-09-06T12-44-30Z/`; both its inventory and the
+browser inventory were independently rehashed. Native PowerShell parsing, Bash
+syntax, typecheck, all 438 application tests and the production build pass.
+
+## Real Windows Copilot smoke check
+
+The owner authorized one quick real check with `gpt-5.6-luna`. The web UI
+launched **Luna connectivity smoke test** on the installed `work-windows`
+background host in a separate temporary directory. Native history confirms that
+model, one user message, one completed assistant turn returning
+`LUNA_SMOKE_OK_20260906`, zero tool calls and zero session errors. The reply
+rendered in the live gateway UI and survived browser reload. Session
+`01a07697-8f85-71fe-a4e2-b341d68fc630` is now stopped and resumable for inspection.
+No pre-existing agent received a command. This qualifies the basic corporate
+Copilot prompt/reply path; workspace tools, permissions, images and model
+switching remain outside this smoke check. The scrubbed, checksummed receipt is
+`receipts/windows-luna-smoke/2026-09-06T12-05-22Z/`.
+
+The CLI's known Copilot profile-selection defect prevented its `models` path
+from selecting `leo.local/copilot-workspace`; this run used the web UI for
+launch and the CLI's session-specific send/history/stop paths afterward.
+
+## Windows background task
+
+The work laptop now has the own-user scheduled task **Leo Multiplex -
+work-windows** installed from service source
+`10c7ba30c6ab5989bb5ce8ec15606dfc08704180`. It starts at sign-in with Interactive
+logon and Limited privilege, no password/elevation, no battery stop and no
+execution timeout. The owner supplied the runner lifecycle confirming takeover:
+waiting ended at 11:08:07 UTC and the same runner recorded `running` at 11:08:13.
+The Windows runtime and **remote commands are now available**. A harmless remote
+command returned the same active background run with exit code 0. The owner
+confirmed UDP 49117 and 49121 belong to the same host process; the direct
+installed doctor passes corporate authentication and discovers 21 models.
+The task calls the existing launcher with plain `start`, closing enrollment.
+
+The handoff exposed a command-routing defect. The original ticket retained IPv6
+port 64400; the background host used 57469, with unchanged IPv4 routes and IPv6
+addresses. Both tickets lacked a relay route. After privately transferring the
+current ticket, its signature and unchanged endpoint were verified and only
+the Windows command locator was replaced in gateway configuration. An exclusive
+probe with the enrolled gateway identity timed out after 12 seconds using the
+old ticket, then authenticated using the new ticket in 47 ms. Gateway composition
+was restored afterward. The scoped passing receipt is
+`receipts/windows-user-service-deployment/2026-09-06T11-45-28Z/`.
+**Automatic work-command route renewal remains unimplemented**; future restarts
+or network changes can require another private locator refresh. Initial probes
+using disposable identities were inconclusive because the work host rejects
+unenrolled peers; they are not evidence of the root cause.
+The installed host source remains
+`0e79d73fc093f7a039694d9686b04c0b5be7c997`; identity, state and Copilot auth were
+preserved. Signed out/asleep is offline; locking or closing unrelated terminals
+is supported. No model call or native session was created.
+
+Reconciliation at 11:55 UTC confirmed the same active user-task run and both
+listeners through a successful remote read-only command. The live authenticated
+Tailscale web UI shows `work-windows` as **Online · copilot**, retains it after
+workspace refresh, offers it in New agent with all 21 corporate models, and lists
+its PowerShell command target as available. Desktop and phone launch forms were
+visually checked with no horizontal overflow or page errors. No session was
+created. The scrubbed, checksummed browser receipt is
+`receipts/windows-host-web-reconciliation/2026-09-06T11-55-11.815Z/`.
+
+The task runner has 17 passing disposable lifecycle tests; all 438 application
+tests, typecheck and build pass. Native scheduler tests in
+[exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34028734922)
+verify foreground writer waiting, task survival after the recovery command's
+kill-on-close job, plain-start handoff, graceful stop, duplicate prevention and
+private-state preservation. That scheduler smoke uses a fixture launcher; it
+does not qualify the real launcher's startup in the scheduled environment.
+Hosted CI retains its existing admin token even
+with Limited configuration, which its receipt records; separate real-laptop
+registration and execution succeeded under a non-administrator account.
+All six downloaded Windows receipt inventories were independently rehashed at
+`receipts/windows-user-service-ci/10c7ba3/`. The laptop installation receipt is
+under `receipts/windows-user-service-deployment/`. Earlier failed workflow
+attempts are diagnostics only.
+
+[The Windows runbook](../deploy/windows/README.md#run-in-the-background-under-your-windows-account)
+owns service control and update guidance. Recovery commands can stage updates,
+but an independent scheduled task must perform stop/backup/source-switch/start.
+An automated revision-upgrade flow is not implemented; never modify the live
+pinned checkout or assume code rollback reverses database migrations.
+
+## Installation handoff and gateway readiness
+
+Laptop setup requires native x64 Node 24+ and Git, without comparing global npm
+against the release toolchain. Standard `npm exec` fetches/caches the project's
+npm for locked dependency installation with reviewed scripts; global npm stays
+unchanged. Preflight does not invoke or download npm.
+
+Installation revision **`0e79d73fc093f7a039694d9686b04c0b5be7c997`** passed
+[exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34025984889),
+including 435 application tests, container authentication/proxy checks, both
+PowerShell wrappers and actual published Windows installation with global npm
+**11.15.0 and 12.0.2**. Both jobs installed on disposable D: state, verified the
+saved launcher/rerun and unchanged global npm, then passed native host/restart
+and C:/D: work-command checks. No model calls or corporate login were used.
+All four native receipt inventories were independently rehashed under
+`receipts/published-windows/0e79d73-exact/`. The public-source installer also
+passed on Linux with WSL detection, with independently rehashed evidence at
+`receipts/wsl-published-install/2026-09-06T09-56-59.077Z/`.
+
+The [installer gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+pins that tested installation revision; all three files were read back and
+verified. Its commands use fresh Windows/WSL source directories to preserve
+checkouts from older failed preflights. Corporate auth/network and physical
+laptop UAT remain. Documentation-only follow-ups do not change the gist pin.
+
+The work-host installers now pin all 16 published framework `0.2.1` artifacts,
+with exact URLs, overrides and locked integrities. The signed release completed
+[publication](https://github.com/arduano/agent-multiplex/actions/runs/34023552031)
+after exact-main CI, CodeQL, deterministic Docker, Windows startup and the
+owner-authorized five-minute live native soak. It does not requalify the
+15-minute transport renewal boundary. Existing installed personal host services
+and native sessions were preserved.
+
+The new published Windows CI verifies the release inventory and executes the
+actual installer on disposable `D:` state, saved launcher help, secret-copy and
+rerun behavior, then host/executor checks across C:/D:. It uses no source overlay,
+corporate credentials or model calls. The
+[installer gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+owns the final tested installation revision and workflow links; use that exact
+revision for installation. Corporate OAuth/network/share/suspend behavior
+remains laptop UAT. Windows uses a static unrestricted personal path policy;
+optional workspace arguments opt into narrower roots.
+
+Earlier candidate/install-blocker notes below are historical evidence, superseded
+by the current published pin and Windows runbook. Deployment state is separate:
+main-pc and NAS keep their existing installed graph and session state.
+
+The NAS gateway now has **main-pc, home-nas and work-windows** configured and
+online. Windows exposes the corporate Copilot harness and `copilot-workspace`
+launch profile; read-only model discovery returned 21 models. Its separate
+work-command endpoint is enrolled and available, with harmless PowerShell marker
+commands completing from both C:/ and D: with exit 0. The owner still needs to
+restart the Windows foreground host with plain `start` to close enrollment.
+No native agent session or model prompt was created during enrollment.
+
+First work-target startup exposed an omitted gateway bind setting: recovery
+transport advertised the NAS's many Docker interfaces and failed its address
+limit. Source **`83d53d07b994b62666ea928778e1a09110102b6d`** passes
+`LEO_GATEWAY_P2P_BIND` to both transports. The deployed image is
+`sha256:9b734c2df4d9c1d45309948f2c4e1c69fabe56c07ec60c0764752bf0e38e4872`.
+Typecheck/build, 435 application tests, three new composition regression cases,
+shipped-container authentication and Compose DNS/socket/WebSocket checks pass.
+Two timing-sensitive tests failed during a concurrent Docker build; the full
+suite passed with four workers. Deployment evidence is scrubbed/checksummed at
+`receipts/windows-enrollment/2026-09-06T10-20-14Z/`. Tailscale is healthy,
+Cloudflare redirects unsigned requests to Access, and personal control/runtime
+PIDs and start times remain unchanged. Previous image/configuration pins are
+backed up privately on NAS under `backups/windows-enrollment-20260906/`.
+
+Known CLI follow-up: `models` and `launch` still select the Codex `workspace`
+profile for Copilot; web selects `copilot-workspace` correctly. This does not
+affect `exec` or web model discovery/creation. Corporate prompt/suspend UAT and
+WSL installation remain pending. The installer gist keeps its previously tested
+revision; this gateway fix requires no laptop reinstallation.
+
+The existing user `leo-agents` links on main-pc and NAS now use the tested
+work-command CLI. Their previous source checkouts and local operation ledgers
+remain in place; read-only host and command-target queries pass on both.
+
+## Work laptop command candidate
+
+The Windows/WSL installers now enable a bespoke command recovery sidecar. The
+normal interface is `leo-agents exec`, with `exec-hosts`, `exec-status` and
+`exec-cancel`; web keeps a separate experimental App settings hatch. The service
+starts before Copilot doctor/runtime and can remain available when those fail.
+Only these installed work profiles publish command targets. Generic Multiplex,
+personal Codex hosts and the exact published dependency graph are unchanged.
+
+Commands use a separate pinned application protocol and host-owned private
+journal, with durable admission/deduplication, one active command per host,
+bounded output/time and explicit cancellation. Local CLI/browser state saves the
+immutable target/request before submission. A restarted in-flight command becomes
+`outcomeUnknown` and requires local process inspection before new admission.
+The [work-command runbook](Work-Host-Commands.md) owns usage, pairing and recovery.
+
+The gateway is deployed as recorded above; work-host installation and corporate
+laptop UAT remain pending. Native Windows installation requires the framework's
+public Windows ACL release. Windows CI checks the exact PowerShell/process-job
+wrapper independently of framework overlays, and the full source-candidate
+host/executor smoke now also passes. No model call or native session mutation
+was used.
+
+The candidate passes typechecking, all 420 application tests, production/container
+builds, shipped-container authentication/static-asset checks, and the Compose
+DNS/Unix-socket/WebSocket authentication regression. Focused tests include an
+authenticated HTTP → real Iroh → real disposable Bash execution with exact-ID
+deduplication, plus crash recovery and failure-isolated Copilot startup. The WSL
+wrapper suite passes its 14 cases. Browser evidence passes eight work-command
+groups across six viewports at
+`receipts/work-command-browser/2026-09-06T06-38-11.473Z`, 70 general checks at
+`receipts/browser/2026-09-06T06-37-57.002Z`, and 11 durable-draft checks at
+`receipts/durable-drafts/2026-09-06T06-37-13.290Z`. Source and screenshot checksums
+were independently verified; there were no serious or critical axe findings.
+
 ## Windows and WSL installer candidate
 
 The [Windows PowerShell installer](../deploy/windows/install.ps1) and
@@ -10,7 +335,9 @@ existing hosts. The [laptop runbook](Laptop-Hosts.md) owns installation, first
 enrollment, preserving existing NAS sources and the physical-device checks.
 
 Setup requires an explicit clean source revision, public artifact integrity,
-native x64 Node/Git, the pinned npm version and an existing work directory.
+and native x64 Node/Git. The earlier exact global npm requirement is superseded
+by the cached install tool described above. Working directories must exist
+when selected for an agent or command; workspace restrictions are optional.
 It imports the fleet credential by file path and creates a persistent launcher;
 login and foreground startup are separate commands. Exact reruns preserve state,
 conflicting configuration/credentials are rejected, and enrollment remains closed
@@ -21,8 +348,8 @@ The published framework pin remains `0.2.0`; native Windows installation rejects
 that graph before dependencies or state are written. These scripts do not bypass
 the release gate using a source overlay. WSL uses the Linux packages, while both
 hosts still need corporate auth/network/laptop UAT. The installer branch also
-contains the already deployed multi-host session fixes; it has not been deployed
-over the running NAS gateway or personal hosts.
+contains the already deployed multi-host session fixes. Its gateway composition
+is deployed as recorded above; installed personal host services remain unchanged.
 
 Local typecheck, all 378 tests and the production build pass, including 25
 installer tests for private state, same-revision reruns, active-writer refusal,
@@ -76,7 +403,7 @@ workflow lint. Source-candidate CI overlays never change deployment manifests or
 stand in for published artifacts. No installed host, gateway, native session,
 corporate login or model prompt was changed by this work.
 
-Before a laptop installation handoff, publish/qualify the framework patch and
+Before a native Windows installation handoff, publish/qualify the framework patch and
 pin its exact public artifacts here. That release process requires a fresh
 allowance for model-using native qualification. Windows image-path previews
 remain explicitly unsupported, and managed-laptop OAuth/SSO, network policy,

@@ -4,8 +4,28 @@ Both work environments use the corporate GitHub Copilot account. Personal Codex
 stays on main-pc and home-nas. Each work host owns its catalog and state; the NAS
 gateway observes all four. Install from the
 [Windows](../deploy/windows/README.md) or [WSL](../deploy/wsl/README.md) runbook.
-Start in foreground terminals for initial testing. The installers create no
-scheduled task or background service and do not change installed personal hosts.
+Start in foreground terminals for initial pairing. Windows can then use the
+optional [current-user background task](../deploy/windows/README.md#run-in-the-background-under-your-windows-account).
+The installed Ubuntu host also has a separate
+[own-user WSL task](../deploy/wsl/README.md#installed-laptop-background-task).
+The base installers create no scheduled task or background service and do not
+change installed personal hosts.
+The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
+checkout at the exact revision in the installation handoff, then run these
+installers. They preserve existing source and state; keep their source checkout
+for the saved launcher. The current source pins published framework `0.2.2`,
+including native Copilot YOLO controls. The original installed-source evidence
+and subsequent updates are recorded in [implementation status](Implementation-Status.md).
+Both installed work profiles also provide the bespoke
+[command recovery service](Work-Host-Commands.md). The CLI is its normal entry
+point; web exposes it only as an experimental App settings hatch.
+
+Omit the workspace argument for unrestricted directory selection. Choose any
+existing absolute directory when creating an agent or running a recovery command;
+Windows includes `D:/...`, other drives and UNC shares. Access uses the host
+account's ordinary permissions. Optional workspace arguments opt into narrower
+starting-directory roots. Private state and native auth still use the separate
+installation directory.
 
 ## Join the existing fleet
 
@@ -45,7 +65,10 @@ scheduled task or background service and do not change installed personal hosts.
    ```
 
    Check **all existing hosts plus each new host** in
-   <https://agents.arduano.io>. The gateway image need not change for pairing.
+   <https://agents.arduano.io>. The gateway image must include the work-command
+   feature before importing its new `workHosts` descriptors. Run
+   `leo-agents exec-hosts` and verify each installed work target is available
+   before closing enrollment, so its separate recovery endpoint is pinned too.
 6. Ctrl+C each laptop host and restart its launcher with plain `start` to close
    enrollment. Existing pinned runtime and gateway identities reconnect. Keep
    these state directories and names stable across future restarts.
@@ -57,9 +80,10 @@ Cloudflare Access authenticates the browser edge, independently of host pairing.
 
 ## Laptop acceptance
 
-After Windows' framework release gate clears, check both OS hosts together:
+After installation, check both OS hosts together:
 
-- Corporate login, model discovery, distinct host names and the expected work roots.
+- Corporate login, model discovery, distinct host names and directory selection,
+  including a Windows workspace on `D:/`.
 - Create a Copilot session on each host; check streaming, native permission and
   input questions, model/mode changes and image uploads. These real prompts are
   the operator's UAT and consume Copilot usage.
@@ -70,6 +94,10 @@ After Windows' framework release gate clears, check both OS hosts together:
   should remain visible, with unavailable hosts refusing new actions.
 - Shut down WSL while Windows remains online, then restart WSL and its host.
   Verify separate availability, unchanged session IDs and no automatic retargeting.
+- Run a harmless CLI command on each work target; check output, cancellation,
+  reconnect/status recovery, and the experimental web hatch. Verify personal
+  hosts are absent from `exec-hosts`. A failed Copilot doctor should leave work
+  command recovery available while that foreground host remains running.
 
 The deterministic four-host UI/routing suites exercise outages and reconnection;
 they do not establish actual laptop suspend, corporate auth or network behavior.

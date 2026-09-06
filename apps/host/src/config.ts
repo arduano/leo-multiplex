@@ -12,6 +12,7 @@ export interface HostConfig {
   readonly enrollRuntimes: boolean;
   readonly harness: "codex" | "copilot";
   readonly allowedRoots: readonly string[];
+  readonly unrestrictedPaths: boolean;
   readonly copilotHome: string;
   readonly copilotGithubHost: string;
 }
@@ -32,7 +33,8 @@ export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platfor
     try { roots = JSON.parse(environment.LEO_ALLOWED_ROOTS); }
     catch { throw new Error("LEO_ALLOWED_ROOTS must be a JSON array of absolute directories"); }
   }
-  if (!Array.isArray(roots) || roots.length === 0 || roots.some(root => typeof root !== "string" || !isAbsolute(root))) {
+  const unrestrictedPaths = roots === "*";
+  if (!unrestrictedPaths && (!Array.isArray(roots) || roots.length === 0 || roots.some(root => typeof root !== "string" || !isAbsolute(root)))) {
     throw new Error("LEO_ALLOWED_ROOTS must be a nonempty JSON array of absolute directories");
   }
   const copilotGithubHost = environment.LEO_COPILOT_GITHUB_HOST ?? "github.com";
@@ -53,7 +55,8 @@ export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platfor
     enrollGateways: enrollment === "1",
     enrollRuntimes: runtimeEnrollment === "1",
     harness,
-    allowedRoots: roots.map(root => resolve(root as string)),
+    allowedRoots: unrestrictedPaths ? (platform === "win32" ? [] : ["/"]) : (roots as string[]).map(root => resolve(root)),
+    unrestrictedPaths,
     copilotHome: join(resolve(state), "copilot"),
     copilotGithubHost,
   };

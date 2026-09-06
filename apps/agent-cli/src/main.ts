@@ -18,11 +18,11 @@ process.stdout.on("error", outputError);
 try {
   const args = parse(process.argv.slice(2));
   const origin = gatewayOrigin(option(args, "url") ?? process.env.LEO_AGENTS_URL ?? DEFAULT_URL);
-  const seconds = integer(option(args, "timeout"), ["watch", "wait"].includes(args.command) || args.options.wait ? 300 : 30, 86_400);
+  const seconds = integer(option(args, "timeout"), args.command === "exec" ? 330 : ["watch", "wait"].includes(args.command) || args.options.wait ? 300 : 30, 86_400);
   timeout = setTimeout(() => controller.abort(new CliError("TIMEOUT", "Deadline exceeded; reconcile any saved request before retrying", 6)), seconds * 1000);
   const stateDir = option(args, "state-dir") ?? process.env.LEO_AGENTS_STATE_DIR ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "leo-agents");
   connection = connect(origin, controller.signal, process.env.LEO_AGENTS_ACCESS_ASSERTION_FILE);
-  const data = await dispatch(args, { client: connection.client, origin, signal: controller.signal, ledger: new OperationLedger(stateDir), write: writeJson });
+  const data = await dispatch(args, { client: connection.client, workCommands: connection.workCommands, origin, signal: controller.signal, ledger: new OperationLedger(stateDir), write: writeJson });
   await writeJson(result(args.command, data));
 } catch (caught) {
   let error = (caught as { cause?: unknown })?.cause instanceof CliError ? (caught as { cause: CliError }).cause : caught;

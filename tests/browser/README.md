@@ -1,5 +1,13 @@
 # Browser qualification
 
+After `npm run build`, `node tests/browser/work-commands.mjs` checks the
+experimental work-command settings hatch with disposable HTTP/IndexedDB fixtures.
+It covers hidden personal-only targets, reload recovery, exact-ID retry,
+cancel/poll ordering, definite rejections, saved-record review/deletion, endpoint
+changes, text-only bounded output and all six responsive/axe viewports. No
+native shell, agent or model is contacted. Passing manifests live under
+`receipts/work-command-browser/`.
+
 Run `node tests/browser/qualify.mjs` after installing dependencies and a
 Playwright-compatible Chromium browser. Set `LEO_TEST_CHROMIUM` to use an
 existing browser executable.
@@ -130,3 +138,19 @@ uses real IndexedDB to check scopes, quota rejection, conflict preservation and
 exact request/receipt recovery. Set `LEO_TEST_CHROMIUM` when Playwright's default
 Chromium is unavailable. Physical Android installation, OS keyboard/camera
 permissions and FCM background delivery remain operator device checks.
+
+`node tests/browser/session-status.mjs` qualifies the status sidebar with 100
+sessions across four hosts, isolated intercepted API/WS traffic and no model
+calls. It checks status/filter counts, unseen results through reload and new
+turns, visible-only acknowledgment, offline/stopped fences, desktop/mobile watch
+opt-in and six viewport layouts with axe. It also rejects native subscriptions
+or history fanout for background rows. Receipts with source and screenshot hashes
+live under `receipts/browser-session-status/`.
+
+`node tests/browser/copilot-yolo.mjs` qualifies Copilot session permissions using
+intercepted API/WS traffic. It checks acknowledgment-only YOLO state, native
+refusal, exact-command recovery through reload, image-draft retention without
+upload, capability/offline gates, and user questions remaining separate from
+resolved permission requests. The permission picker receives keyboard and axe
+checks across six viewports. No real host or model is contacted; checksummed
+source and screenshot receipts live under `receipts/browser-copilot-yolo/`.

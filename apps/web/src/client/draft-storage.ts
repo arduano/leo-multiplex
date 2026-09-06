@@ -4,7 +4,7 @@ export const DRAFT_BUDGET_BYTES = 256 * 1_024 * 1_024;
 export interface LocalDocument<T = unknown> {
   id: string;
   scope: string;
-  kind: "draft" | "operation";
+  kind: "draft" | "operation" | "work-command";
   revision: number;
   updatedAt: number;
   bytes: number;
@@ -105,8 +105,8 @@ export async function clearEmptyDocuments(scope: string): Promise<void> {
     let failure: Error | undefined;
     const request = store.index("scope").getAll(scope);
     request.onsuccess = () => {
-      const entries = request.result as LocalDocument<{ prompt?: string; images?: unknown[]; uncertain?: unknown }>[];
-      if (entries.some(entry => entry.kind === "operation" || entry.value.prompt || entry.value.images?.length || entry.value.uncertain)) {
+      const entries = request.result as LocalDocument<{ prompt?: string; images?: unknown[]; uncertain?: unknown; input?: unknown }>[];
+      if (entries.some(entry => entry.kind === "operation" || entry.kind === "work-command" && entry.value.input || entry.value.prompt || entry.value.images?.length || entry.value.uncertain)) {
         failure = new Error("Review and delete saved drafts and resolve pending actions before clearing device data.");
         tx.abort(); return;
       }

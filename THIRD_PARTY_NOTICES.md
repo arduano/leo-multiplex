@@ -11,7 +11,7 @@ in the dependency artifacts. Cloudflare integration uses the `jose` library for
 JWT verification and `smol-toml` for local configuration parsing; their package
 license files must remain in redistributed dependencies.
 
-Corporate Copilot composition directly pins `@github/copilot-sdk` 1.0.11 (MIT)
+Corporate Copilot composition directly pins `@github/copilot-sdk` 1.0.13 (MIT)
 and `@github/copilot` 1.0.81, whose upstream license is in its `LICENSE.md`.
 Their existing dependency graph and native platform packages remain unmodified;
 redistribution retains those notices. Windows ACL validation uses installed
@@ -19,6 +19,12 @@ Windows PowerShell/.NET system components, which are not bundled by Leo.
 The laptop installers use the operator's existing Git, Node/npm, Windows
 PowerShell or WSL Bash installations. They do not redistribute those tools or
 download a separate unpinned Copilot executable.
+The work-command sidecar uses the already pinned p2prpc transport, tRPC, Zod and
+framework SQLite package. Its original Windows shell helper invokes installed
+PowerShell/.NET and Windows kernel job APIs; WSL invokes installed Bash. No new
+binary, service dependency or third-party source is redistributed for this path.
+The optional Windows background task uses installed Windows Task Scheduler,
+PowerShell and Node.js; no separate service manager is bundled.
 
 The optional NAS Cloudflare Compose deployment references separately distributed
 cloudflare/cloudflared (Apache-2.0) and nginxinc/nginx-unprivileged images (Nginx

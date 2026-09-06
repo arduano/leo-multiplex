@@ -9,10 +9,11 @@ import { hostConfig, type HostConfig } from "./config.js";
 import { assertIsolatedState } from "./codex-config.js";
 import { prepareCopilotHome } from "./copilot.js";
 import { privateDirectory, sharedSecret, verifyPrivateTarget, writePrivateFile } from "./private-state.js";
+import type { WorkHostPairing } from "../../../packages/work-commands/src/contract.js";
 
 export const OPERATOR_SCOPES: readonly ActionScope[] = ["read", "agent-launch", "agent-archive", "agent-control", "terminal-view", "terminal-control", "metadata-propose"];
 
-export async function writeControlArtifacts(config: HostConfig, secret: string, info: ControlNodeReadyInfo): Promise<void> {
+export async function writeControlArtifacts(config: HostConfig, secret: string, info: ControlNodeReadyInfo, workHost?: WorkHostPairing): Promise<void> {
   const source = {
     sourceId: config.name,
     displayName: config.name,
@@ -22,10 +23,10 @@ export async function writeControlArtifacts(config: HostConfig, secret: string, 
     priority: 0, enabled: true, requestedScopes: OPERATOR_SCOPES,
   };
   await writePrivateFile(join(config.stateDirectory, "control-source.json"), JSON.stringify({ version: 1, ...source }) + "\n");
-  await writePrivateFile(join(config.stateDirectory, "gateway-pairing.json"), JSON.stringify({ version: 1, sharedSecret: secret, sources: [source] }) + "\n");
+  await writePrivateFile(join(config.stateDirectory, "gateway-pairing.json"), JSON.stringify({ version: 1, sharedSecret: secret, sources: [source], ...(workHost ? { workHosts: [workHost] } : {}) }) + "\n");
 }
 
-export async function runHostControl(config: HostConfig, signal: AbortSignal, ready?: () => void): Promise<void> {
+export async function runHostControl(config: HostConfig, signal: AbortSignal, ready?: () => void, workHost?: WorkHostPairing): Promise<void> {
   if (config.harness === "codex") await assertIsolatedState(config.codexConfigFile, config.stateDirectory);
   else await prepareCopilotHome(config);
   const secret = await sharedSecret(config.stateDirectory);
@@ -47,7 +48,7 @@ export async function runHostControl(config: HostConfig, signal: AbortSignal, re
     upstreamHeartbeatMs: 10_000, reconnectMaxMs: 30_000,
   }, signal, {
     printTicket: false,
-    onReady: async (info) => { await writeControlArtifacts(config, secret, info); ready?.(); },
+    onReady: async (info) => { await writeControlArtifacts(config, secret, info, workHost); ready?.(); },
   });
 }
 

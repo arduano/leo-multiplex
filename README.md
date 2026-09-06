@@ -12,6 +12,8 @@ Work hosts use corporate GitHub Copilot; personal hosts use Codex. The
 prepare separate identities, saved configuration and foreground launchers for
 the two laptop hosts. The Windows runbook records the pending framework release
 gate; neither installer signs in or starts a host automatically.
+Those two work profiles also expose [single-command recovery](docs/Work-Host-Commands.md)
+through `leo-agents exec`. App settings keeps a separate experimental web hatch.
 
 **Existing Codex and tmux sessions are outside this application's ownership.**
 Setup, tests, deployment, and shutdown never adopt or terminate them. All managed
@@ -28,7 +30,7 @@ npm test
 npm run build
 ```
 
-Dependencies pin the public Agent Multiplex 0.2.0 release with exact tarball
+Dependencies pin the public Agent Multiplex 0.2.2 release with exact tarball
 integrities. See [implementation status](docs/Implementation-Status.md) for
 verification and deployment progress. Do not mix protocol-v4 0.1.0 packages with
 this application.

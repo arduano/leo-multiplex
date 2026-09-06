@@ -13,6 +13,8 @@ import { privateDirectory } from "./private-state.js";
 import { readCopilotAccount, recordCopilotAccount, signedInAccount, type CopilotAccount } from "./copilot-account.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { installedWorkCommands, startInstalledWorkCommands } from "./work-commands.js";
+import { acknowledgeWorkCommandRecovery } from "../../../packages/work-commands/src/executor.js";
 
 export interface DoctorCheck { name: string; status: "pass" | "fail" | "manual"; message: string }
 export interface DoctorReport { version: 1; ok: boolean; checks: DoctorCheck[] }
@@ -81,7 +83,7 @@ export async function doctor(config: HostConfig, environment: NodeJS.ProcessEnv 
   }
   try {
     for (const root of config.allowedRoots) if (!(await stat(root)).isDirectory()) throw new Error("root");
-    checks.push({ name: "workspaces", status: "pass", message: "All configured workspace roots exist." });
+    checks.push({ name: "workspaces", status: "pass", message: config.unrestrictedPaths ? "Any existing absolute working directory is allowed with this account's normal access." : "All configured workspace roots exist." });
   } catch { checks.push({ name: "workspaces", status: "fail", message: "At least one configured workspace root is missing or inaccessible." }); }
   try {
     const secret = await stat(join(config.stateDirectory, "shared-secret"));
@@ -143,11 +145,16 @@ export async function runManagedHost(config: HostConfig, signal: AbortSignal): P
 export async function main(args = process.argv.slice(2), environment: NodeJS.ProcessEnv = process.env): Promise<void> {
   const command = args[0] ?? "help";
   if (command === "help" || command === "--help") {
-    console.log("leo-host init --secret-file <private-file>\nleo-host login [--device-code] [--host https://company.ghe.com]\nleo-host doctor [--json]\nleo-host start [--enroll]\nleo-host pairing\n\nCopilot uses corporate GitHub sign-in in its own managed home. Start stays in the foreground; Ctrl+C stops only this managed host. --enroll temporarily permits initial runtime/gateway enrollment until the next normal start.");
+    console.log("leo-host init --secret-file <private-file>\nleo-host login [--device-code] [--host https://company.ghe.com]\nleo-host doctor [--json]\nleo-host start [--enroll]\nleo-host pairing\nleo-host command-recovery <operation-uuid> --processes-inspected\n\nCopilot uses corporate GitHub sign-in in its own managed home. Start stays in the foreground; Ctrl+C stops only this managed host. --enroll temporarily permits initial runtime/gateway enrollment until the next normal start.");
     return;
   }
   const config = hostConfig({ ...environment, LEO_HARNESS: "copilot" });
-  if (command === "init") {
+  if (command === "command-recovery") {
+    if (args.length !== 3 || args[2] !== "--processes-inspected") throw new Error("Use command-recovery <operation-uuid> --processes-inspected after stopping this host and inspecting interrupted processes locally");
+    if (!await installedWorkCommands(config)) throw new Error("Command recovery is only available on installed work laptop hosts");
+    await acknowledgeWorkCommandRecovery(join(config.stateDirectory, "work-commands"), args[1]!);
+    console.log("Recovery acknowledged. The interrupted operation remains outcomeUnknown; a normal host restart now permits new commands.");
+  } else if (command === "init") {
     if (args.length !== 3 || args[1] !== "--secret-file" || !args[2]) throw new Error("Use init --secret-file <private-file>");
     await prepareCopilotHome(config, environment);
     await importEnrollmentSecret(config.stateDirectory, args[2]);
@@ -175,15 +182,48 @@ export async function main(args = process.argv.slice(2), environment: NodeJS.Pro
     if (process.platform === "win32" && process.arch !== "x64") throw new Error("The pinned Windows transport requires x64 Node");
     const secret = await stat(join(config.stateDirectory, "shared-secret"));
     if (!secret.isFile() || secret.size < 32) throw new Error("Initialize the fleet enrollment credential before starting");
-    const report = await doctor(config, environment);
-    if (!report.ok) { console.log(JSON.stringify(report)); process.exitCode = 1; return; }
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once("SIGINT", stop); process.once("SIGTERM", stop);
     console.log(args.includes("--enroll") ? "Starting with enrollment open. After pairing, press Ctrl+C and start again without --enroll." : "Starting managed Copilot host. Press Ctrl+C to stop.");
-    try { await runManagedHost({ ...config, enrollGateways: args.includes("--enroll"), enrollRuntimes: args.includes("--enroll") }, controller.signal); }
+    try {
+      const starting = { ...config, enrollGateways: args.includes("--enroll"), enrollRuntimes: args.includes("--enroll") };
+      if (await installedWorkCommands(starting)) await runWorkLaptop(starting, controller.signal, environment);
+      else {
+        const report = await doctor(config, environment);
+        if (!report.ok) { console.log(JSON.stringify(report)); process.exitCode = 1; return; }
+        await runManagedHost(starting, controller.signal);
+      }
+    }
     finally { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); }
   } else if (command === "pairing" && args.length === 1) {
     console.log(`Private pairing file: ${join(config.stateDirectory, "gateway-pairing.json")}\nTransfer it using an approved private channel. It contains an enrollment secret; do not paste it in chat or a URL.`);
   } else throw new Error("Unknown command; run leo-host help");
+}
+
+/** The work recovery service survives a failed Copilot probe/runtime. */
+export async function runWorkLaptop(config: HostConfig, signal: AbortSignal, environment: NodeJS.ProcessEnv, dependencies = {
+  commands: startInstalledWorkCommands, control: runHostControl, doctor, runtime: runHost,
+}): Promise<void> {
+  if (signal.aborted) return;
+  const commands = await dependencies.commands(config, signal);
+  if (!commands && signal.aborted) return;
+  if (!commands) throw new Error("The work-laptop command profile is not installed");
+  let ready!: () => void;
+  const whenReady = new Promise<void>(resolve => { ready = resolve; });
+  let controlReady = false;
+  const control = dependencies.control(config, signal, () => { controlReady = true; ready(); }, commands.pairing);
+  const reportFailure = () => { if (!signal.aborted) console.error("Copilot host unavailable. Work-laptop commands remain online for recovery; restart this host after fixing it."); };
+  const runtime = (async () => {
+    await Promise.race([whenReady, control]);
+    if (signal.aborted || !controlReady) return;
+    const report = await dependencies.doctor(config, environment);
+    if (!report.ok) { console.log(JSON.stringify(report)); reportFailure(); return; }
+    if (!signal.aborted) await dependencies.runtime(config, signal);
+  })();
+  // A broken native provider must not take down the separate recovery path.
+  const running = [control.catch(reportFailure), runtime.catch(reportFailure)];
+  try {
+    if (!signal.aborted) await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+  } finally { try { await commands.close(); } finally { await Promise.allSettled(running); } }
 }

@@ -4,9 +4,11 @@ import { parseArgs } from "node:util";
 import { CliError } from "./output.js";
 
 const flags = ["help", "raw", "wait", "retry", "allow-error", "all-states"] as const;
-const values = ["url", "timeout", "state-dir", "request-id", "text", "text-file", "host", "cwd", "model", "mode", "effort", "title", "harness", "limit", "cursor", "cursor-file", "max-events", "turn-id", "response-file", "command-file", "file", "image-id", "source-key", "path", "output"] as const;
+const values = ["url", "timeout", "state-dir", "request-id", "text", "text-file", "host", "cwd", "model", "mode", "effort", "title", "harness", "limit", "cursor", "cursor-file", "max-events", "turn-id", "response-file", "command-file", "file", "image-id", "source-key", "path", "output", "run-timeout"] as const;
 const globals = ["url", "timeout", "state-dir", "help"];
 const allowed: Record<string, readonly string[]> = {
+  "exec-hosts": [], exec: ["host", "cwd", "text", "text-file", "request-id", "run-timeout"],
+  "exec-status": ["retry"], "exec-cancel": [],
   help: [], id: [], hosts: ["raw"], sessions: ["raw", "limit", "cursor", "all-states"],
   status: ["raw"], profiles: ["host", "harness"], models: ["host", "harness"],
   history: ["limit", "cursor"], watch: ["cursor-file", "max-events"],

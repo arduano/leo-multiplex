@@ -5,9 +5,8 @@ import { Check, ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 
 import { appliedSettingsSummary } from "./agent-settings.js";
+import type { SettingsSection } from "./slash-commands.js";
 import { Button, IconButton, Input, classes } from "./ui.js";
-
-type SettingsSection = "model" | "effort" | "mode";
 
 interface ModelPickerProps {
   readonly session: SessionRecord;
@@ -23,6 +22,8 @@ interface ModelPickerProps {
   readonly onModel: (model: string) => void;
   readonly onEffort: (effort: string) => void;
   readonly onMode: (mode: string) => void;
+  readonly permissionsSupported: boolean;
+  readonly onAllowAll: (enabled: boolean) => void;
   readonly status: string;
 }
 
@@ -41,10 +42,13 @@ export function ModelPicker({
   onModel,
   onEffort,
   onMode,
+  permissionsSupported,
+  onAllowAll,
   status,
 }: ModelPickerProps) {
   const [search, setSearch] = useState("");
   const settings = session.harnessSettings;
+  const permissions = settings?.copilotPermissions;
   const currentModel = models.find((model) => model.id === settings?.model);
   const modelName = currentModel?.name ?? settings?.model ?? "Choose model";
   const availableModels = models.filter((model) =>
@@ -116,7 +120,7 @@ export function ModelPicker({
             </Popover.Close>
           </header>
           <Tabs.Root
-            value={session.harness !== "codex" && section === "effort" ? "model" : section}
+            value={session.harness !== "codex" && section === "effort" || session.harness !== "copilot" && section === "permissions" ? "model" : section}
             onValueChange={(value) => onSectionChange(value as SettingsSection)}
             className="flex min-h-0 flex-1 flex-col"
           >
@@ -124,6 +128,7 @@ export function ModelPicker({
               <SettingsTab value="model">Model</SettingsTab>
               {session.harness === "codex" ? <SettingsTab value="effort">Reasoning</SettingsTab> : null}
               <SettingsTab value="mode">Mode</SettingsTab>
+              {session.harness === "copilot" ? <SettingsTab value="permissions">Permissions</SettingsTab> : null}
             </Tabs.List>
             <Tabs.Content value="model" className="min-h-0 overflow-y-auto overscroll-contain p-2 outline-none">
               {availableModels.length > 7 ? (
@@ -221,9 +226,28 @@ export function ModelPicker({
                 ))}
               </div>
             </Tabs.Content>
+            {session.harness === "copilot" ? (
+              <Tabs.Content value="permissions" className="min-h-0 overflow-y-auto overscroll-contain p-2 outline-none">
+                <p className="px-2 py-2 text-xs leading-5 text-[var(--text-secondary)]">
+                  {permissionsSupported
+                    ? "Permission approvals for this session. The agent can still ask you questions."
+                    : "Update this work host to change permission settings."}
+                </p>
+                {permissionsSupported && !permissions ? <p className="px-2 pb-2 text-xs leading-5 text-[var(--text-secondary)]">The host hasn’t reported its permission setting yet. Choose one explicitly.</p> : null}
+                {permissions?.mode === "assisted" ? <p className="px-2 pb-2 text-xs leading-5 text-[var(--text-secondary)]">Copilot reports assisted permission review. Choose a setting to replace it.</p> : null}
+                <SettingOption id="permissions-option-off" label="Ask for approval"
+                  description="Review tool, path and URL permission requests."
+                  current={permissions?.mode === "manual"}
+                  disabled={disabled || !permissionsSupported} onClick={() => onAllowAll(false)} />
+                <SettingOption id="permissions-option-on" label="YOLO"
+                  description="Automatically approve tools, paths and URLs with your account’s access."
+                  current={permissions?.mode === "allow-all"}
+                  disabled={disabled || !permissionsSupported} onClick={() => onAllowAll(true)} />
+              </Tabs.Content>
+            ) : null}
           </Tabs.Root>
           <footer className="shrink-0 border-t border-[var(--border-subtle)] px-4 py-2 text-xs leading-5 text-[var(--text-secondary)]">
-            <p>{session.runtimeStatus === "running" ? "Changes apply to the next turn. Current work keeps its settings." : "Select a setting for your next message."}</p>
+            <p>{section === "permissions" ? "Permission changes apply immediately when Copilot confirms them." : session.runtimeStatus === "running" ? "Changes apply to the next turn. Current work keeps its settings." : "Select a setting for your next message."}</p>
             {status ? <p className="mt-1 max-h-20 overflow-y-auto break-words" role="status">{status}</p> : null}
           </footer>
         </Popover.Content>

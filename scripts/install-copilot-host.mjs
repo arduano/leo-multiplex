@@ -15,7 +15,7 @@ const VERSION = String.raw`(\d+\.\d+\.\d+)`;
 
 export function parseInstallerArgs(args) {
   const phase = args[0];
-  if (phase !== 'preflight' && phase !== 'configure') throw new Error('Use preflight or configure followed by --platform, --revision and --workspace.');
+  if (phase !== 'preflight' && phase !== 'configure') throw new Error('Use preflight or configure followed by --platform and --revision.');
   const result = { phase, workspaces: [], check: false };
   const keys = { '--platform': 'platform', '--revision': 'revision', '--secret-file': 'secretFile', '--install-dir': 'installDirectory', '--name': 'name', '--github-host': 'githubHost' };
   for (let index = 1; index < args.length; index++) {
@@ -37,7 +37,6 @@ export function parseInstallerArgs(args) {
   if (!['windows', 'wsl'].includes(result.platform)) throw new Error('--platform must be windows or wsl.');
   if (!SHA.test(result.revision ?? '')) throw new Error('--revision must be the exact full 40-character Git commit SHA.');
   result.revision = result.revision.toLowerCase();
-  if (!result.workspaces.length) throw new Error('Supply at least one --workspace absolute directory.');
   result.name ??= `work-${result.platform}`;
   if (!result.name.trim() || result.name.length > 100 || /[\x00-\x1f\x7f]/.test(result.name)) throw new Error('The host name must be nonempty printable text, at most 100 characters.');
   result.githubHost ??= 'github.com';
@@ -113,7 +112,9 @@ export function installationLayout(options, environment = process.env, sourceRoo
   const stateDirectory = paths.join(install, 'state');
   return { installDirectory: install, configFile: paths.join(install, CONFIG_FILE), stateDirectory, workspaces, environment: {
     LEO_HARNESS: 'copilot', LEO_STATE_DIR: stateDirectory, LEO_HOST_NAME: options.name,
-    LEO_ALLOWED_ROOTS: JSON.stringify(workspaces), LEO_COPILOT_GITHUB_HOST: options.githubHost,
+    // No explicit workspace means operator-selected paths anywhere on this OS.
+    // Persist the intent, not a snapshot of currently mounted Windows drives.
+    LEO_ALLOWED_ROOTS: JSON.stringify(workspaces.length ? workspaces : '*'), LEO_COPILOT_GITHUB_HOST: options.githubHost,
     LEO_CONTROL_HTTP_PORT: options.platform === 'windows' ? '4317' : '4319',
     LEO_CONTROL_P2P_BIND: options.platform === 'windows' ? '0.0.0.0:49117' : '0.0.0.0:49119',
     LEO_ENROLL_GATEWAYS: '0', LEO_ENROLL_RUNTIMES: '0',
@@ -172,7 +173,7 @@ export function validateWslFilesystem(directory, mountInfo) {
 export async function assertHostStopped(stateDirectory) {
   // Read only the framework's separate writer-lock databases, never catalog or
   // vendor history. An active writer holds an exclusive SQLite OS lock.
-  for (const relative of ['control/catalog.sqlite.lock.sqlite', 'runtime/runtime-node.sqlite.lock.sqlite']) {
+  for (const relative of ['control/catalog.sqlite.lock.sqlite', 'runtime/runtime-node.sqlite.lock.sqlite', 'work-commands/operations.sqlite.lock.sqlite']) {
     const filename = join(stateDirectory, relative);
     let info;
     try { info = await lstat(filename); }
@@ -235,6 +236,7 @@ export async function configureInstallation(config, secretFile, dependencies) {
   try {
     const existing = await inspectExistingInstallation(config, secretFile);
     if (secretFile) await dependencies.importEnrollmentSecret(config.environment.LEO_STATE_DIR, secretFile);
+    await dependencies.writePrivateFile(join(config.environment.LEO_STATE_DIR, 'work-commands.json'), `${JSON.stringify({ version: 1, platform: config.platform })}\n`);
     if (!existing) await dependencies.writePrivateFile(join(config.installDirectory, CONFIG_FILE), `${JSON.stringify(config, null, 2)}\n`);
     const launcher = await readFile(join(config.sourceRoot, 'scripts', 'installed-copilot-host.mjs'), 'utf8');
     await dependencies.writePrivateFile(join(config.installDirectory, 'leo-host.mjs'), launcher);

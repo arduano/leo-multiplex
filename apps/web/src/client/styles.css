@@ -22,6 +22,7 @@
   --accent-hover: #c0ddc7;
   --accent-ink: #17241b;
   --status-live: #9ac4a5;
+  --status-working: #a9c9ec;
   --status-waiting: #e6ad52;
   --status-error: #f06e78;
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
@@ -153,4 +154,16 @@ html, body { overscroll-behavior: none; }
   .session-header [role="tablist"] { height: auto; border: 0; background: transparent; padding: 0; }
   .session-header [role="tab"] { min-height: 44px; padding-inline: 7px; font-size: 12px; }
   .session-header [data-testid="interrupt-button"] { padding-inline: 8px; }
+}
+
+/* Wrap navigation facets instead of hiding status filters in horizontal scroll. */
+.agent-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+.agent-filters > :first-child { grid-column: 1 / -1; }
+@media (max-width: 959px) {
+  .agent-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .agent-filters > :first-child { grid-column: auto; }
+}
+@media (max-height: 500px) {
+  .agent-filters { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .agent-filters > :first-child { grid-column: auto; }
 }

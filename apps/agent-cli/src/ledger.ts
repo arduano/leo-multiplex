@@ -11,12 +11,12 @@ export interface SavedOperation {
   readonly requestId: string;
   readonly intentHash: string;
   readonly createdAt: string;
-  readonly kind: "command" | "launch" | "resolve";
+  readonly kind: "command" | "launch" | "resolve" | "work-command";
   readonly payload: unknown;
 }
 
 const MAX_BYTES = 8 * 1_024 * 1_024;
-const kinds = new Set(["command", "launch", "resolve"]);
+const kinds = new Set(["command", "launch", "resolve", "work-command"]);
 const recordKeys = new Set(["version", "origin", "requestId", "intentHash", "createdAt", "kind", "payload"]);
 
 class LedgerError extends Error {

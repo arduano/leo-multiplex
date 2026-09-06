@@ -1,0 +1,76 @@
+name: Published Windows host
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-published-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both sides of the project's install-tool pin must bootstrap unchanged.
+        npm: ['11.15.0', '12.0.2']
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Check the pinned public Windows release
+        id: release
+        run: node scripts/qualify-published-windows.mjs prepare
+      - name: Select a different global npm for the installer regression
+        if: steps.release.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          npm.cmd install --global --ignore-scripts 'npm@${{ matrix.npm }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise actual installer and saved launcher on disposable D drive state
+        if: steps.release.outputs.ready == 'true'
+        env:
+          LEO_QUALIFICATION_FRAMEWORK_SHA: ${{ steps.release.outputs.framework_source }}
+          LEO_QUALIFICATION_RELEASE_MANIFEST: ${{ steps.release.outputs.manifest_path }}
+        shell: pwsh
+        run: |
+          node tests/windows-published-installer-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm.cmd run typecheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify user-task installation and graceful handoff with disposable state
+        if: steps.release.outputs.ready == 'true'
+        shell: powershell
+        run: .\tests\windows-user-service-smoke.ps1
+      - name: Qualify native host and work commands without model calls
+        if: steps.release.outputs.ready == 'true'
+        env:
+          LEO_QUALIFICATION_FRAMEWORK_SHA: ${{ steps.release.outputs.framework_source }}
+          LEO_QUALIFICATION_RELEASE_MANIFEST: ${{ steps.release.outputs.manifest_path }}
+        shell: pwsh
+        run: |
+          node tests/windows-host-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- package.json package-lock.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload scrubbed public-release receipt
+        if: steps.release.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-published-${{ github.sha }}-npm-${{ matrix.npm }}
+          path: |
+            receipts/windows-installer/
+            receipts/windows-host/
+            receipts/windows-user-service/
+          if-no-files-found: error
+          retention-days: 30

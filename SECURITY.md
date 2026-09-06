@@ -13,14 +13,21 @@ environment overrides are withheld from Copilot; standard corporate proxy and CA
 configuration remains available. Runtime authentication never enters launch
 input, metadata, gateway receipts or diagnostics.
 
+Copilot sessions retain native approval defaults. The operator can explicitly
+select native allow-all permissions through the YOLO control or `/yolo` command;
+the displayed setting comes from Copilot's acknowledged state. This applies to
+tool, path and URL permissions independently of Plan/Interactive/Autopilot.
+It does not answer user questions, elevate the account or override corporate
+native policy. A lost response is reconciled under its original command ID.
+
 Native Windows requires the framework's protected DACL checks before any state
 or endpoint identity is written. Existing broad file ACLs and reparse points are
 rejected, and only the current user, SYSTEM and Administrators may access state.
 No execution-policy, TLS, firewall or corporate-policy bypass is part of setup.
 The one fleet enrollment secret remains distinct from GitHub authentication; a
 new host imports it privately before startup and closes enrollment after pairing.
-The current public framework pin does not yet contain these Windows changes;
-the [Windows runbook](deploy/windows/README.md) describes the release gate.
+The published framework includes these Windows checks;
+the [Windows runbook](deploy/windows/README.md) records their qualification.
 
 The Windows/WSL installers require a clean checkout at an explicit commit and
 locked public dependency artifacts. Each OS keeps a separate private installation,
@@ -28,8 +35,36 @@ catalog, native auth home and transport identity; WSL state stays on its Linux
 filesystem. Saved launchers refuse conflicting profile environment overrides.
 The scripts import the fleet credential from a file and never log its contents,
 log in, start enrollment, install global tools or create background services.
+By default, work installers allow operator-selected existing working directories
+anywhere the host account can access. Windows uses a trusted static path policy
+across drives (including `D:\`) and UNC shares; WSL uses `/`. Optional workspace
+arguments explicitly narrow starting directories. State/auth-home privacy and
+image snapshot confinement remain separate from working-directory selection.
 Normal foreground startup keeps enrollment closed; first pairing explicitly
 uses `start --enroll`. Exact reruns preserve the saved identity and configuration.
+
+Only those installed work profiles enable Leo's command recovery sidecar. It has
+a separate application protocol, durable endpoint and single gateway pin; fleet
+secret membership alone grants no execution. All discovery/output/mutation HTTP
+routes require the owner's existing authentication and `terminal-control` scope;
+the normal Origin defenses remain in force. Generic Multiplex and personal
+Codex hosts have no command route. The sidecar remains available after a failed
+Copilot startup and therefore grants host-account execution independently of
+Copilot permission prompts. The CLI is the intended interface; the web hatch is
+explicitly experimental. Neither interface elevates privileges.
+
+Command admission is durable and keyed by immutable UUID/input/endpoint, with
+one active process and bounded runtime/output. Reconnect never blindly retries.
+Interrupted executor state fails closed until local process inspection is
+acknowledged against the stopped writer. Windows uses a kernel process job;
+WSL uses ordinary process groups, which deliberately daemonized commands can
+escape. Optional approved roots constrain the starting directory only; default
+work installations have no directory allowlist. Inputs/output are
+private host journal data; the CLI retains exact request inputs in its private
+ledger, and web retains pending input for reload recovery in origin storage.
+The gateway does not persist command output. Shell output may contain explicitly
+requested secrets; never publish it as diagnostic evidence. See
+[work host commands](docs/Work-Host-Commands.md) for limits and recovery.
 
 Select exactly one authentication mode per listener. In Cloudflare mode, Access assertions are
 verified at the origin using RS256, the configured issuer, application audience,
@@ -79,8 +114,8 @@ browser origin; requests supplying another origin are rejected even for GETs.
 Duplicate authentication headers are rejected. Missing authentication fails
 closed and switching modes never enables unauthenticated access.
 
-The NAS transport binds to its configured Tailscale address instead of
-automatically advertising all Docker bridge interfaces. This is a local socket
+Both NAS control and work-command transports bind to the configured Tailscale
+address instead of automatically advertising all Docker bridge interfaces. This is a local socket
 choice; source endpoint pins, enrollment, shared-secret authentication, and
 zero-authority projection remain enforced by the published framework packages.
 
@@ -136,3 +171,22 @@ Push delivery permits only canonical HTTPS FCM endpoints, validates P-256 keys,
 never follows redirects, and bounds delivery bytes, retries, pending work and
 deduplication. Push failures do not interrupt domain-stream ingestion. Revoke
 lost devices from App settings. See [Android app](docs/Mobile-PWA.md).
+
+The authenticated activity endpoint exposes at most 500 latest observations,
+fenced to a session's complete native binding. Stored observations contain IDs,
+a timestamp and controlled status copy, never native text or paths. They remain
+operational hints; canonical catalog and native history stay on the host. Local
+review markers retain only scoped session/event IDs in browser storage. Reading
+or acknowledging activity does not change notification opt-in or host state.
+
+## Windows current-user background task
+
+The optional Windows service add-on registers a Task Scheduler logon task for
+only the current user SID, with Interactive logon and Limited privilege. It uses
+no password, elevation, policy override, firewall change or shared native auth.
+The task calls the existing pinned private launcher with plain `start`, never
+`--enroll`. It runs while signed in, including locked; it does not run signed out.
+Graceful local service control uses private files fenced to the current run,
+not a network listener or process-ID kill. Recovery commands may request a
+scheduled maintenance handoff but cannot survive terminating their own host.
+Unrelated tasks, hosts and native sessions are outside this task's lifecycle.

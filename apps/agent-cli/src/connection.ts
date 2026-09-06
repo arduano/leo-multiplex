@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import { isIPv4 } from "node:net";
 import { createWebSocketTRPCClient } from "@arduano/agent-multiplex-client";
 import type { AccessRouter } from "@arduano/agent-multiplex-control-node-core";
+import { createWorkCommandsHttpClient } from "../../../packages/work-commands/src/http-client.js";
 import { CliError } from "./output.js";
 
 export const DEFAULT_URL = "http://100.82.173.47:8444";
@@ -38,7 +39,7 @@ export function connect(origin: string, signal: AbortSignal, assertionFile?: str
   class AuthenticatedSocket extends WebSocket {
     constructor(address: string | URL, protocols?: string | string[]) { super(address, protocols, { headers: headers(), followRedirects: false }); }
   }
-  return createWebSocketTRPCClient<AccessRouter>({
+  const standard = createWebSocketTRPCClient<AccessRouter>({
     url: `${origin}/trpc`, headers,
     fetch: async (url, options) => {
       const response = await fetch(url, { ...options, redirect: "error", signal: options?.signal ? AbortSignal.any([signal, options.signal]) : signal });
@@ -55,4 +56,5 @@ export function connect(origin: string, signal: AbortSignal, assertionFile?: str
       keepAlive: { enabled: true, intervalMs: 10_000, pongTimeoutMs: 3_000 },
     },
   });
+  return { ...standard, workCommands: createWorkCommandsHttpClient({ origin, signal, headers }) };
 }

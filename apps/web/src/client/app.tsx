@@ -4,6 +4,15 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  Bell,
+  Check,
+  Circle,
+  CircleAlert,
+  CloudOff,
+  LoaderCircle,
+  MessageCircleQuestion,
+  Pause,
+  Square,
   ChevronDown,
   CircleDot,
   GitBranch,
@@ -16,7 +25,7 @@ import {
   Server,
   X,
 } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 
 import { watchAccess } from "@arduano/agent-multiplex-client/browser";
 import type {
@@ -27,10 +36,13 @@ import type {
 } from "@arduano/agent-multiplex-protocol";
 
 import { ApiProvider, errorMessage, useApi } from "./api.js";
+import { supportsCopilotPermissions } from "./agent-settings.js";
 import { MetadataPanel } from "./metadata-panel.js";
 import { SessionConsole } from "./session-console.js";
 import { retainSessionRows, type RetainedSession } from "./session-retention.js";
 import { readSessionCatalog } from "./session-catalog.js";
+import { useSessionActivity, useSeenSessions } from "./session-activity.js";
+import { activityTime, agentStatus, relativeActivityTime, statusMatchesFilter, statusRank, type AgentFilter, type AgentStatus } from "./session-status.js";
 import { SpawnDialog } from "./spawn-dialog.js";
 import { terminalSideChannelCapability } from "./terminal-state.js";
 import { Badge, Button, IconButton, Input, classes } from "./ui.js";
@@ -51,6 +63,7 @@ function Dashboard() {
   const viewport = useViewportMode();
   const mobile = viewport === "mobile";
   const mobileState = useMobileState();
+  const { seen, acknowledge } = useSeenSessions();
   const [watchBusy, setWatchBusy] = useState(false);
   const [watchError, setWatchError] = useState("");
   const [filter, setFilter] = useState<AgentFilter>("all");
@@ -91,6 +104,7 @@ function Dashboard() {
     queryFn: () => client.system.describe.query(),
   });
   const connected = description.isSuccess && online;
+  const activity = useSessionActivity(connected);
   const hasConnected = description.data !== undefined;
   const access = useQuery({
     queryKey: ["access-login"], retry: false, refetchInterval: 30_000,
@@ -135,6 +149,7 @@ function Dashboard() {
           if (type.startsWith("session.") || type.startsWith("metadata.")) {
             void queryClient.invalidateQueries({ queryKey: ["sessions"] });
             void queryClient.invalidateQueries({ queryKey: ["session-link"] });
+            void queryClient.invalidateQueries({ queryKey: ["session-activity"] });
           }
           if (type.startsWith("runtimeNode.")) {
             void queryClient.invalidateQueries({ queryKey: ["runtime-nodes"] });
@@ -181,12 +196,29 @@ function Dashboard() {
       source.manifest?.coveredControlNodeIds.includes(selected.metadataAuthority.controlNodeId))
   )));
   const watchedIds = mobileState.data?.watchedSessionIds ?? [];
+  const activityBySession = useMemo(() => new Map((activity.data?.sessions ?? []).map(item => [item.sessionId, item])), [activity.data]);
+  const runtimeById = useMemo(() => new Map((runtimeNodes.data ?? []).map(node => [node.runtimeNodeId, node])), [runtimeNodes.data]);
+  const displayRows = useMemo(() => rows.map(row => {
+    const runtime = runtimeById.get(row.session.runtimeNodeId);
+    const status = agentStatus(row.session, row.stale, runtime, activityBySession.get(row.session.sessionId));
+    return { ...row, runtime, status, unseen: Boolean(status.activity && status.activity.kind !== "working" && seen[row.session.sessionId] !== status.activity.eventId), watched: watchedIds.includes(row.session.sessionId) };
+  }), [rows, runtimeById, activityBySession, seen, watchedIds]);
   const filteredRows = useMemo(() => {
     const needle = deferredSearch.trim().toLocaleLowerCase();
-    return [...rows]
-      .filter(({ session }) => (!needle || sessionSearchText(session, runtimeNodes.data?.find(node => node.runtimeNodeId === session.runtimeNodeId)?.name).includes(needle)) && (!mobile || matchesAgentFilter(session, filter, watchedIds)))
-      .sort((left, right) => Number(left.stale) - Number(right.stale) || sessionRank(left.session) - sessionRank(right.session) || right.session.updatedAt.localeCompare(left.session.updatedAt));
-  }, [deferredSearch, rows, mobile, filter, watchedIds, runtimeNodes.data]);
+    return displayRows
+      .filter(row => (!needle || sessionSearchText(row.session, row.runtime?.name).includes(needle)) && statusMatchesFilter(row.status, filter, row.watched))
+      .sort((left, right) => statusRank(left.status, left.unseen) - statusRank(right.status, right.unseen) ||
+        activityTime(right.session, right.status).localeCompare(activityTime(left.session, left.status)) || left.session.sessionId.localeCompare(right.session.sessionId));
+  }, [deferredSearch, displayRows, filter]);
+  const selectedStatus = selected ? agentStatus(selected, selectedStale, runtimeById.get(selected.runtimeNodeId), activityBySession.get(selected.sessionId)) : undefined;
+  const selectedEventId = selectedStatus?.activity?.eventId;
+  useEffect(() => {
+    if (!selectedId || !selectedEventId || route.page !== "session" || selectedStale) return;
+    const review = () => { if (document.visibilityState === "visible") acknowledge(selectedId, selectedEventId); };
+    review();
+    document.addEventListener("visibilitychange", review);
+    return () => document.removeEventListener("visibilitychange", review);
+  }, [selectedId, selectedEventId, route.page, selectedStale, acknowledge]);
 
   const globalStatus = description.isPending ? "connecting" : connected ? "connected" : "connection failed";
 
@@ -194,10 +226,10 @@ function Dashboard() {
     void invalidateFleet(queryClient);
   }
 
-  function selectSession(sessionId: SessionId): void {
+  const selectSession = useCallback((sessionId: SessionId): void => {
     setSelectedId(sessionId);
     navigateMobile({ page: "session", sessionId });
-  }
+  }, []);
 
   function spawned(sessionId: SessionId): void {
     selectSession(sessionId);
@@ -255,7 +287,7 @@ function Dashboard() {
         <WorkspaceShell
           selectedLabel={selected ? sessionTitle(selected) : "Opening agent…"}
           mobilePage={route.page === "session" ? "session" : "agents"}
-          selectedStatus={selected ? `${selected.harness} · ${selectedStale ? "Offline" : sessionStatus(selected, false)}` : "Connecting"}
+          selectedStatus={selected ? `${selected.harness} · ${selectedStatus?.label ?? "Connecting"}` : "Connecting"}
           watched={selected ? watchedIds.includes(selected.sessionId) : false}
           watchBusy={watchBusy}
           onToggleWatched={selected && mobileState.isSuccess ? () => void watchSelected() : undefined}
@@ -265,11 +297,12 @@ function Dashboard() {
               search={search}
               onSearch={setSearch}
               rows={filteredRows}
+              allRows={displayRows}
               selectedId={selectedId}
               runtimeNodes={runtimeNodes.data ?? []}
               connected={connected}
               loading={sessions.isPending}
-              listNotice={sessions.isError ? "Couldn’t refresh the agent list. Retrying…" : sessions.data?.complete === false ? "Showing part of the agent list (up to 500 agents)." : null}
+              listNotice={sessions.isError ? "Couldn’t refresh the agent list. Retrying…" : sessions.data?.complete === false ? "Showing part of the agent list (up to 500 agents)." : activity.isError ? "Finish updates unavailable. Live host status is still shown." : null}
               onSelect={selectSession}
               mobile={mobile}
               filter={filter}
@@ -279,7 +312,7 @@ function Dashboard() {
           center={<div className="flex h-full min-h-0 flex-col">
             {selected && selectedStale && projectionFresh ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
             {selectedId && !selected ? <div className="grid min-h-0 flex-1 place-items-center p-5 text-sm text-[var(--text-secondary)]" role="status">{directSession.isError || directSession.isSuccess ? "This agent is unavailable. Return to Agents to choose another." : "Opening agent…"}</div> : null}
-            {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} onNewSession={() => setSpawnOpen(true)} /> : null}
+            {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} permissionsSupported={supportsCopilotPermissions(selectedRuntime)} readOnly={selectedStale} status={selectedStatus} watched={watchedIds.includes(selected?.sessionId ?? "")} watchBusy={watchBusy} onToggleWatched={selected && mobileState.isSuccess ? () => void watchSelected() : undefined} onNewSession={() => setSpawnOpen(true)} /> : null}
           </div>}
           inspector={(actions) => (
             <InspectorPane
@@ -403,11 +436,29 @@ function ConnectionPanel({ onConnect, status, pending, error }: {
   );
 }
 
-function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, connected, loading, listNotice, onSelect, mobile, filter, onFilter }: {
+interface AgentRow extends RetainedSession {
+  readonly runtime: RuntimeNodeDescriptor | undefined;
+  readonly status: AgentStatus;
+  readonly unseen: boolean;
+  readonly watched: boolean;
+}
+
+const agentFilters = [["all", "All"], ["needsInput", "Needs you"], ["working", "Working"], ["finished", "Finished"], ["watched", "Watched"]] as const;
+const statusIcons = { working: LoaderCircle, input: MessageCircleQuestion, error: CircleAlert, finished: Check, interrupted: Square, ready: Circle, stopped: Pause, offline: CloudOff };
+function statusColor(status: AgentStatus): string {
+  if (status.kind === "working") return "text-[var(--status-working)]";
+  if (status.kind === "finished") return "text-[var(--status-live)]";
+  if (status.kind === "input" || status.kind === "interrupted") return "text-[var(--status-waiting)]";
+  if (status.kind === "error") return "text-[var(--status-error)]";
+  return "text-[var(--text-muted)]";
+}
+
+function FleetPane({ actions, search, onSearch, rows, allRows, selectedId, runtimeNodes, connected, loading, listNotice, onSelect, mobile, filter, onFilter }: {
   readonly actions: PaneActions;
   readonly search: string;
   readonly onSearch: (value: string) => void;
-  readonly rows: readonly RetainedSession[];
+  readonly rows: readonly AgentRow[];
+  readonly allRows: readonly AgentRow[];
   readonly selectedId: SessionId | null;
   readonly runtimeNodes: readonly RuntimeNodeDescriptor[];
   readonly connected: boolean;
@@ -418,136 +469,89 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
   readonly filter: AgentFilter;
   readonly onFilter: (filter: AgentFilter) => void;
 }) {
+  const counts = Object.fromEntries(agentFilters.map(([value]) => [value, allRows.filter(row => statusMatchesFilter(row.status, value, row.watched)).length]));
+  const unseen = allRows.filter(row => row.unseen).length;
+  const select = useCallback((id: SessionId) => { onSelect(id); actions.close?.(); }, [onSelect, actions.close]);
+  const now = Date.now();
   return (
     <aside className="flex h-full min-h-0 flex-col bg-[var(--surface-shell)]">
-      {!mobile ? <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-3">
+      <header className="flex h-11 shrink-0 items-center justify-between gap-2 px-3">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agents</h2>
-          <span className="text-xs tabular-nums text-[var(--text-muted)]">{rows.length}</span>
+          <span className="text-xs tabular-nums text-[var(--text-muted)]">{allRows.length}</span>
+          {unseen > 0 ? <span className="text-xs text-[var(--accent)]" data-testid="agent-updates-count">{unseen} new</span> : null}
         </div>
-        {actions.collapse ? (
-          <IconButton
-            icon={PanelLeftClose}
-            label="Collapse agents pane"
-            tone="ghost"
-            className="size-8 min-h-8"
-            onClick={actions.collapse}
-            data-testid="left-pane-toggle"
-          />
-        ) : actions.close ? (
-          <IconButton icon={X} label="Close agents pane" tone="ghost" className="size-8 min-h-8" onClick={actions.close} />
-        ) : null}
-      </header> : null}
-      <div className="shrink-0 border-b border-[var(--border-subtle)] p-2.5">
+        {actions.collapse ? <IconButton icon={PanelLeftClose} label="Collapse agents pane" tone="ghost" className="size-8 min-h-8" onClick={actions.collapse} data-testid="left-pane-toggle" />
+          : actions.close ? <IconButton icon={X} label="Close agents pane" tone="ghost" className="size-8 min-h-8" onClick={actions.close} /> : null}
+      </header>
+      <div className="shrink-0 px-2.5 pb-2">
         <label className="relative block">
-          <Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-[var(--text-muted)]" />
-          <Input
-            className="h-9 pl-8 text-sm"
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder="Find an agent…"
-            aria-label="Search agents"
-          />
+          <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-3 size-3.5 text-[var(--text-muted)]" />
+          <Input className="h-9 pl-8 text-sm" value={search} onChange={event => onSearch(event.target.value)} placeholder="Find an agent…" aria-label="Search agents" />
         </label>
       </div>
-      {mobile ? <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2 py-1" role="group" aria-label="Filter agents" data-testid="mobile-agent-filters">
-        {([["all", "All"], ["watched", "Watched"], ["needsInput", "Needs input"], ["working", "Working"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => onFilter(value)} className={classes("min-h-11 shrink-0 rounded-md px-3 text-xs", filter === value ? "bg-[var(--surface-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")}>{label}</button>)}
-      </div> : null}
+      <div className="agent-filters shrink-0 border-b border-[var(--border-subtle)] px-2.5 pb-2" role="group" aria-label="Filter agents" data-testid={mobile ? "mobile-agent-filters" : "agent-filters"}>
+        {agentFilters.map(([value, label]) => <button key={value} type="button" aria-label={label} aria-description={`${counts[value]} agents`} aria-pressed={filter === value} onClick={() => onFilter(value)}
+          className={classes("flex min-h-8 min-w-0 items-center justify-between gap-1.5 rounded-md px-2 text-xs font-medium", filter === value ? "bg-[var(--surface-raised)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-base)]")}
+          data-testid={`agent-filter-${value}`}>
+          <span className="flex min-w-0 items-center gap-1.5">{value === "watched" ? <Bell aria-hidden="true" className="size-3 shrink-0" /> : null}{label}</span>
+          <span aria-hidden="true" className={classes("tabular-nums", counts[value] ? value === "working" ? "text-[var(--status-working)]" : value === "needsInput" ? "text-[var(--status-waiting)]" : "text-[var(--text-secondary)]" : "text-[var(--text-muted)]")}>{counts[value]}</span>
+        </button>)}
+      </div>
       {listNotice ? <p role="status" className="shrink-0 px-3 py-2 text-xs text-[var(--status-waiting)]" data-testid="session-list-notice">{listNotice}</p> : null}
-      <div
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-2"
-        role="region"
-        aria-label={`Agent sessions, ${rows.length} shown`}
-        tabIndex={0}
-        data-testid="session-list"
-      >
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-2" role="region" aria-label={`Agent sessions, ${rows.length} shown`} tabIndex={0} data-testid="session-list">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
-          {rows.map(({ session, stale }) => (
-            <SessionRow
-              key={session.sessionId}
-              session={session}
-              stale={stale}
-              selected={session.sessionId === selectedId}
-              runtime={runtimeNodes.find((node) => node.runtimeNodeId === session.runtimeNodeId)}
-              onSelect={() => {
-                onSelect(session.sessionId);
-                actions.close?.();
-              }}
-            />
-          ))}
-          {connected && !loading && rows.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">{filter === "all" ? "No agents here yet." : "No agents match this filter."}</p>
-          ) : null}
+          {rows.map(row => <SessionRow key={row.session.sessionId} row={row} selected={row.session.sessionId === selectedId} onSelect={select} now={now} />)}
+          {connected && !loading && rows.length === 0 ? <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">{search.trim() || filter !== "all" ? "No agents match this filter." : "No agents here yet."}</p> : null}
         </div>
       </div>
-      <section className="flex max-h-[38%] min-h-0 shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--surface-shell)]">
-        <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 py-2.5">
+      <section className="flex max-h-[32%] min-h-0 shrink-0 flex-col border-t border-[var(--border-subtle)] bg-[var(--surface-shell)]">
+        <div className="flex shrink-0 items-baseline justify-between gap-2 px-4 py-2">
           <h3 className="text-xs font-semibold text-[var(--text-secondary)]">Hosts</h3>
-          <span className="text-xs tabular-nums text-[var(--text-muted)]">{runtimeNodes.filter((node) => node.presence === "online" && node.reachability === "reachable").length} online</span>
+          <span className="text-xs tabular-nums text-[var(--text-muted)]">{runtimeNodes.filter(node => node.presence === "online" && node.reachability === "reachable").length} online</span>
         </div>
-        <div
-          className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-2 pb-2"
-          role="region"
-          aria-label={`Hosts, ${runtimeNodes.length} shown`}
-          tabIndex={0}
-          data-testid="fleet-list"
-        >
-          {runtimeNodes.map((node) => <RuntimeRow node={node} key={node.runtimeNodeId} />)}
+        <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-2 pb-2" role="region" aria-label={`Hosts, ${runtimeNodes.length} shown`} tabIndex={0} data-testid="fleet-list">
+          {runtimeNodes.map(node => <RuntimeRow node={node} key={node.runtimeNodeId} />)}
         </div>
       </section>
     </aside>
   );
 }
 
-function SessionRow({ session, stale, runtime, selected, onSelect }: {
-  readonly session: SessionRecord;
-  readonly stale: boolean;
-  readonly runtime?: RuntimeNodeDescriptor | undefined;
+const SessionRow = memo(function SessionRow({ row: { session, stale, runtime, status, unseen, watched }, selected, onSelect, now }: {
+  readonly row: AgentRow;
   readonly selected: boolean;
-  readonly onSelect: () => void;
+  readonly onSelect: (id: SessionId) => void;
+  readonly now: number;
 }) {
   const title = sessionTitle(session);
-  return (
-    <button
-      type="button"
-      className={classes(
-        "h-[72px] min-h-[72px] max-h-[72px] w-full min-w-0 max-w-full overflow-hidden rounded-md border-l-2 px-2.5 py-2 text-left [contain-intrinsic-size:auto_72px] [content-visibility:auto]",
-        "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]",
-        selected
-          ? "border-l-[var(--accent)] bg-[var(--surface-raised)]"
-          : "border-l-transparent hover:bg-[var(--surface-base)]",
-      )}
-      onClick={onSelect}
-      data-testid="session-card"
-      data-session-id={session.sessionId}
-      data-harness={session.harness}
-      data-stale={stale}
-      aria-current={selected ? "true" : undefined}
-    >
-      <span className="flex items-start gap-2.5">
-        <span className={classes(
-          "mt-1.5 size-1.5 shrink-0 rounded-full",
-          session.runtimeStatus === "running" ? "bg-[var(--status-live)]" :
-            session.runtimeStatus === "waitingForInput" ? "bg-[var(--status-waiting)]" :
-              session.runtimeStatus === "error" ? "bg-[var(--status-error)]" : "bg-[var(--text-muted)]",
-        )} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium leading-5 text-[var(--text-primary)]" title={title}>{title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-[var(--text-muted)]">
-            <span className="shrink-0">{session.harness}</span>
-            <span aria-hidden="true">·</span>
-            <span className="shrink-0">{sessionStatus(session, stale)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="truncate">{runtime?.name ?? shortId(session.runtimeNodeId)}</span>
-          </span>
-          <span className="mt-0.5 block truncate font-mono text-xs leading-4 text-[var(--text-muted)]">
-            {session.cwd ?? "Workspace unavailable"}
-          </span>
-        </span>
+  const StatusIcon = statusIcons[status.kind];
+  const host = runtime?.name ?? shortId(session.runtimeNodeId);
+  const at = activityTime(session, status);
+  const folder = session.cwd?.replaceAll("\\", "/").replace(/\/$/, "").split("/").at(-1);
+  return <button type="button" className={classes(
+    "h-[76px] min-h-[76px] max-h-[76px] w-full min-w-0 max-w-full overflow-hidden rounded-md border-l-2 px-2.5 py-2 text-left [contain-intrinsic-size:auto_76px] [content-visibility:auto]",
+    "transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]",
+    selected ? "border-l-[var(--accent)] bg-[var(--surface-raised)]" : "border-l-transparent hover:bg-[var(--surface-base)]",
+  )} onClick={() => onSelect(session.sessionId)} data-testid="session-card" data-session-id={session.sessionId} data-harness={session.harness} data-stale={stale}
+    data-agent-status={status.kind} data-unseen={unseen} aria-current={selected ? "true" : undefined}
+    aria-label={`${title}. ${status.label}${unseen ? ". New activity" : ""}. ${host}, ${session.harness}${session.cwd ? `. ${session.cwd}` : ""}`}
+    title={`${title}\n${status.description}\n${host} · ${session.harness}${session.cwd ? `\n${session.cwd}` : ""}`}>
+    <span className="flex min-w-0 items-center gap-1.5 leading-5">
+      <span className={classes("min-w-0 flex-1 truncate text-sm text-[var(--text-primary)]", unseen ? "font-semibold" : "font-medium")}>{title}</span>
+      {watched ? <Bell aria-hidden="true" className="size-3 shrink-0 text-[var(--text-muted)]" /> : null}
+      {unseen ? <span className="shrink-0 rounded bg-[var(--accent)]/10 px-1.5 text-xs font-medium text-[var(--accent)]" data-testid="session-new-activity">New</span> : null}
+    </span>
+    <span className="mt-0.5 flex min-w-0 items-center justify-between gap-2 text-xs leading-4">
+      <span className={classes("flex min-w-0 items-center gap-1.5 font-medium", statusColor(status))} data-testid="session-row-status">
+        <StatusIcon aria-hidden="true" className={classes("size-3.5 shrink-0", status.kind === "working" && "animate-spin motion-reduce:animate-none")} />
+        <span className="truncate">{status.label}</span>
       </span>
-    </button>
-  );
-}
+      <time className="shrink-0 tabular-nums text-[var(--text-muted)]" dateTime={at} title={new Date(at).toLocaleString()}>{relativeActivityTime(at, now)}</time>
+    </span>
+    <span className="mt-0.5 block truncate text-xs leading-4 text-[var(--text-muted)]">{host} · {session.harness}{folder ? ` · ${folder}` : ""}</span>
+  </button>;
+});
 
 function RuntimeRow({ node }: { readonly node: RuntimeNodeDescriptor }) {
   const available = node.harnesses.filter((entry) => entry.available);
@@ -777,19 +781,6 @@ function sessionSearchText(session: SessionRecord, runtimeName?: string): string
     .toLocaleLowerCase();
 }
 
-function sessionStatus(session: SessionRecord, stale: boolean): string {
-  if (stale) return "Offline";
-  if (session.availability !== "active") return "Stopped";
-  return ({ running: "Working", idle: "Ready", waitingForInput: "Needs you", error: "Error", stopped: "Stopped" } as Record<string, string>)[session.runtimeStatus] ?? session.runtimeStatus;
-}
-
-function sessionRank(session: SessionRecord): number {
-  if (session.runtimeStatus === "waitingForInput") return 0;
-  if (session.runtimeStatus === "running") return 1;
-  if (session.availability === "active") return 2;
-  return 3;
-}
-
 function shortId(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
 }
@@ -809,15 +800,12 @@ async function invalidateFleet(queryClient: ReturnType<typeof useQueryClient>): 
     queryClient.invalidateQueries({ queryKey: ["runtime-nodes"] }),
     queryClient.invalidateQueries({ queryKey: ["sessions"] }),
     queryClient.invalidateQueries({ queryKey: ["session-link"] }),
+    queryClient.invalidateQueries({ queryKey: ["session-activity"] }),
     queryClient.invalidateQueries({ queryKey: ["interactions"] }),
     queryClient.invalidateQueries({ queryKey: ["metadata"] }),
   ]);
 }
 
-export type AgentFilter = "all" | "watched" | "needsInput" | "working";
-export function matchesAgentFilter(session: Pick<SessionRecord, "sessionId" | "runtimeStatus">, filter: AgentFilter, watched: readonly string[]): boolean {
-  return filter === "all" || filter === "watched" && watched.includes(session.sessionId) || filter === "needsInput" && (session.runtimeStatus === "waitingForInput" || session.runtimeStatus === "error") || filter === "working" && session.runtimeStatus === "running";
-}
 
 function ReauthenticateLink() {
   const [error, setError] = useState("");

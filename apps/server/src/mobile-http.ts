@@ -21,6 +21,7 @@ export async function serveMobileRequest(request: IncomingMessage, response: Ser
   if (!mobile) { send(503, { error: "Mobile notifications are unavailable" }); return; }
   try {
     if (path === "/api/mobile/state" && request.method === "GET") { send(200, mobile.state()); return; }
+    if (path === "/api/mobile/activity" && request.method === "GET") { send(200, mobile.activity()); return; }
     const deviceMatch = /^\/api\/mobile\/devices\/([0-9a-f-]{36})(\/test)?$/.exec(path);
     if (deviceMatch) {
       const id = z.uuid().parse(deviceMatch[1]);

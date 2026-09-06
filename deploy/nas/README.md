@@ -125,9 +125,10 @@ and Funnel, and never retries a concurrent configuration overwrite. The ordinary
 `tailscale serve --http=8444` command creates only the hostname route. The gateway
 container does not receive the LocalAPI socket.
 
-The gateway uses host networking and binds HTTP only to `127.0.0.1:4328`. Its
-transport binds to the configured Tailscale address to avoid advertising the
-NAS's many Docker bridges. Personal process composition uses the published source
+The gateway uses host networking and binds HTTP only to `127.0.0.1:4328`. Both
+control and work-command transports use `LEO_GATEWAY_P2P_BIND` to bind to the
+configured Tailscale address and avoid advertising the NAS's many Docker bridges.
+Personal process composition uses the published source
 clients and projection APIs; package versions and transport security are unchanged.
 Trusted NAS-local processes remain inside the authentication boundary. Do not
 expose the backend through another proxy or Docker bridge mapping, or enable Funnel.

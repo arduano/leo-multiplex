@@ -12,6 +12,7 @@ export function validateHostCommand(args) {
   if (['help', '--help', 'pairing'].includes(command) && rest.length === 0) return [command];
   if (command === 'doctor' && (rest.length === 0 || (rest.length === 1 && rest[0] === '--json'))) return args;
   if (command === 'start' && (rest.length === 0 || (rest.length === 1 && rest[0] === '--enroll'))) return args;
+  if (command === 'command-recovery' && rest.length === 2 && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(rest[0]) && rest[1] === '--processes-inspected') return args;
   if (command === 'init' && rest.length === 2 && rest[0] === '--secret-file' && rest[1] && !rest[1].startsWith('--')) return args;
   if (command === 'login') {
     const seen = new Set();
@@ -25,7 +26,7 @@ export function validateHostCommand(args) {
     }
     return args;
   }
-  throw new Error('Use help, login, doctor, start, pairing, or init. Arbitrary Node/native commands are not accepted.');
+  throw new Error('Use help, login, doctor, start, pairing, init, or command-recovery. Arbitrary Node/native commands are not accepted.');
 }
 
 export function installedEnvironment(config, environment = process.env) {
@@ -63,7 +64,9 @@ export async function main(args = process.argv.slice(2), installDirectory = dirn
   } catch { throw new Error('The installed source checkout is unavailable. Restore its exact revision and keep its original location.'); }
   if (revision !== config.revision || dirty) throw new Error('The installed source revision changed or has tracked modifications. Restore the exact clean revision; the host was not started.');
   const installer = await import(pathToFileURL(join(config.sourceRoot, 'scripts/install-copilot-host.mjs')).href);
-  const options = installer.parseInstallerArgs(['preflight', '--platform', config.platform, '--revision', config.revision, '--install-dir', config.installDirectory, '--name', config.environment.LEO_HOST_NAME, '--github-host', config.environment.LEO_COPILOT_GITHUB_HOST, ...JSON.parse(config.environment.LEO_ALLOWED_ROOTS).flatMap(root => ['--workspace', root])]);
+  const roots = JSON.parse(config.environment.LEO_ALLOWED_ROOTS);
+  if (roots !== '*' && (!Array.isArray(roots) || roots.length === 0 || roots.some(root => typeof root !== 'string'))) throw new Error('The saved working-directory policy is invalid.');
+  const options = installer.parseInstallerArgs(['preflight', '--platform', config.platform, '--revision', config.revision, '--install-dir', config.installDirectory, '--name', config.environment.LEO_HOST_NAME, '--github-host', config.environment.LEO_COPILOT_GITHUB_HOST, ...(roots === '*' ? [] : roots.flatMap(root => ['--workspace', root]))]);
   // Recheck source, release boundary, directories and persisted settings before
   // native startup, including after a laptop wakes or source is accidentally moved.
   await installer.preflight(options, { sourceRoot: config.sourceRoot, environment, requireStopped: false });

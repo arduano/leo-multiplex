@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$Revision,
-    [Parameter(Mandatory = $true)][string[]]$Workspace,
+    [string[]]$Workspace = @(),
     [string]$SecretFile,
     [string]$InstallDir,
     [string]$Name = 'work-windows',
@@ -35,13 +35,12 @@ try {
         # The shared helper checks platform, source pin, public dependency pins,
         # separate state, workspaces and release readiness before installation.
         Invoke-Checked $node (@($helper, 'preflight') + $options)
-        $expectedNpm = ((Get-Content -LiteralPath (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json).packageManager -replace '^npm@', '')
-        $actualNpm = (& $npm --version | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $actualNpm -ne $expectedNpm) {
-            throw "npm $expectedNpm is required. Install the approved version before rerunning; this script does not change global tools."
-        }
         if ($Check) { Write-Output 'Preflight passed. No installation, login or host startup performed.'; return }
-        Invoke-Checked $npm @('ci', '--strict-allow-scripts', '--include=dev', '--include=optional')
+        $installerNpm = (Get-Content -LiteralPath (Join-Path $repoRoot 'package.json') -Raw | ConvertFrom-Json).packageManager
+        # Cache the install tool; do not require or change the user's global npm.
+        # Only the inner, pinned npm runs the reviewed dependency install scripts.
+        Write-Output "Installing dependencies with cached $installerNpm. Global npm is unchanged."
+        Invoke-Checked $npm @('exec', '--yes', '--ignore-scripts', "--package=$installerNpm", '--', 'npm.cmd', 'ci', '--ignore-scripts=false', '--strict-allow-scripts', '--include=dev', '--include=optional')
         Invoke-Checked $npm @('run', 'build')
         Invoke-Checked $node (@($helper, 'configure') + $options)
     } finally { Pop-Location }

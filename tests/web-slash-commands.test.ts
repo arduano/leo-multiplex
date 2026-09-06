@@ -52,4 +52,24 @@ describe("composer slash commands", () => {
     expect(slashSuggestions("/model arg", "codex")).toEqual([]);
     expect(slashSuggestions("hello".repeat(200_000), "codex")).toEqual([]);
   });
+  const copilot = { ...context, harness: "copilot" as const, permissionsSupported: true };
+  it("toggles YOLO using only the acknowledged native setting", () => {
+    expect(resolveSlash("/yolo", { ...copilot, permissionMode: "manual" })).toMatchObject({ kind: "command", request: { harness: "copilot", command: { type: "setPermissionMode", mode: "allow-all" } } });
+    expect(resolveSlash("/yolo", { ...copilot, permissionMode: "allow-all" })).toMatchObject({ kind: "command", request: { command: { type: "setPermissionMode", mode: "manual" } } });
+    expect(resolveSlash("/yolo", { ...copilot, permissionMode: "assisted" })).toMatchObject({ kind: "command", request: { command: { type: "setPermissionMode", mode: "allow-all" } } });
+    expect(resolveSlash("/yolo", copilot)).toMatchObject({ kind: "error" });
+  });
+  it.each([true, false])("allows an explicit YOLO setting without knowing the current state: %s", enabled => {
+    expect(resolveSlash(`/yolo ${enabled ? "on" : "off"}`, copilot)).toMatchObject({ kind: "command", request: { harness: "copilot", command: { type: "setPermissionMode", mode: enabled ? "allow-all" : "manual" } }, success: `YOLO ${enabled ? "on" : "off"}` });
+  });
+  it("gates YOLO on the native host capability and Copilot harness", () => {
+    expect(resolveSlash("/yolo on", context).kind).toBe("error");
+    expect(resolveSlash("/yolo on", { ...copilot, permissionsSupported: false }).kind).toBe("error");
+    expect(slashSuggestions("/yo", "codex", true)).toEqual([]);
+    expect(slashSuggestions("/yo", "copilot")).toEqual([]);
+    expect(slashSuggestions("/yo", "copilot", true).map(item => item.name)).toEqual(["yolo"]);
+  });
+  it.each(["/yolo auto", "/yolo true", "/yolo on then run", "/yolo off please"])("rejects ambiguous permission command %s locally", input => {
+    expect(resolveSlash(input, copilot).kind).toBe("error");
+  });
 });

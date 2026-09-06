@@ -11,25 +11,37 @@ import { ControlNodeCatalog } from '@arduano/agent-multiplex-control-node-core';
 import { hostConfig } from '../dist/apps/host/src/config.js';
 import { runManagedHost } from '../dist/apps/host/src/manage.js';
 import { privateDirectory, writePrivateFile } from '../dist/apps/host/src/private-state.js';
+import { UnrestrictedWorkspacePolicy } from '../dist/apps/host/src/workspace-policy.js';
+import { readPublishedWindowsQualification } from '../scripts/qualify-published-windows.mjs';
 
 assert.equal(process.platform, 'win32');
 assert.equal(process.arch, 'x64');
 const personalSource = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const frameworkSource = process.env.LEO_QUALIFICATION_FRAMEWORK_SHA;
 assert.match(frameworkSource ?? '', /^[a-f0-9]{40}$/);
-const root = await mkdtemp(join(tmpdir(), 'leo-windows-host-'));
+const frameworkRelease = process.env.LEO_QUALIFICATION_RELEASE_MANIFEST
+  ? await readPublishedWindowsQualification(process.cwd(), process.env.LEO_QUALIFICATION_RELEASE_MANIFEST, frameworkSource)
+  : undefined;
+// CI's explicit second drive catches accidental C:-only configurations.
+const root = await mkdtemp(join(process.env.GITHUB_ACTIONS ? 'D:\\' : tmpdir(), 'leo-windows-host-'));
 const state = join(root, 'state');
 const checks = [];
 const savedLog = console.log, savedError = console.error;
 try {
   await privateDirectory(state);
+  const paths = new UnrestrictedWorkspacePolicy();
+  assert.equal((await paths.validate(root.replaceAll('\\', '/'))).toLowerCase(), root.toLowerCase());
+  const userHome = process.env.USERPROFILE;
+  assert.ok(userHome);
+  assert.ok(await paths.validate(userHome));
+  checks.push('unrestricted working directories across C: and D: with forward-slash input');
   await writePrivateFile(join(state, 'shared-secret'), randomBytes(48).toString('base64') + '\n');
   const server = createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
   const config = hostConfig({ ...process.env, LEO_HARNESS: 'copilot', LEO_HOST_NAME: 'windows-smoke',
-    LEO_STATE_DIR: state, LEO_ALLOWED_ROOTS: JSON.stringify([root]), LEO_CONTROL_HTTP_PORT: String(port), LEO_CONTROL_P2P_BIND: '0.0.0.0:0',
+    LEO_STATE_DIR: state, LEO_ALLOWED_ROOTS: JSON.stringify('*'), LEO_CONTROL_HTTP_PORT: String(port), LEO_CONTROL_P2P_BIND: '0.0.0.0:0',
   });
   let firstIdentity, previousBoot;
   for (const enroll of [true, false]) {
@@ -91,6 +103,7 @@ try {
       assert.equal(runtimes.length, 1);
       const runtime = runtimes[0];
       assert.equal(runtime.name, 'windows-smoke');
+      assert.deepEqual(runtime.allowedRoots, []);
       if (firstIdentity) assert.equal(runtime.runtimeNodeId, firstIdentity);
       firstIdentity = runtime.runtimeNodeId;
       previousBoot = runtime.runtimeNodeBootId;
@@ -101,11 +114,16 @@ try {
   console.log = savedLog; console.error = savedError;
   await rm(root, { recursive: true, force: true });
 }
-const receipt = { result: 'passed', personalSource, frameworkSource,
+const receipt = { result: 'passed', personalSource, frameworkSource, frameworkRelease,
   personalLockSha256: createHash('sha256').update(await readFile('package-lock.json')).digest('hex'),
   node: process.version, platform: process.platform, arch: process.arch, checks, modelCalls: 0,
-  scope: 'source-candidate Windows composition only; public dependency pin is unchanged; corporate login/network/model UAT excluded',
+  scope: frameworkRelease
+    ? 'published-artifact Windows composition; corporate login/network/model UAT excluded'
+    : 'source-candidate Windows composition only; public dependency pin is unchanged; corporate login/network/model UAT excluded',
 };
+// Qualify the work-only executor against the same dependency boundary as the host.
+await import('./windows-work-command-smoke.mjs');
+checks.push('work command journal, output, deduplication, cancellation and process-job cleanup');
 const output = join('receipts', 'windows-host', new Date().toISOString().replaceAll(':', '-'));
 await mkdir(output, { recursive: true });
 const encoded = JSON.stringify(receipt, null, 2) + '\n';

@@ -221,6 +221,17 @@ For example, a settings file can contain:
 {"harness":"codex","command":{"type":"setEffort","effort":"high"}}
 ```
 
+With framework 0.2.2 and a work host advertising `permissions.mode` version `v1`,
+the same route can set Copilot YOLO for one session:
+
+```json
+{"harness":"copilot","command":{"type":"setPermissionMode","mode":"allow-all"}}
+```
+
+Use `"manual"` to restore permission prompts. Read
+`harnessSettings.copilotPermissions.mode` for the host’s acknowledged state;
+permission changes do not change Plan/Interactive/Autopilot or answer questions.
+
 ## Images
 
 Upload PNG, JPEG, GIF, or WebP from a local regular file. Type comes from bytes,
@@ -283,3 +294,18 @@ The CLI covers managed session operations, native history/events, interactions,
 and image transfer. It does not provide terminal streaming, archive commands,
 or automatic provider-error recovery. Consult `leo-agents help` for the exact
 installed option set; native schemas remain owned by the pinned protocol package.
+
+## Commands on work laptop hosts
+
+`exec-hosts` lists only the installed Windows/WSL command targets. Use
+`exec --host work-wsl --cwd /home/leo/work --text 'git status --short'
+--request-id work-status-1` for a single noninteractive command. Windows uses
+PowerShell; WSL uses Bash. `exec-status REQUEST_ID` reconciles the original
+operation, `exec-status REQUEST_ID --retry` explicitly resends its immutable
+request if needed, and `exec-cancel REQUEST_ID` cancels that exact command.
+`--run-timeout SECONDS` controls the remote runtime limit; the ordinary CLI
+`--timeout` bounds only the client wait. Local interruption never implies remote
+cancellation. These commands use the existing gateway authentication and private
+operation ledger. They are the happy path for host recovery; web provides only
+an experimental App settings hatch. See [the work-command runbook](Work-Host-Commands.md)
+for limits, exit results and crash recovery. Personal hosts expose no shell target.

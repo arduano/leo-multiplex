@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,8 @@ const npmStub = `
 import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(process.env.WRAPPER_TEST_LOG, JSON.stringify({ tool: 'npm', args, cwd: process.cwd() }) + '\\n');
-const phase = args[0] === '--version' ? 'npm-version' : args[0] === 'ci' ? 'ci' : args.join(' ') === 'run build' ? 'build' : 'unexpected';
+const inner = args[0] === 'exec' ? args.slice(args.indexOf('--') + 2) : args;
+const phase = args[0] === '--version' ? 'npm-version' : inner[0] === 'ci' ? 'ci' : args.join(' ') === 'run build' ? 'build' : 'unexpected';
 if (phase === 'unexpected') process.exit(92);
 if (process.env.WRAPPER_TEST_FAIL === phase) process.exit(37);
 if (phase === 'npm-version') console.log(process.env.WRAPPER_TEST_NPM_VERSION || '${npmVersion}');
@@ -97,8 +98,8 @@ async function fixture(t, platform, options = {}) {
 }
 
 const stages = calls => calls.map(call => call.tool === 'helper' ? call.args[0]
-  : call.args[0] === '--version' ? 'npm-version' : call.args[0] === 'run' ? 'build' : call.args[0]);
-const successfulStages = ['preflight', 'npm-version', 'ci', 'build', 'configure'];
+  : call.args[0] === '--version' ? 'npm-version' : call.args[0] === 'exec' ? 'ci' : call.args[0] === 'run' ? 'build' : call.args[0]);
+const successfulStages = ['preflight', 'ci', 'build', 'configure'];
 const assertSuccess = result => assert.equal(result.status, 0, `${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
 
 function assertInstallCalls(calls, f, expectedOptions) {
@@ -106,8 +107,9 @@ function assertInstallCalls(calls, f, expectedOptions) {
   assert.deepEqual(calls.filter(call => call.tool === 'helper').map(call => call.args), [
     ['preflight', ...expectedOptions], ['configure', ...expectedOptions],
   ]);
-  assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'ci').args,
-    ['ci', '--strict-allow-scripts', '--include=dev', '--include=optional']);
+  assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'exec').args,
+    ['exec', '--yes', '--ignore-scripts', `--package=npm@${npmVersion}`, '--', isWindows ? 'npm.cmd' : 'npm',
+      'ci', '--ignore-scripts=false', '--strict-allow-scripts', '--include=dev', '--include=optional']);
   assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'run').args, ['run', 'build']);
   // Compare filesystem identity: Windows accepts both 8.3 and long path names,
   // and Node's JavaScript realpath implementation need not expand the former.
@@ -127,12 +129,12 @@ test('WSL installer preserves literal arguments, installs in order, and never lo
   assertInstallCalls(await f.calls(), f, ['--platform', 'wsl', ...options]);
 });
 
-test('WSL check performs preflight and version checks without installing or configuring', { skip: isWindows }, async t => {
+test('WSL check performs preflight without invoking npm or configuring', { skip: isWindows }, async t => {
   const f = await fixture(t, 'wsl');
   const result = f.run([f.wrapper, '--revision', revision, '--workspace', '/home/user/work', '--check']);
   assertSuccess(result);
   assert.match(result.stdout, /No installation, login or host startup performed/);
-  assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+  assert.deepEqual(stages(await f.calls()), ['preflight']);
 });
 
 for (const phase of successfulStages) {
@@ -144,12 +146,11 @@ for (const phase of successfulStages) {
   });
 }
 
-test('WSL rejects an npm version mismatch before installation', { skip: isWindows }, async t => {
+test('WSL uses cached pinned npm without rejecting a different global npm', { skip: isWindows }, async t => {
   const f = await fixture(t, 'wsl', { npmVersion: '10.0.0' });
   const result = f.run([f.wrapper, '--revision', revision, '--workspace', '/home/user/work']);
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /npm 11\.17\.0 is required/);
-  assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+  assertSuccess(result);
+  assertInstallCalls(await f.calls(), f, ['--platform', 'wsl', '--revision', revision, '--workspace', '/home/user/work']);
 });
 
 for (const tool of ['node', 'npm', 'git']) {
@@ -199,12 +200,24 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 for (const shell of ['powershell.exe', 'pwsh.exe']) {
-  test(`${shell} rejects the real published Windows graph before dependency installation or state writes`, { skip: !isWindows }, async t => {
+  test(`${shell} rejects an explicit legacy 0.2.0 graph before dependency installation or state writes`, { skip: !isWindows }, async t => {
     const f = await fixture(t, 'windows');
-    // Exercise the actual helper against this exact clean CI checkout. The
-    // disposable npm stub records any accidental dependency installation.
-    f.wrapper = join(sourceRoot, 'deploy/windows/install.ps1');
-    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' });
+    // Keep legacy coverage independent of the version currently published.
+    // The actual helper reads this clean disposable checkout, never a stub.
+    const pkg = JSON.parse(await readFile(join(sourceRoot, 'package.json'), 'utf8'));
+    const lock = JSON.parse(await readFile(join(sourceRoot, 'package-lock.json'), 'utf8'));
+    for (const name of Object.keys(pkg.dependencies).filter(name => name.startsWith('@arduano/agent-multiplex-'))) {
+      const url = `https://github.com/arduano/agent-multiplex/releases/download/v0.2.0/${name.slice(1).replace('/', '-')}-0.2.0.tgz`;
+      pkg.dependencies[name] = pkg.overrides[name] = lock.packages[''].dependencies[name] = url;
+      Object.assign(lock.packages[`node_modules/${name}`], { version: '0.2.0', resolved: url });
+    }
+    await writeFile(join(f.checkout, 'package.json'), JSON.stringify(pkg));
+    await writeFile(join(f.checkout, 'package-lock.json'), JSON.stringify(lock));
+    await copyFile(join(sourceRoot, 'scripts/install-copilot-host.mjs'), join(f.checkout, 'scripts/install-copilot-host.mjs'));
+    for (const args of [['init', '--quiet'], ['add', '.'], ['-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Explicit legacy release fixture']]) {
+      assertSuccess(spawnSync('git', args, { cwd: f.checkout, encoding: 'utf8' }));
+    }
+    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: f.checkout, encoding: 'utf8' });
     assertSuccess(commit);
     const installDirectory = join(f.directory, 'never-created-state');
     const { result } = await windowsRun(f, shell, {
@@ -214,6 +227,30 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Windows installation is blocked: published framework 0\.2\.0/);
     assert.deepEqual(await f.calls(), []);
+    await assert.rejects(stat(installDirectory), { code: 'ENOENT' });
+  });
+
+  test(`${shell} accepts the current Windows release preflight without installing or writing state`, { skip: !isWindows }, async t => {
+    const lock = JSON.parse(await readFile(join(sourceRoot, 'package-lock.json'), 'utf8'));
+    if (lock.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].version === '0.2.0') {
+      t.skip('The consumer still pins legacy 0.2.0; enable the public Windows pin to qualify preflight.');
+      return;
+    }
+    const f = await fixture(t, 'windows');
+    f.wrapper = join(sourceRoot, 'deploy/windows/install.ps1');
+    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' });
+    assertSuccess(commit);
+    const directory = await realpath(f.directory);
+    const installDirectory = join(directory, 'never-created-state');
+    const secretFile = join(directory, 'disposable-enrollment');
+    await writeFile(secretFile, 'disposable-installer-wrapper-credential-'.repeat(3));
+    const { result } = await windowsRun(f, shell, {
+      Revision: commit.stdout.trim(), Workspace: [directory], InstallDir: installDirectory,
+      SecretFile: secretFile, GitHubHost: 'github.com', Check: true,
+    });
+    assertSuccess(result);
+    assert.match(result.stdout, /No installation, login or host startup performed/);
+    assert.deepEqual(stages(await f.calls()), []);
     await assert.rejects(stat(installDirectory), { code: 'ENOENT' });
   });
 
@@ -231,7 +268,7 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     const { result } = await windowsRun(f, shell, { Check: true });
     assertSuccess(result);
     assert.match(result.stdout, /No installation, login or host startup performed/);
-    assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+    assert.deepEqual(stages(await f.calls()), ['preflight']);
   });
 
   for (const phase of successfulStages) {
@@ -252,12 +289,11 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     assert.deepEqual(stages(await f.calls()), ['preflight']);
   });
 
-  test(`${shell} rejects an npm version mismatch before installation`, { skip: !isWindows }, async t => {
+  test(`${shell} uses cached pinned npm without rejecting a different global npm`, { skip: !isWindows }, async t => {
     const f = await fixture(t, 'windows', { npmVersion: '10.0.0' });
     const { result } = await windowsRun(f, shell);
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /npm 11\.17\.0 is required/);
-    assert.deepEqual(stages(await f.calls()), ['preflight', 'npm-version']);
+    assertSuccess(result);
+    assert.deepEqual(stages(await f.calls()), successfulStages);
   });
 
   test(`${shell} rejects an invalid revision during parameter binding`, { skip: !isWindows }, async t => {
