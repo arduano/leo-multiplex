@@ -620,3 +620,16 @@ a fresh latency qualification: strict import timing failed under substantial
 background CPU load. Audit mode explicitly labels timings as observations and
 leaves the default thresholds unchanged. The earlier successful timing receipt
 above applies only to its recorded source and environment.
+
+The NAS UI now runs image
+`sha256:456c4ba18cf5adb80984a20663ba82129fb2f3b0de7d47036da9309e1b3758bd`
+from source `f16468f597079ab308539d866ba5e2add3ccbc3c`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/34004585037) passed,
+including the Docker proxy/authentication regression. Only the web container
+was recreated through `compose.cloudflare.yaml`; its prior environment is
+preserved privately as `.env.before-compact-ui`. Host service IDs and start times
+are unchanged. Both origin health checks, connector readiness, public Access
+redirects, Tailscale CLI queries and a catalog WebSocket subscription pass.
+All served entry/dynamic assets match the tested local build; both source and
+browser/layout receipt hashes were checked. Scrubbed, checksummed deployment
+evidence is `receipts/compact-ui-deployment/2026-09-06T01-45-05.295666+00-00`.
