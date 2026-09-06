@@ -9,6 +9,13 @@ more memory, including an unnecessary consumed-replay lifetime.
 This is an audit and follow-up list. The accompanying compact-widget cleanup
 does not implement the memory changes below.
 
+Operator decision, 2026-09-06: roughly 70 MiB of browser heap for this fixture
+is acceptable for now, including retaining inactive conversation data for a few
+minutes. Keep the current browser behavior; immediate collection and a bounded
+transcript page cache are not current priorities. The library's default inactive
+cache TTL is five minutes; this audit measured only the first five seconds after
+switching and did not verify collection at expiry.
+
 ## Evidence and scope
 
 The browser fixture used the production client, Chromium `151.0.7922.173`,
@@ -171,23 +178,21 @@ retained event objects, replay arrays or concurrent HTTP work.
 
 ## Prioritized follow-ups
 
-1. Separate cached query/mutation closures from transcript ownership and add
-   retained-heap checks after repeated session switches, including after a
-   command. Test immediate collection and cache expiry without losing drafts or
-   ambiguous-operation reconciliation state.
-2. Release consumed gateway replay references promptly. Add byte budgets to
+1. Release consumed gateway replay references promptly. Add byte budgets to
    native journals and subscriber queues with explicit gap/reset recovery.
    Make this in the framework and consume a published release; do not patch
    installed dependencies or silently drop events.
-3. Add native latest-first/history-window support, then retain a bounded browser
-   page cache that can reload older history on demand. Include child stores and
-   long individual items. The current oldest-first contract makes reaching the
-   latest require a full forward scan.
-4. Reclaim unused empty draft slots; define aggregate draft and preview budgets,
-   image read concurrency and decoded-image limits while preserving unsent work.
-5. Qualify image-heavy, metadata/interaction-heavy and multiple-observer cases,
+2. Qualify image-heavy, metadata/interaction-heavy and multiple-observer cases,
    and measure the actual deployed process separately. Re-run strict browser
    latency gates on a sufficiently idle machine after memory changes.
+3. Reclaim unused empty draft slots; define aggregate draft and preview budgets,
+   image read concurrency and decoded-image limits while preserving unsent work.
+4. Defer browser transcript memory optimization at the accepted scale. Revisit
+   if retention outlives the intended cache TTL or measured memory becomes a
+   practical problem. Future coverage should verify expiry after repeated
+   session switches and commands without losing drafts or uncertain operations.
+   Native latest-first/history-window support and a reloadable page cache remain
+   options if larger workloads warrant them.
 
 ## Reproduction
 
