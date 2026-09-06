@@ -47,17 +47,34 @@ Earlier candidate/install-blocker notes below are historical evidence, supersede
 by the current published pin and Windows runbook. Deployment state is separate:
 main-pc and NAS keep their existing installed graph and session state.
 
-The NAS gateway is prepared for both work-host control and command enrollment.
-It runs image
-`sha256:4713a94dd65549c452670c547b0bcc4464021beed58000252552cb37173ef6f9`
-from application source `116fe77996706d77d3b2a716a4cc77d80de1fe07`; the handoff
-revision differs only in PowerShell test assertions. Both origins are healthy,
-22 served assets match the tested build, Cloudflare redirects unsigned requests
-to Access, and both existing hosts remain reachable. Personal host control/runtime
-PIDs and start times are unchanged. `exec-hosts` succeeds with an empty list until
-work pairing arrives. The gateway's previous image/configuration/state are backed
-up privately; no host or native session was restarted. Scrubbed, checksummed
-rollout evidence is `receipts/work-install-deployment/2026-09-06T07-10-35Z`.
+The NAS gateway now has **main-pc, home-nas and work-windows** configured and
+online. Windows exposes the corporate Copilot harness and `copilot-workspace`
+launch profile; read-only model discovery returned 21 models. Its separate
+work-command endpoint is enrolled and available, with harmless PowerShell marker
+commands completing from both C:/ and D: with exit 0. The owner still needs to
+restart the Windows foreground host with plain `start` to close enrollment.
+No native agent session or model prompt was created during enrollment.
+
+First work-target startup exposed an omitted gateway bind setting: recovery
+transport advertised the NAS's many Docker interfaces and failed its address
+limit. Source **`83d53d07b994b62666ea928778e1a09110102b6d`** passes
+`LEO_GATEWAY_P2P_BIND` to both transports. The deployed image is
+`sha256:9b734c2df4d9c1d45309948f2c4e1c69fabe56c07ec60c0764752bf0e38e4872`.
+Typecheck/build, 435 application tests, three new composition regression cases,
+shipped-container authentication and Compose DNS/socket/WebSocket checks pass.
+Two timing-sensitive tests failed during a concurrent Docker build; the full
+suite passed with four workers. Deployment evidence is scrubbed/checksummed at
+`receipts/windows-enrollment/2026-09-06T10-20-14Z/`. Tailscale is healthy,
+Cloudflare redirects unsigned requests to Access, and personal control/runtime
+PIDs and start times remain unchanged. Previous image/configuration pins are
+backed up privately on NAS under `backups/windows-enrollment-20260906/`.
+
+Known CLI follow-up: `models` and `launch` still select the Codex `workspace`
+profile for Copilot; web selects `copilot-workspace` correctly. This does not
+affect `exec` or web model discovery/creation. Corporate prompt/suspend UAT and
+WSL installation remain pending. The installer gist keeps its previously tested
+revision; this gateway fix requires no laptop reinstallation.
+
 The existing user `leo-agents` links on main-pc and NAS now use the tested
 work-command CLI. Their previous source checkouts and local operation ledgers
 remain in place; read-only host and command-target queries pass on both.
