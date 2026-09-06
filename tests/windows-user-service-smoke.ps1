@@ -13,7 +13,7 @@ $node = (Get-Command node.exe -CommandType Application | Select-Object -First 1)
 $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $installer = Join-Path $repoRoot 'deploy\windows\service.ps1'
 $runnerSource = Join-Path $repoRoot 'scripts\windows-user-service.mjs'
-$fixtureRoot = Join-Path $env:TEMP ('leo-user-task-' + [guid]::NewGuid().ToString('N'))
+$fixtureRoot = Join-Path $env:RUNNER_TEMP ('leo-user-task-' + [guid]::NewGuid().ToString('N'))
 $installation = Join-Path $fixtureRoot "private installation's"
 $fixtureScript = Join-Path $fixtureRoot 'fixture.mjs'
 $hostName = 'service-smoke-' + [guid]::NewGuid().ToString('N')
@@ -56,7 +56,7 @@ function Invoke-Service([string]$Action, [switch]$ExpectFailure) {
     if ($ExpectFailure) {
         Assert-That ($code -ne 0) "Service $Action unexpectedly succeeded."
     } else {
-        if ($code -ne 0) { Write-Output ($output -join "`n") }
+        if ($code -ne 0) { Write-Host ($output -join "`n") }
         Assert-That ($code -eq 0) "Service $Action failed (exit $code)."
     }
     return ($output -join "`n")
