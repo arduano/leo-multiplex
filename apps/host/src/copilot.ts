@@ -7,12 +7,14 @@ import type { HostConfig } from "./config.js";
 import { privateDirectory } from "./private-state.js";
 
 /** Corporate OAuth owns this process. Ambient personal providers/tokens cannot override it. */
-export function copilotEnvironment(home: string, environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function copilotEnvironment(home: string, environment: NodeJS.ProcessEnv = process.env, githubHost = "github.com"): NodeJS.ProcessEnv {
   return {
     ...Object.fromEntries(Object.entries(environment).filter(([key]) =>
       !/^(LEO_|AGENT_MULTIPLEX_|CODEX_|OPENAI_|ANTHROPIC_|AZURE_OPENAI_|COPILOT_)/i.test(key)
       && !/^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(key))),
     COPILOT_HOME: home,
+    COPILOT_AUTO_UPDATE: "false",
+    COPILOT_GH_HOST: githubHost,
   };
 }
 
@@ -32,7 +34,7 @@ export function copilotClientOptions(config: HostConfig, environment: NodeJS.Pro
   return {
     mode: "copilot-cli", connection: RuntimeConnection.forStdio({ path: copilotExecutable() }),
     baseDirectory: config.copilotHome, workingDirectory: config.stateDirectory,
-    useLoggedInUser: true, env: copilotEnvironment(config.copilotHome, environment), logLevel: "error",
+    useLoggedInUser: true, env: copilotEnvironment(config.copilotHome, environment, config.copilotGithubHost), logLevel: "error",
   };
 }
 

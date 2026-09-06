@@ -14,7 +14,7 @@ async function fixture() { const path = await mkdtemp(join(tmpdir(), "leo-copilo
 
 it("uses local Windows state and configurable roots without needing Codex configuration", () => {
   const config = hostConfig({ USERPROFILE: "C:\\Users\\Leo", LOCALAPPDATA: "C:\\Users\\Leo\\AppData\\Local", LEO_HARNESS: "copilot", LEO_ALLOWED_ROOTS: '["C:\\\\Work","D:\\\\Projects"]' }, "win32");
-  expect(config.stateDirectory).toBe("C:\\Users\\Leo\\AppData\\Local\\leo-multiplex");
+  expect(config.stateDirectory).toBe("C:\\Users\\Leo\\AppData\\Local\\leo-multiplex-copilot");
   expect(config.copilotHome).toBe(`${config.stateDirectory}\\copilot`);
   expect(config.allowedRoots).toEqual(["C:\\Work", "D:\\Projects"]);
   expect(config.enrollGateways).toBe(false);
@@ -32,7 +32,7 @@ it("withholds all ambient provider/token overrides while preserving corporate pr
     LEO_SECRET: "fixture", AGENT_MULTIPLEX_SECRET: "fixture", CODEX_HOME: "/ordinary", OPENAI_API_KEY: "fixture",
     copilot_provider_base_url: "case-insensitive-fixture",
   });
-  expect(env).toEqual({ HOME: "/home/fixture", PATH: "/bin", HTTPS_PROXY: "http://proxy.invalid", NODE_EXTRA_CA_CERTS: "/corp.pem", COPILOT_HOME: "/private/copilot" });
+  expect(env).toEqual({ HOME: "/home/fixture", PATH: "/bin", HTTPS_PROXY: "http://proxy.invalid", NODE_EXTRA_CA_CERTS: "/corp.pem", COPILOT_HOME: "/private/copilot", COPILOT_AUTO_UPDATE: "false", COPILOT_GH_HOST: "github.com" });
 });
 
 it("builds only a lazy Copilot adapter with isolated OAuth and no terminal or provider override", async () => {

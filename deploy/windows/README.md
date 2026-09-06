@@ -48,7 +48,7 @@ Set the same configuration in each shell that manages the host:
 ```powershell
 $env:LEO_HOST_NAME = 'work-laptop'
 $env:LEO_HARNESS = 'copilot'
-$env:LEO_STATE_DIR = Join-Path $env:LOCALAPPDATA 'leo-multiplex'
+$env:LEO_STATE_DIR = Join-Path $env:LOCALAPPDATA 'leo-multiplex-copilot'
 $env:LEO_ALLOWED_ROOTS = '["C:\\Work"]'
 ```
 
@@ -80,14 +80,20 @@ your normal local file management. The retained state copy stays private.
 Login opens Copilot's native browser flow. Verify the **corporate GitHub account**
 there. Organization SSO, seat assignment and CLI policy remain GitHub/company
 decisions. Device-code login is available with `login --device-code`. Enterprise
-Cloud data residency can use `login --host https://company.ghe.com`; use the exact
-hostname supplied by the company. Ordinary github.com needs no host option.
+Cloud data residency uses `$env:LEO_COPILOT_GITHUB_HOST = 'company.ghe.com'` in
+every host-management shell; use the exact hostname supplied by the company.
+That setting applies consistently to login, doctor and runtime startup and
+overrides ambient `GH_HOST`. Ordinary github.com needs no setting.
 
-The login command and SDK use the same `%LOCALAPPDATA%\leo-multiplex\copilot`
+The login command and SDK use the same `%LOCALAPPDATA%\leo-multiplex-copilot\copilot`
 home. Copilot owns OAuth refresh and its OS credential-store behavior; Leo does
 not copy or parse those credentials. Ambient GitHub tokens, `COPILOT_PROVIDER_*`,
 Codex and OpenAI provider variables are removed from this child process so they
 cannot override the sign-in. Standard proxy and CA variables remain available.
+Successful login records only the account name and GitHub host in a private
+account binding. Doctor and start compare the current identity against it and
+refuse `gh` CLI fallback or a switched account; login again to deliberately
+change accounts. Native auto-update is disabled for both login and runtime.
 
 ## Start and pair
 

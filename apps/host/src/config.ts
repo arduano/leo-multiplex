@@ -13,6 +13,7 @@ export interface HostConfig {
   readonly harness: "codex" | "copilot";
   readonly allowedRoots: readonly string[];
   readonly copilotHome: string;
+  readonly copilotGithubHost: string;
 }
 
 export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platform = process.platform): HostConfig {
@@ -22,7 +23,7 @@ export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platfor
   if (harness !== "codex" && harness !== "copilot") throw new Error("LEO_HARNESS must be codex or copilot");
   const state = environment.LEO_STATE_DIR ?? join(platform === "win32"
     ? environment.LOCALAPPDATA ?? join(userHome, "AppData", "Local")
-    : environment.XDG_STATE_HOME ?? join(userHome, ".local/state"), "leo-multiplex");
+    : environment.XDG_STATE_HOME ?? join(userHome, ".local/state"), harness === "copilot" ? "leo-multiplex-copilot" : "leo-multiplex");
   const source = environment.LEO_CODEX_CONFIG_FILE ?? join(userHome, ".codex/config.toml");
   if (!isAbsolute(state) || (harness === "codex" && !isAbsolute(source))) throw new Error("Leo state and Codex config paths must be absolute");
   if (platform === "win32" && !/^[a-z]:[\\/]/i.test(state)) throw new Error("Windows state must use an absolute path on a local drive");
@@ -34,6 +35,8 @@ export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platfor
   if (!Array.isArray(roots) || roots.length === 0 || roots.some(root => typeof root !== "string" || !isAbsolute(root))) {
     throw new Error("LEO_ALLOWED_ROOTS must be a nonempty JSON array of absolute directories");
   }
+  const copilotGithubHost = environment.LEO_COPILOT_GITHUB_HOST ?? "github.com";
+  if (!/^(github\.com|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.ghe\.com)$/.test(copilotGithubHost)) throw new Error("LEO_COPILOT_GITHUB_HOST must be github.com or the corporate Enterprise Cloud hostname");
   const port = Number(environment.LEO_CONTROL_HTTP_PORT ?? "4317");
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("LEO_CONTROL_HTTP_PORT must be a valid port");
   const enrollment = environment.LEO_ENROLL_GATEWAYS ?? "0";
@@ -52,5 +55,6 @@ export function hostConfig(environment: NodeJS.ProcessEnv = process.env, platfor
     harness,
     allowedRoots: roots.map(root => resolve(root as string)),
     copilotHome: join(resolve(state), "copilot"),
+    copilotGithubHost,
   };
 }
