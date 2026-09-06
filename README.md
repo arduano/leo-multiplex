@@ -30,7 +30,7 @@ npm test
 npm run build
 ```
 
-Dependencies pin the public Agent Multiplex 0.2.0 release with exact tarball
+Dependencies pin the public Agent Multiplex 0.2.1 release with exact tarball
 integrities. See [implementation status](docs/Implementation-Status.md) for
 verification and deployment progress. Do not mix protocol-v4 0.1.0 packages with
 this application.

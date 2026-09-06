@@ -12,12 +12,16 @@ import { hostConfig } from '../dist/apps/host/src/config.js';
 import { runManagedHost } from '../dist/apps/host/src/manage.js';
 import { privateDirectory, writePrivateFile } from '../dist/apps/host/src/private-state.js';
 import { UnrestrictedWorkspacePolicy } from '../dist/apps/host/src/workspace-policy.js';
+import { readPublishedWindowsQualification } from '../scripts/qualify-published-windows.mjs';
 
 assert.equal(process.platform, 'win32');
 assert.equal(process.arch, 'x64');
 const personalSource = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const frameworkSource = process.env.LEO_QUALIFICATION_FRAMEWORK_SHA;
 assert.match(frameworkSource ?? '', /^[a-f0-9]{40}$/);
+const frameworkRelease = process.env.LEO_QUALIFICATION_RELEASE_MANIFEST
+  ? await readPublishedWindowsQualification(process.cwd(), process.env.LEO_QUALIFICATION_RELEASE_MANIFEST, frameworkSource)
+  : undefined;
 // CI's explicit second drive catches accidental C:-only configurations.
 const root = await mkdtemp(join(process.env.GITHUB_ACTIONS ? 'D:\\' : tmpdir(), 'leo-windows-host-'));
 const state = join(root, 'state');
@@ -110,13 +114,14 @@ try {
   console.log = savedLog; console.error = savedError;
   await rm(root, { recursive: true, force: true });
 }
-const receipt = { result: 'passed', personalSource, frameworkSource,
+const receipt = { result: 'passed', personalSource, frameworkSource, frameworkRelease,
   personalLockSha256: createHash('sha256').update(await readFile('package-lock.json')).digest('hex'),
   node: process.version, platform: process.platform, arch: process.arch, checks, modelCalls: 0,
-  scope: 'source-candidate Windows composition only; public dependency pin is unchanged; corporate login/network/model UAT excluded',
+  scope: frameworkRelease
+    ? 'published-artifact Windows composition; corporate login/network/model UAT excluded'
+    : 'source-candidate Windows composition only; public dependency pin is unchanged; corporate login/network/model UAT excluded',
 };
-// The work-only executor needs the same candidate ACL/storage exports as the
-// complete native host. Qualify its actual journal/process path in this job too.
+// Qualify the work-only executor against the same dependency boundary as the host.
 await import('./windows-work-command-smoke.mjs');
 checks.push('work command journal, output, deduplication, cancellation and process-job cleanup');
 const output = join('receipts', 'windows-host', new Date().toISOString().replaceAll(':', '-'));

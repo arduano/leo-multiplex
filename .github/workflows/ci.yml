@@ -11,6 +11,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  windows-host-published:
+    uses: ./.github/workflows/windows-published.yml
   application:
     runs-on: ubuntu-24.04
     timeout-minutes: 25

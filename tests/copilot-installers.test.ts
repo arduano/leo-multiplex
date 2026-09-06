@@ -95,11 +95,12 @@ it('rejects shared WSL state filesystems outside the conventional /mnt prefix', 
   expect(() => validateWslFilesystem('/home/leo/shared drive/state', mount('/home/leo/shared\\040drive', '9p'))).toThrow('shared mount');
 });
 
-it('gates Windows on the published release before private-state work, and rejects mutable dependencies', async () => {
+it('validates the current public graph and rejects mutable dependencies', async () => {
   const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
   const lock = JSON.parse(await readFile(join(source, 'package-lock.json'), 'utf8'));
-  expect(validateRelease(pkg, lock, 'wsl')).toBe('0.2.0');
-  expect(() => validateRelease(pkg, lock, 'windows')).toThrow('Windows installation is blocked');
+  const pinned = lock.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].version;
+  expect(validateRelease(pkg, lock, 'wsl')).toBe(pinned);
+  if (pinned !== '0.2.0') expect(validateRelease(pkg, lock, 'windows')).toBe(pinned);
   const modified = structuredClone(lock);
   modified.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].resolved = 'file:../candidate.tgz';
   expect(() => validateRelease(pkg, modified, 'wsl')).toThrow('public release');
@@ -109,6 +110,19 @@ it('gates Windows on the published release before private-state work, and reject
   const linked = structuredClone(lock);
   linked.packages['node_modules/untrusted'] = { link: true, resolved: '../candidate' };
   expect(() => validateRelease(pkg, linked, 'wsl')).toThrow('immutable');
+});
+
+it.each(['0.2.0', '0.2.1'])('preserves the Windows release boundary with an explicit %s graph', async version => {
+  const pkg = JSON.parse(await readFile(join(source, 'package.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(join(source, 'package-lock.json'), 'utf8'));
+  for (const name of Object.keys(pkg.dependencies).filter(name => name.startsWith('@arduano/agent-multiplex-'))) {
+    const url = `https://github.com/arduano/agent-multiplex/releases/download/v${version}/${name.slice(1).replace('/', '-')}-${version}.tgz`;
+    pkg.dependencies[name] = pkg.overrides[name] = lock.packages[''].dependencies[name] = url;
+    Object.assign(lock.packages[`node_modules/${name}`], { version, resolved: url });
+  }
+  expect(validateRelease(pkg, lock, 'wsl')).toBe(version);
+  if (version === '0.2.0') expect(() => validateRelease(pkg, lock, 'windows')).toThrow('Windows installation is blocked: published framework 0.2.0');
+  else expect(validateRelease(pkg, lock, 'windows')).toBe(version);
 });
 
 it('checks the exact clean checkout instead of accepting a moving branch or tracked edits', () => {

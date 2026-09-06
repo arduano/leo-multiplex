@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -199,12 +199,24 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 for (const shell of ['powershell.exe', 'pwsh.exe']) {
-  test(`${shell} rejects the real published Windows graph before dependency installation or state writes`, { skip: !isWindows }, async t => {
+  test(`${shell} rejects an explicit legacy 0.2.0 graph before dependency installation or state writes`, { skip: !isWindows }, async t => {
     const f = await fixture(t, 'windows');
-    // Exercise the actual helper against this exact clean CI checkout. The
-    // disposable npm stub records any accidental dependency installation.
-    f.wrapper = join(sourceRoot, 'deploy/windows/install.ps1');
-    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' });
+    // Keep legacy coverage independent of the version currently published.
+    // The actual helper reads this clean disposable checkout, never a stub.
+    const pkg = JSON.parse(await readFile(join(sourceRoot, 'package.json'), 'utf8'));
+    const lock = JSON.parse(await readFile(join(sourceRoot, 'package-lock.json'), 'utf8'));
+    for (const name of Object.keys(pkg.dependencies).filter(name => name.startsWith('@arduano/agent-multiplex-'))) {
+      const url = `https://github.com/arduano/agent-multiplex/releases/download/v0.2.0/${name.slice(1).replace('/', '-')}-0.2.0.tgz`;
+      pkg.dependencies[name] = pkg.overrides[name] = lock.packages[''].dependencies[name] = url;
+      Object.assign(lock.packages[`node_modules/${name}`], { version: '0.2.0', resolved: url });
+    }
+    await writeFile(join(f.checkout, 'package.json'), JSON.stringify(pkg));
+    await writeFile(join(f.checkout, 'package-lock.json'), JSON.stringify(lock));
+    await copyFile(join(sourceRoot, 'scripts/install-copilot-host.mjs'), join(f.checkout, 'scripts/install-copilot-host.mjs'));
+    for (const args of [['init', '--quiet'], ['add', '.'], ['-c', 'user.name=Installer Test', '-c', 'user.email=installer@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Explicit legacy release fixture']]) {
+      assertSuccess(spawnSync('git', args, { cwd: f.checkout, encoding: 'utf8' }));
+    }
+    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: f.checkout, encoding: 'utf8' });
     assertSuccess(commit);
     const installDirectory = join(f.directory, 'never-created-state');
     const { result } = await windowsRun(f, shell, {
@@ -214,6 +226,30 @@ for (const shell of ['powershell.exe', 'pwsh.exe']) {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Windows installation is blocked: published framework 0\.2\.0/);
     assert.deepEqual(await f.calls(), []);
+    await assert.rejects(stat(installDirectory), { code: 'ENOENT' });
+  });
+
+  test(`${shell} accepts the current Windows release preflight without installing or writing state`, { skip: !isWindows }, async t => {
+    const lock = JSON.parse(await readFile(join(sourceRoot, 'package-lock.json'), 'utf8'));
+    if (lock.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].version === '0.2.0') {
+      t.skip('The consumer still pins legacy 0.2.0; enable the public Windows pin to qualify preflight.');
+      return;
+    }
+    const f = await fixture(t, 'windows');
+    f.wrapper = join(sourceRoot, 'deploy/windows/install.ps1');
+    const commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' });
+    assertSuccess(commit);
+    const directory = await realpath(f.directory);
+    const installDirectory = join(directory, 'never-created-state');
+    const secretFile = join(directory, 'disposable-enrollment');
+    await writeFile(secretFile, 'disposable-installer-wrapper-credential-'.repeat(3));
+    const { result } = await windowsRun(f, shell, {
+      Revision: commit.stdout.trim(), Workspace: [directory], InstallDir: installDirectory,
+      SecretFile: secretFile, GitHubHost: 'github.com', Check: true,
+    });
+    assertSuccess(result);
+    assert.match(result.stdout, /No installation, login or host startup performed/);
+    assert.deepEqual(stages(await f.calls()), ['npm-version']);
     await assert.rejects(stat(installDirectory), { code: 'ENOENT' });
   });
 

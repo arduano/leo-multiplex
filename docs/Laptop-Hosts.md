@@ -9,8 +9,7 @@ scheduled task or background service and do not change installed personal hosts.
 The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
 checkout at the exact revision in the installation handoff, then run these
 installers. They preserve existing source and state; keep their source checkout
-for the saved launcher. Windows still requires the published framework update
-described in its runbook.
+for the saved launcher. Windows uses the published framework `0.2.1` graph qualified in its runbook.
 Both installed work profiles also provide the bespoke
 [command recovery service](Work-Host-Commands.md). The CLI is its normal entry
 point; web exposes it only as an experimental App settings hatch.
@@ -75,7 +74,7 @@ Cloudflare Access authenticates the browser edge, independently of host pairing.
 
 ## Laptop acceptance
 
-After Windows' framework release gate clears, check both OS hosts together:
+After installation, check both OS hosts together:
 
 - Corporate login, model discovery, distinct host names and directory selection,
   including a Windows workspace on `D:/`.

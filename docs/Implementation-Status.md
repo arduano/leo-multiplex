@@ -2,34 +2,27 @@
 
 ## Installation handoff and gateway readiness
 
-The [code-only secret gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
-contains pinned download scripts and first-pairing instructions. Its installation
-revision is `38e796288440ae6cedf2bd0e4a91e3fcee1fdea2`, with passing
-[application and Windows CI](https://github.com/arduano/leo-multiplex/actions/runs/34021072909).
-Fourteen Linux bootstrap checks and 28 native PowerShell checks pass, alongside
-the existing 14 WSL/22 Windows installer checks and five Windows shell checks.
-A disposable Linux run using WSL detection also fetched the actual public source,
-installed locked dependencies, built, saved a launcher/work-command marker and
-passed rerun preflight without workspace arguments, login, startup or model calls.
-The installer now defaults to any operator-selected existing absolute directory.
-WSL uses `/`; Windows uses a static personal path policy across drives including
-`D:/...`, later mounts and UNC shares, without enumerating drives at installation.
-Optional workspace values deliberately retain narrower admission. Private state,
-auth, image confinement and personal host profiles remain separate. Physical laptop
-auth/network/suspend checks remain the operator's UAT.
+The work-host installers now pin all 16 published framework `0.2.1` artifacts,
+with exact URLs, overrides and locked integrities. The signed release completed
+[publication](https://github.com/arduano/agent-multiplex/actions/runs/34023552031)
+after exact-main CI, CodeQL, deterministic Docker, Windows startup and the
+owner-authorized five-minute live native soak. It does not requalify the
+15-minute transport renewal boundary. Existing installed personal host services
+and native sessions were preserved.
 
-WSL can install the published Linux graph. Native Windows remains blocked until
-framework `0.2.1` is published and this consumer pins its artifacts. Framework
-candidate `f2c0339404bb174c22d9dab11a83557f05858856` passes its
-[Windows host/executor checks](https://github.com/arduano/agent-multiplex/actions/runs/34021094217),
-609 tests, package CI and deterministic Docker qualification. The Windows run
-starts its private host state on `D:\`, validates both drive-letter path styles,
-registers/restarts the unrestricted runtime, and runs commands on both `C:` and
-`D:`. Source-matched checksummed receipts are retained at
-`receipts/unrestricted-windows/38e7962/`. UNC admission is covered with Windows
-path fixtures; corporate share connectivity remains a device check.
-The required exact-main live release qualification still needs fresh model-use
-authorization; no source overlay is used for installation.
+The new published Windows CI verifies the release inventory and executes the
+actual installer on disposable `D:` state, saved launcher help, secret-copy and
+rerun behavior, then host/executor checks across C:/D:. It uses no source overlay,
+corporate credentials or model calls. The
+[installer gist](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+owns the final tested installation revision and workflow links; use that exact
+revision for installation. Corporate OAuth/network/share/suspend behavior
+remains laptop UAT. Windows uses a static unrestricted personal path policy;
+optional workspace arguments opt into narrower roots.
+
+Earlier candidate/install-blocker notes below are historical evidence, superseded
+by the current published pin and Windows runbook. Deployment state is separate:
+main-pc and NAS keep their existing installed graph and session state.
 
 The NAS gateway is prepared for both work-host control and command enrollment.
 It runs image

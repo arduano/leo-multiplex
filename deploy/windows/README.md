@@ -7,26 +7,19 @@ The laptop owns its control catalog, runtime journals and native session state.
 
 ## Release status
 
-**Do not install this as a working native Windows host yet.** The currently pinned
-public framework graph (`0.2.0`) lacks Windows private-state support. Its update
-is prepared in the framework repository, with a native Windows CI smoke. The
-personal host fails closed when that update is missing. A qualified framework
-patch release and this consumer's exact dependency update are required before
-these instructions become the installation handoff. Linux tests and browser
-fixtures alone do not establish Windows support.
+The host pins the published framework **0.2.1** artifacts, including Windows
+private-state support and trusted runtime path-policy injection. The
+[downloadable installer handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
+records the exact installation revision.
 
-The source candidate passed [native Windows CI](https://github.com/arduano/agent-multiplex/actions/runs/34021094217):
-framework `f2c0339404bb174c22d9dab11a83557f05858856` with personal host
-`38e796288440ae6cedf2bd0e4a91e3fcee1fdea2`. The run checks private state, SQLite,
-uploaded-image retention, SDK startup, full control/runtime registration, graceful
-stop, a restart with enrollment closed, and nine real disposable work-command
-executor checks including output, deduplication, cancellation and child cleanup.
-The unrestricted host uses private state on `D:\` and the command checks execute
-from both `C:` and `D:`; forward-slash `D:/...` input is explicitly checked.
-It uses no corporate credentials,
-creates no native conversation, and sends no prompts. Its checksummed receipts
-are attached to that run. This source overlay is CI-only; installation still
-requires published framework artifacts.
+[Published Windows qualification](https://github.com/arduano/leo-multiplex/actions/workflows/ci.yml) runs checks for all 16 public
+artifact integrities, executes the actual installer on disposable `D:` state,
+verifies saved private configuration and launcher help, removes the transfer
+secret, and passes rerun preflight using the saved copy. The same run verifies
+host registration, graceful stop/restart with enrollment closed, directory
+selection across C:/D: and nine real harmless work-command executor checks.
+There is no source overlay, corporate login or model call in this qualification.
+Corporate OAuth/network/share/suspend behavior remains laptop UAT.
 
 The first target is Windows x64, Node 24, a local NTFS state directory, and an
 interactive standard-user login. Windows ARM64 has no pinned Iroh binary. The
@@ -48,11 +41,11 @@ git clone https://github.com/arduano/leo-multiplex.git
 cd leo-multiplex
 git checkout --detach $Revision
 
-# Check first; current public framework 0.2.0 deliberately stops here.
+# Check the exact public dependency graph and local prerequisites first.
 .\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret' -Check
 
-# After the release gate clears, install dependencies, build and save the host.
+# Install dependencies, build and save the host.
 .\deploy\windows\install.ps1 -Revision $Revision `
   -SecretFile 'C:\Private\leo-fleet-secret'
 ```
@@ -191,4 +184,4 @@ PowerShell, normal account access and no profile or execution-policy override.
 App settings offers a separate **Experimental work commands** hatch. Copilot
 startup failure leaves recovery online; OS/network/private-state failure does
 not. See [limits, pairing and interrupted-command recovery](../../docs/Work-Host-Commands.md).
-The Windows framework release gate above still applies to the complete host.
+The complete host uses the qualified published framework graph recorded above.

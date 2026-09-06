@@ -7,8 +7,9 @@ review the script before running it; no credential belongs in a download URL or
 a gist. GitHub secret gists are unlisted, not access-controlled.
 
 The [current downloadable handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
-contains the exact tested revision and installation commands. It distinguishes
-WSL installation from the native Windows package-release gate.
+contains the exact tested revision and installation commands. Both OS installers use the published `0.2.1` framework artifacts. Use the new
+source directory in that handoff if an older failed preflight already prepared
+the default checkout; the old checkout remains intact.
 
 ```powershell
 .\install-windows.ps1 -Revision '<full 40-character tested revision>' `

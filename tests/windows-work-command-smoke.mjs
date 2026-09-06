@@ -1,5 +1,5 @@
 // Native harmless process checks; no authentication, native agents or model calls.
-// Run after npm run build and the CI-only tested Windows framework overlay.
+// Run after npm run build, with either the published graph or explicit CI candidate.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
