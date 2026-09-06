@@ -15,7 +15,7 @@ import type {
 } from "@arduano/agent-multiplex-protocol";
 
 import { errorMessage, useApi } from "./api.js";
-import { Button, Dialog, Field, Input, Select } from "./ui.js";
+import { Button, Dialog, Field, Input, Select, classes } from "./ui.js";
 import { forgetOperation, listOperations, reconcileOperation, saveOperation } from "./operation-recovery.js";
 
 export function SpawnDialog({
@@ -105,7 +105,8 @@ export function SpawnDialog({
   });
   const availableProfiles = useMemo(
     () => (launchProfiles.data ?? []).filter((profile) =>
-      profile.available && profile.harnesses.includes(harness) && profile.providerId === "leo.local" && profile.profileId === "workspace"
+      profile.available && profile.harnesses.includes(harness) && profile.providerId === "leo.local" &&
+      profile.profileId === (harness === "codex" ? "workspace" : "copilot-workspace")
     ),
     [harness, launchProfiles.data],
   );
@@ -140,6 +141,9 @@ export function SpawnDialog({
   useEffect(() => {
     if (launchAttempt.current) return;
     setModel("");
+    setMode(harness === "copilot" ? "interactive" : "default");
+    setEffort("");
+    setStatus("");
   }, [runtimeId, harness, profileId]);
 
 
@@ -207,8 +211,7 @@ export function SpawnDialog({
         : {
             cwd: trimmedCwd,
             ...(model ? { model } : {}),
-            ...(effort ? { reasoningEffort: effort } : {}),
-            mode: mode === "default" ? "interactive" : mode as "plan" | "autopilot",
+            mode: mode === "plan" || mode === "autopilot" ? mode : "interactive",
           };
       const request = launchAttempt.current ?? await launchRequest(
         runtime.runtimeNodeId,
@@ -266,7 +269,9 @@ export function SpawnDialog({
   return (
     <Dialog
       title="New agent"
-      description="Choose a folder and start a Codex session. Full access, no approval prompts."
+      description={harness === "copilot"
+        ? "Choose a folder and start Copilot with the GitHub account signed in on this host."
+        : "Choose a folder and start a Codex session. Full access, no approval prompts."}
       testId="spawn-dialog"
     >
       <form className="grid gap-5 p-4 sm:p-6" onSubmit={submit} data-testid="spawn-form">
@@ -275,7 +280,7 @@ export function SpawnDialog({
             Your host is offline. Reconnect it to start a session.
           </div>
         ) : null}
-        <div className="grid gap-4">
+        <div className={classes("grid gap-4", availableHarnesses.length > 1 && "sm:grid-cols-2")}>
           <Field label="Host">
             <span className="relative">
               <Server className="pointer-events-none absolute left-3 top-2.5 size-4 text-[var(--text-muted)]" aria-hidden="true" />
@@ -294,10 +299,17 @@ export function SpawnDialog({
                 }}
                 data-testid="spawn-runtime-select"
               >
-                {eligible.map((node) => <option key={node.runtimeNodeId} value={node.runtimeNodeId}>{node.name}</option>)}
+                {eligible.map((node) => <option key={node.runtimeNodeId} value={node.runtimeNodeId}>{node.name} · {node.harnesses.filter(entry => entry.available).map(entry => entry.harness === "copilot" ? "Copilot" : "Codex").join(", ")}</option>)}
               </Select>
             </span>
           </Field>
+          {availableHarnesses.length > 1 ? (
+            <Field label="Agent">
+              <Select disabled={launchPending} value={harness} onChange={event => setHarness(event.target.value as Harness)} data-testid="spawn-harness-select">
+                {availableHarnesses.map(entry => <option key={entry.harness} value={entry.harness}>{entry.harness === "copilot" ? "Copilot" : "Codex"}</option>)}
+              </Select>
+            </Field>
+          ) : null}
         </div>
         <Field label="Working directory" hint="an existing folder on this host">
           <span className="relative">
@@ -306,7 +318,7 @@ export function SpawnDialog({
               required
               disabled={launchPending}
               className="pl-9 font-mono text-sm"
-              placeholder="/home/arduano/programming/…"
+              placeholder="Full path to your project folder"
               value={cwd}
               onChange={(event) => setCwd(event.target.value)}
               list="allowed-roots"
@@ -317,7 +329,7 @@ export function SpawnDialog({
             </datalist>
           </span>
         </Field>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className={classes("grid gap-4", harness === "codex" ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
           <Field label="Model">
             <Select
               value={model}
@@ -331,12 +343,12 @@ export function SpawnDialog({
           </Field>
           <Field label="Mode">
             <Select disabled={launchPending} value={mode} onChange={(event) => setMode(event.target.value)} data-testid="spawn-mode-select">
-              <option value="default">Interactive</option>
+              <option value={harness === "codex" ? "default" : "interactive"}>{harness === "codex" ? "Agent" : "Interactive"}</option>
               <option value="plan">Plan</option>
               {harness === "copilot" ? <option value="autopilot">Autopilot</option> : null}
             </Select>
           </Field>
-          <Field label="Reasoning effort">
+          {harness === "codex" ? <Field label="Reasoning effort">
             <Select disabled={launchPending} value={effort} onChange={(event) => setEffort(event.target.value)} data-testid="spawn-effort-select">
               <option value="">Host default</option>
               <option value="low">Low</option>
@@ -346,7 +358,7 @@ export function SpawnDialog({
               <option value="max">Max</option>
               <option value="ultra">Ultra</option>
             </Select>
-          </Field>
+          </Field> : null}
         </div>
         {models.isError ? (
           <p className="text-xs text-[var(--status-error)]" role="alert">
@@ -356,6 +368,11 @@ export function SpawnDialog({
         {launchProfiles.isError ? (
           <p className="text-xs text-[var(--status-error)]" role="alert">
             This host is not ready to start an agent. Refresh and try again.
+          </p>
+        ) : null}
+        {runtime && harnessIsAvailable && launchProfiles.isSuccess && !availableProfiles.length ? (
+          <p className="text-xs text-[var(--status-waiting)]" role="status">
+            This host has no available {harness === "copilot" ? "Copilot" : "Codex"} workspace profile. Check its host setup.
           </p>
         ) : null}
         <Field label="Name" hint="optional">

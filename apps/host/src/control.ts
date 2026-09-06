@@ -7,6 +7,7 @@ import { type ActionScope } from "@arduano/agent-multiplex-protocol";
 
 import { hostConfig, type HostConfig } from "./config.js";
 import { assertIsolatedState } from "./codex-config.js";
+import { prepareCopilotHome } from "./copilot.js";
 import { privateDirectory, sharedSecret, writePrivateFile } from "./private-state.js";
 
 export const OPERATOR_SCOPES: readonly ActionScope[] = ["read", "agent-launch", "agent-archive", "agent-control", "terminal-view", "terminal-control", "metadata-propose"];
@@ -24,8 +25,9 @@ export async function writeControlArtifacts(config: HostConfig, secret: string, 
   await writePrivateFile(join(config.stateDirectory, "gateway-pairing.json"), JSON.stringify({ version: 1, sharedSecret: secret, sources: [source] }) + "\n");
 }
 
-export async function runHostControl(config: HostConfig, signal: AbortSignal): Promise<void> {
-  await assertIsolatedState(config.codexConfigFile, config.stateDirectory);
+export async function runHostControl(config: HostConfig, signal: AbortSignal, ready?: () => void): Promise<void> {
+  if (config.harness === "codex") await assertIsolatedState(config.codexConfigFile, config.stateDirectory);
+  else await prepareCopilotHome(config);
   const secret = await sharedSecret(config.stateDirectory);
   const controlDirectory = join(config.stateDirectory, "control");
   await privateDirectory(controlDirectory);
@@ -44,7 +46,7 @@ export async function runHostControl(config: HostConfig, signal: AbortSignal): P
     upstreamHeartbeatMs: 10_000, reconnectMaxMs: 30_000,
   }, signal, {
     printTicket: false,
-    onReady: (info) => writeControlArtifacts(config, secret, info),
+    onReady: async (info) => { await writeControlArtifacts(config, secret, info); ready?.(); },
   });
 }
 

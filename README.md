@@ -1,11 +1,16 @@
 # Leo Multiplex
 
-Leo's personal Codex workspace, built on Agent Multiplex protocol v5.
+Leo's personal agent workspace, built on Agent Multiplex protocol v5.
 
 Each host owns its canonical session catalog and Codex runtime. The web application
 on home-nas connects to those hosts through a zero-authority gateway. The first
 host is main-pc, running as `arduano` with full account access in the selected
 existing working directory.
+
+A corporate GitHub Copilot host path is being prepared for Windows x64. It has
+separate GitHub sign-in, local `leo-host` commands, and a native Copilot launch
+profile. The [Windows runbook](deploy/windows/README.md) records the current
+framework release gate, installation steps, diagnostics and laptop UAT limits.
 
 **Existing Codex and tmux sessions are outside this application's ownership.**
 Setup, tests, deployment, and shutdown never adopt or terminate them. All managed
