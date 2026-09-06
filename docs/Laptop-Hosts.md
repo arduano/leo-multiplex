@@ -6,6 +6,11 @@ gateway observes all four. Install from the
 [Windows](../deploy/windows/README.md) or [WSL](../deploy/wsl/README.md) runbook.
 Start in foreground terminals for initial testing. The installers create no
 scheduled task or background service and do not change installed personal hosts.
+The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
+checkout at the exact revision in the installation handoff, then run these
+installers. They preserve existing source and state; keep their source checkout
+for the saved launcher. Windows still requires the published framework update
+described in its runbook.
 Both installed work profiles also provide the bespoke
 [command recovery service](Work-Host-Commands.md). The CLI is its normal entry
 point; web exposes it only as an experimental App settings hatch.

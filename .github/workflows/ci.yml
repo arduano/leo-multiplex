@@ -29,6 +29,8 @@ jobs:
       - run: npm run typecheck && npm test && npm run build
       - name: Verify WSL installer wrapper with disposable tool stubs
         run: node --test tests/installer-wrappers.mjs
+      - name: Verify WSL installation bootstrap with disposable local Git sources
+        run: node --test tests/installation-bootstraps.mjs
       - name: Build deployment container
         run: docker build --tag leo-multiplex:ci .
       - name: Exercise shipped assets and fail-closed authentication
@@ -52,6 +54,9 @@ jobs:
         # No package installation, native host, authentication or model calls.
         # The real helper's Windows release gate remains enforced separately.
         run: node --test tests/installer-wrappers.mjs
+      - name: Verify Windows PowerShell and PowerShell installation bootstraps
+        # Git fetches use only disposable local repositories; no host is started.
+        run: node --test tests/installation-bootstraps.mjs
       - name: Verify work-command PowerShell exit codes and descendant cleanup
         # Exact shell helper only; no framework overlay or model/auth calls.
         run: node tests/windows-work-shell-smoke.mjs
