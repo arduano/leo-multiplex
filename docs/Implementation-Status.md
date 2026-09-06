@@ -761,3 +761,18 @@ regressions cover external two-host creation, pagination, retained selection
 and drafts, both conversations, early missing links, missed status events and
 initial history recovery. No real model calls or production session mutations
 are part of this verification.
+
+The tested fix source `9637bdf` is deployed on NAS as
+`sha256:7ab0b821d20536e5fbe89286557d5fa55b00c1007077b153bc6d05245ba9c135`
+through `compose.cloudflare.yaml`; only its web/gateway container was recreated.
+The private `.env.before-session-state-*` backup retains the previous image.
+All served assets match the production build (HTML comparison removes the
+per-response CSP nonce). Read-only browser checks show both existing sessions,
+their native history and the two-row phone list. Main-pc and NAS control/runtime
+PIDs are unchanged, and public unauthenticated access still redirects to
+Cloudflare Access.
+
+Final browser evidence is `receipts/browser/2026-09-06T04-54-38.097Z`
+(62 checks across six viewports). The scrubbed, checksummed rollout receipt is
+`receipts/session-state-deployment/2026-09-06T04-57-55.834Z`.
+The separate fix review is [PR #2](https://github.com/arduano/leo-multiplex/pull/2).
