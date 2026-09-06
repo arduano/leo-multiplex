@@ -8,14 +8,25 @@ work-windows** installed from service source
 logon and Limited privilege, no password/elevation, no battery stop and no
 execution timeout. The owner supplied the runner lifecycle confirming takeover:
 waiting ended at 11:08:07 UTC and the same runner recorded `running` at 11:08:13.
-The Windows runtime is reachable again, and the owner confirmed both UDP 49117
-and 49121 belong to the same host process. **Remote command recovery is still
-unavailable**, including after a NAS gateway restart. A 20-second gateway probe
-timed out before reaching transport peer authentication. The saved work ticket
-has no relay route and includes temporary IPv6 ports; stale routing remains a
-hypothesis pending the current laptop pairing. The direct installed doctor
-passes corporate authentication and discovers 21 models. The task calls the
-existing launcher with plain `start`, closing enrollment.
+The Windows runtime and **remote commands are now available**. A harmless remote
+command returned the same active background run with exit code 0. The owner
+confirmed UDP 49117 and 49121 belong to the same host process; the direct
+installed doctor passes corporate authentication and discovers 21 models.
+The task calls the existing launcher with plain `start`, closing enrollment.
+
+The handoff exposed a command-routing defect. The original ticket retained IPv6
+port 64400; the background host used 57469, with unchanged IPv4 routes and IPv6
+addresses. Both tickets lacked a relay route. After privately transferring the
+current ticket, its signature and unchanged endpoint were verified and only
+the Windows command locator was replaced in gateway configuration. An exclusive
+probe with the enrolled gateway identity timed out after 12 seconds using the
+old ticket, then authenticated using the new ticket in 47 ms. Gateway composition
+was restored afterward. The scoped passing receipt is
+`receipts/windows-user-service-deployment/2026-09-06T11-45-28Z/`.
+**Automatic work-command route renewal remains unimplemented**; future restarts
+or network changes can require another private locator refresh. Initial probes
+using disposable identities were inconclusive because the work host rejects
+unenrolled peers; they are not evidence of the root cause.
 The installed host source remains
 `0e79d73fc093f7a039694d9686b04c0b5be7c997`; identity, state and Copilot auth were
 preserved. Signed out/asleep is offline; locking or closing unrelated terminals

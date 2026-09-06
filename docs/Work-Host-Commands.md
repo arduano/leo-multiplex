@@ -102,6 +102,17 @@ Retain the gateway's private `work-commands/endpoint.key` and the host's endpoin
 `host-binding.json`, `gateway-peer.json`, and command journal together across
 restarts. An offline target stays visible; another host is never selected for it.
 
+Work-command locators currently have no automatic renewal. The ordinary control
+connection has its own renewal path, so a visible agent host does not prove its
+command route is current. A restart can change the implicitly bound IPv6 port
+even though the configured IPv4 port stays fixed. If command access stops after
+restart, privately transfer the running host's
+`<host-state>/work-command-pairing.json`, verify its signed ticket and unchanged
+source/platform/endpoint, and replace only that work host's locator in the
+gateway pairing configuration before restarting the gateway. Back up the private
+configuration first. Keep host identity, enrollment and journals intact; the
+ordinary pairing merger rejects duplicate sources and is not a refresh tool.
+
 All four HTTP routes (`hosts`, `submit`, `get`, `cancel`) under
 `/api/work-commands/` use the existing authenticated gateway listener and require
 `terminal-control`, including output reads. Mutations require the existing exact
