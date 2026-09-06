@@ -3,6 +3,7 @@
 // helper/tool subprocesses are replaced. Run with node --test on Linux or Windows.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -108,7 +109,8 @@ function assertInstallCalls(calls, f, expectedOptions) {
   assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'ci').args,
     ['ci', '--strict-allow-scripts', '--include=dev', '--include=optional']);
   assert.deepEqual(calls.find(call => call.tool === 'npm' && call.args[0] === 'run').args, ['run', 'build']);
-  for (const call of calls) assert.equal(call.cwd.toLowerCase(), f.checkout.toLowerCase());
+  // Windows temp paths may use 8.3 names while Node's cwd expands them.
+  for (const call of calls) assert.equal(realpathSync(call.cwd).toLowerCase(), realpathSync(f.checkout).toLowerCase());
 }
 
 test('WSL installer preserves literal arguments, installs in order, and never logs in or starts a host', { skip: isWindows }, async t => {
