@@ -6,10 +6,10 @@ let
   };
   codex = stdenv.mkDerivation {
     pname = "leo-codex";
-    version = "0.152.0";
+    version = "0.153.4";
     src = fetchurl {
-      url = "https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz";
-      hash = "sha512-Isn/g5EZTaNbwZtaIuz67U1FNDEVVeMpS4xiR+c1dpOPL2xxrGNtdAothOW2YKsb96OsS+QfClziFb4qxesWDA==";
+      url = "https://registry.npmjs.org/@openai/codex/-/codex-0.153.4-linux-x64.tgz";
+      hash = "sha512-x1EcwBlY3AObM1VTUHNM2AzAJQsyreGdagpF+qFiYi/Oa30VBktvvG0C6tLtCzqW6hjZNWkGZQWmeVk7MuJKWg==";
     };
     nativeBuildInputs = [ autoPatchelfHook ];
     buildInputs = [ stdenv.cc.cc.lib ncurses ];

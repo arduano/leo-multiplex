@@ -702,3 +702,21 @@ checksummed deployment evidence is
 `receipts/pwa-deployment/2026-09-06T03-08-02.078598+00-00`.
 Physical Android installation, OS keyboard/camera behavior and external FCM
 background delivery remain the operator's device check.
+
+## Managed Codex update — 2026-09-06
+
+The personal Nix host now pins Codex CLI 0.153.4 using the npm release's exact
+SHA-512 integrity. This is the latest stable release on the
+[official changelog](https://developers.openai.com/codex/changelog/) and npm's
+`latest` tag at verification time; 0.154 prereleases are excluded. The ordinary
+CLI on main-pc and home-nas was already 0.153.4, while their separately packaged
+managed app servers still ran 0.152.0.
+
+The published framework adapter stays at 0.2.0. Its packaged compatibility
+metadata still describes the framework's 0.152.0 release baseline; executable
+`--version` and running process paths determine the personal host's installed
+Codex version. Isolated native checks against both the ordinary and Nix-patched
+0.153.4 executable pass initialization, model/mode catalogs, empty-thread creation,
+metadata reads, acknowledged mode/effort changes and shutdown through the released
+adapter. No prompt/model call or production thread was used for these checks.
+The Nix binary receipt is `receipts/codex-upgrade/2026-09-06T03-25-04.128Z`.

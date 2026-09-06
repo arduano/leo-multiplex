@@ -4,7 +4,7 @@ The personal React UI, gateway process supervision, and CLI client usage derive 
 Multiplex by Arduano, under its MIT license. Its browser dependency notices are retained in
 `apps/web/THIRD_PARTY_LICENSES.txt` and shipped with the static assets.
 
-Codex CLI is pinned independently to 0.152.0. Codex's Apache-2.0 license and NOTICE
+The personal Nix host pins Codex CLI independently to 0.153.4. Codex's Apache-2.0 license and NOTICE
 ship in its upstream distribution and the Agent Multiplex Codex adapter package.
 Node, node-pty, Iroh, and other native components retain their upstream licenses
 in the dependency artifacts. Cloudflare integration uses the `jose` library for
