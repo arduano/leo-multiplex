@@ -38,6 +38,7 @@ export async function runPersonalServer(environment: NodeJS.ProcessEnv, signal: 
   try {
     if (workHosts.length > 0) workCommands = await createWorkCommandsGateway({
       stateDirectory: join(state, "work-commands"), sharedSecret: pairing.sharedSecret, hosts: workHosts,
+      ...(environment.LEO_GATEWAY_P2P_BIND === undefined ? {} : { bindAddress: environment.LEO_GATEWAY_P2P_BIND }),
     });
     await runPersonalGateway({
       sharedSecret: pairing.sharedSecret, identityPath: join(state, "gateway.identity"),

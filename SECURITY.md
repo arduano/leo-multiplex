@@ -107,8 +107,8 @@ browser origin; requests supplying another origin are rejected even for GETs.
 Duplicate authentication headers are rejected. Missing authentication fails
 closed and switching modes never enables unauthenticated access.
 
-The NAS transport binds to its configured Tailscale address instead of
-automatically advertising all Docker bridge interfaces. This is a local socket
+Both NAS control and work-command transports bind to the configured Tailscale
+address instead of automatically advertising all Docker bridge interfaces. This is a local socket
 choice; source endpoint pins, enrollment, shared-secret authentication, and
 zero-authority projection remain enforced by the published framework packages.
 

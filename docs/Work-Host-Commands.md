@@ -91,6 +91,9 @@ Install a gateway image containing this feature before merging these new
 pairings. With each host running `start --enroll`, run `leo-agents exec-hosts` and
 verify that host is available **before** stopping it and restarting without
 `--enroll`. This enrolls both the normal control connection and recovery sidecar.
+The NAS uses `LEO_GATEWAY_P2P_BIND` for both connections, avoiding automatic
+advertisement of its many Docker bridge interfaces. With port `0`, each
+connection receives its own ephemeral local port on the configured address.
 Retain the gateway's private `work-commands/endpoint.key` and the host's endpoint,
 `host-binding.json`, `gateway-peer.json`, and command journal together across
 restarts. An offline target stays visible; another host is never selected for it.
