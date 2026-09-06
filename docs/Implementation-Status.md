@@ -776,3 +776,29 @@ Final browser evidence is `receipts/browser/2026-09-06T04-54-38.097Z`
 (62 checks across six viewports). The scrubbed, checksummed rollout receipt is
 `receipts/session-state-deployment/2026-09-06T04-57-55.834Z`.
 The separate fix review is [PR #2](https://github.com/arduano/leo-multiplex/pull/2).
+
+### Four hosts and laptop sleep — 2026-09-06
+
+Four independent sources now have explicit browser coverage with 100 sessions,
+including colliding native thread/item IDs, host-specific models, drafts,
+history, live events, pagination and six viewport sizes. The fixture repeats
+simultaneous Windows/WSL outages three times with staggered recovery; always-on
+hosts stay usable, unavailable session rows/drafts remain, and reconnects send
+no agent commands. A separate integration test uses the published real role
+services with mock adapters to verify host-specific launch/command/history
+routing and repeated two-source outages without changing authority or identity.
+
+The audit fixed two offline edges: a disappearing launch target previously
+selected another host automatically, and a cached direct-link session outside
+the visible list could retain enabled controls after losing its source. The
+launch form now preserves the selected host and directory while unavailable;
+direct links use the same source-availability protection as listed sessions.
+Agent search also includes the displayed host name.
+
+Typechecking, 342 tests, production/container builds and shipped-container smoke
+pass. General browser evidence is `receipts/browser/2026-09-06T05-07-26.784Z`
+(63 checks); four-host evidence is
+`receipts/browser-multi-host/2026-09-06T05-09-39.462Z` (14 checks).
+These are deterministic UI/role-service checks, not physical Windows/WSL
+suspend/network qualification. The [NAS runbook](../deploy/nas/README.md#hosts-that-sleep-or-disconnect)
+owns persistent identity, multi-host pairing and reconnect guidance.

@@ -176,14 +176,17 @@ function Dashboard() {
 
   const selectedRow = rows.find((row) => row.session.sessionId === selectedId);
   const selected = selectedRow?.session ?? (directSession.data?.sessionId === selectedId ? directSession.data : null);
-  const selectedStale = (selectedRow?.stale ?? false) || !projectionFresh;
+  const selectedStale = !projectionFresh || (selectedRow?.stale ?? Boolean(selected && (
+    directSession.isError || !sources.data?.some(source => source.state === "selected" &&
+      source.manifest?.coveredControlNodeIds.includes(selected.metadataAuthority.controlNodeId))
+  )));
   const watchedIds = mobileState.data?.watchedSessionIds ?? [];
   const filteredRows = useMemo(() => {
     const needle = deferredSearch.trim().toLocaleLowerCase();
     return [...rows]
-      .filter(({ session }) => (!needle || sessionSearchText(session).includes(needle)) && (!mobile || matchesAgentFilter(session, filter, watchedIds)))
+      .filter(({ session }) => (!needle || sessionSearchText(session, runtimeNodes.data?.find(node => node.runtimeNodeId === session.runtimeNodeId)?.name).includes(needle)) && (!mobile || matchesAgentFilter(session, filter, watchedIds)))
       .sort((left, right) => Number(left.stale) - Number(right.stale) || sessionRank(left.session) - sessionRank(right.session) || right.session.updatedAt.localeCompare(left.session.updatedAt));
-  }, [deferredSearch, rows, mobile, filter, watchedIds]);
+  }, [deferredSearch, rows, mobile, filter, watchedIds, runtimeNodes.data]);
 
   const globalStatus = description.isPending ? "connecting" : connected ? "connected" : "connection failed";
 
@@ -274,7 +277,7 @@ function Dashboard() {
             />
           )}
           center={<div className="flex h-full min-h-0 flex-col">
-            {selectedRow?.stale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
+            {selected && selectedStale && projectionFresh ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
             {selectedId && !selected ? <div className="grid min-h-0 flex-1 place-items-center p-5 text-sm text-[var(--text-secondary)]" role="status">{directSession.isError || directSession.isSuccess ? "This agent is unavailable. Return to Agents to choose another." : "Opening agent…"}</div> : null}
             {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} onNewSession={() => setSpawnOpen(true)} /> : null}
           </div>}
@@ -767,8 +770,8 @@ function sessionTitle(session: SessionRecord): string {
     : `${session.harness} · ${shortId(session.sessionId)}`;
 }
 
-function sessionSearchText(session: SessionRecord): string {
-  return [sessionTitle(session), session.harness, session.cwd, session.sessionId, session.runtimeNodeId]
+function sessionSearchText(session: SessionRecord, runtimeName?: string): string {
+  return [sessionTitle(session), session.harness, session.cwd, session.sessionId, session.runtimeNodeId, runtimeName]
     .filter(Boolean)
     .join(" ")
     .toLocaleLowerCase();

@@ -312,6 +312,17 @@ try {
   // must recover through its own poll while the session stays outside search.
   await page.getByTestId("agent-working-indicator").waitFor({ state: "detached" });
   assert(linkedSessionRequests > beforeLinkedPoll, "A missed selected-link event did not recover through polling");
+  await page.getByTestId("prompt-input").fill("Keep my direct-link draft while the laptop sleeps.");
+  nasSource.state = "unavailable";
+  await refresh();
+  await page.getByTestId("stale-session-notice").waitFor();
+  assert.equal(await page.getByTestId("send-button").isDisabled(), true, "An exact-ID session outside search remained writable after its source went offline");
+  await waitPrompt("Keep my direct-link draft while the laptop sleeps.");
+  nasSource.state = "selected";
+  await refresh();
+  await page.getByTestId("stale-session-notice").waitFor({ state: "detached" });
+  await waitPrompt("Keep my direct-link draft while the laptop sleeps.");
+  checks.push({ name: "an exact-ID session outside search retains its draft and becomes read-only while its owning source is unavailable", passed: true });
   assert.equal(mutations.length, beforeExternalSession, "Recovering a newly shared session link sent an agent command");
   checks.push({ name: "a newly shared session link with an initial missing record recovers on its control event without reloading or requiring a search row", passed: true });
   checks.push({ name: "selected session links track live status changes and recover a deliberately missed event through polling", passed: true });

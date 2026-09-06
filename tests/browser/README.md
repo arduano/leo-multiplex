@@ -53,6 +53,18 @@ This qualifies browser behavior against disposable API fixtures; server Access
 authentication, real runtime routing, and native Codex require their separate
 integration suites.
 
+`node tests/browser/multi-host.mjs` exercises four independent control sources
+with 100 sessions, deliberately colliding native IDs, host-specific models,
+isolated drafts/history/live events, and six viewport sizes. It also checks
+host-name search, a disconnected launch target, empty source pages, and repeated
+simultaneous Windows/WSL laptop outages with staggered recovery. No navigation,
+reconnect, or model discovery may dispatch a command. Passing source/screenshot
+hashes are under `receipts/browser-multi-host/`.
+`tests/four-host-routing.test.ts` separately exercises the published real
+gateway/control/runtime services with disposable mock agents, including
+owner-specific commands/history and repeated two-source outages. Neither fixture
+qualifies physical laptop sleep or native Windows/WSL networking.
+
 `node tests/browser/long-thread.mjs` builds the production client into an
 isolated receipt directory and opens a disposable 50,000-turn / 100,001-item
 conversation. It uses the published oldest-first 100-item native paging
