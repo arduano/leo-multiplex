@@ -12,7 +12,7 @@ private-state support and trusted runtime path-policy injection. The
 [downloadable installer handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
 records the exact installation revision.
 
-[Published Windows qualification](https://github.com/arduano/leo-multiplex/actions/workflows/ci.yml) runs checks for all 16 public
+[Published Windows qualification](https://github.com/arduano/leo-multiplex/actions/runs/34024286247) runs checks for all 16 public
 artifact integrities, executes the actual installer on disposable `D:` state,
 verifies saved private configuration and launcher help, removes the transfer
 secret, and passes rerun preflight using the saved copy. The same run verifies
