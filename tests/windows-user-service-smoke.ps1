@@ -94,11 +94,13 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 if (mode === 'setup') {
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim();
+  const lock = JSON.parse(await readFile(join(source, 'package-lock.json'), 'utf8'));
+  const frameworkVersion = lock.packages['node_modules/@arduano/agent-multiplex-storage-sqlite'].version;
   await helper.privateDirectory(installation);
   await helper.privateDirectory(state);
   const config = {
     version: 1, platform: 'windows', sourceRoot: source, revision,
-    frameworkVersion: '0.2.1', installDirectory: installation,
+    frameworkVersion, installDirectory: installation,
     environment: {
       LEO_HARNESS: 'copilot', LEO_STATE_DIR: state, LEO_HOST_NAME: hostName,
       LEO_ALLOWED_ROOTS: '"*"', LEO_COPILOT_GITHUB_HOST: 'github.com',
