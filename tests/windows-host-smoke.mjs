@@ -29,7 +29,7 @@ try {
   const port = server.address().port;
   await new Promise(resolve => server.close(resolve));
   const config = hostConfig({ ...process.env, LEO_HARNESS: 'copilot', LEO_HOST_NAME: 'windows-smoke',
-    LEO_STATE_DIR: state, LEO_ALLOWED_ROOTS: JSON.stringify([root]), LEO_CONTROL_HTTP_PORT: String(port), LEO_CONTROL_P2P_BIND: '127.0.0.1:0',
+    LEO_STATE_DIR: state, LEO_ALLOWED_ROOTS: JSON.stringify([root]), LEO_CONTROL_HTTP_PORT: String(port), LEO_CONTROL_P2P_BIND: '0.0.0.0:0',
   });
   let firstIdentity, previousBoot;
   for (const enroll of [true, false]) {
@@ -48,6 +48,9 @@ try {
         : /inventory/i.test(line) ? 'inventory'
         : /metadata/i.test(line) ? 'metadata' : 'other';
       if (!observed.errorKinds.includes(kind)) observed.errorKinds.push(kind);
+      const vocabulary = new Set('connection connect lost retrying failed failure invalid missing unsupported limit exceeded dial address addresses endpoint bootstrap locator ticket parse protocol handshake authorize unauthorized permission denied refused unreachable timeout request response function undefined method stream closed aborted'.split(' '));
+      const words = (line.toLowerCase().match(/\b[a-z]+\b/g) ?? []).filter(word => vocabulary.has(word)).slice(0, 20).join(' ');
+      if (words && !observed.errorKinds.includes(words)) observed.errorKinds.push(words);
     };
     const running = runManagedHost({ ...config, enrollRuntimes: enroll, enrollGateways: false }, abort.signal)
       .then(() => { outcome = 'stopped'; }, () => { outcome = 'failed'; });
