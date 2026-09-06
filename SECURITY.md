@@ -22,6 +22,15 @@ new host imports it privately before startup and closes enrollment after pairing
 The current public framework pin does not yet contain these Windows changes;
 the [Windows runbook](deploy/windows/README.md) describes the release gate.
 
+The Windows/WSL installers require a clean checkout at an explicit commit and
+locked public dependency artifacts. Each OS keeps a separate private installation,
+catalog, native auth home and transport identity; WSL state stays on its Linux
+filesystem. Saved launchers refuse conflicting profile environment overrides.
+The scripts import the fleet credential from a file and never log its contents,
+log in, start enrollment, install global tools or create background services.
+Normal foreground startup keeps enrollment closed; first pairing explicitly
+uses `start --enroll`. Exact reruns preserve the saved identity and configuration.
+
 Select exactly one authentication mode per listener. In Cloudflare mode, Access assertions are
 verified at the origin using RS256, the configured issuer, application audience,
 expiry, subject, and allowed email. WebSocket lifetime is limited by JWT expiry.

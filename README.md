@@ -7,10 +7,11 @@ on home-nas connects to those hosts through a zero-authority gateway. The first
 host is main-pc, running as `arduano` with full account access in the selected
 existing working directory.
 
-A corporate GitHub Copilot host path is being prepared for Windows x64. It has
-separate GitHub sign-in, local `leo-host` commands, and a native Copilot launch
-profile. The [Windows runbook](deploy/windows/README.md) records the current
-framework release gate, installation steps, diagnostics and laptop UAT limits.
+Work hosts use corporate GitHub Copilot; personal hosts use Codex. The
+[Windows installer](deploy/windows/README.md) and [WSL installer](deploy/wsl/README.md)
+prepare separate identities, saved configuration and foreground launchers for
+the two laptop hosts. The Windows runbook records the pending framework release
+gate; neither installer signs in or starts a host automatically.
 
 **Existing Codex and tmux sessions are outside this application's ownership.**
 Setup, tests, deployment, and shutdown never adopt or terminate them. All managed

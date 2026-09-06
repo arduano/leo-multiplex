@@ -1,5 +1,40 @@
 # Implementation status — 2026-09-06
 
+## Windows and WSL installer candidate
+
+The [Windows PowerShell installer](../deploy/windows/install.ps1) and
+[WSL Bash installer](../deploy/wsl/install.sh) prepare corporate Copilot hosts
+named `work-windows` and `work-wsl`. They use separate private state, native
+account bindings, saved configuration and ports. Personal Codex remains on the
+existing hosts. The [laptop runbook](Laptop-Hosts.md) owns installation, first
+enrollment, preserving existing NAS sources and the physical-device checks.
+
+Setup requires an explicit clean source revision, public artifact integrity,
+native x64 Node/Git, the pinned npm version and an existing work directory.
+It imports the fleet credential by file path and creates a persistent launcher;
+login and foreground startup are separate commands. Exact reruns preserve state,
+conflicting configuration/credentials are rejected, and enrollment remains closed
+unless the operator explicitly starts with `--enroll`. No global tool, execution
+policy, firewall, scheduled task or installed personal service is changed.
+
+The published framework pin remains `0.2.0`; native Windows installation rejects
+that graph before dependencies or state are written. These scripts do not bypass
+the release gate using a source overlay. WSL uses the Linux packages, while both
+hosts still need corporate auth/network/laptop UAT. The installer branch also
+contains the already deployed multi-host session fixes; it has not been deployed
+over the running NAS gateway or personal hosts.
+
+Local typecheck, all 378 tests and the production build pass, including 25
+installer tests for private state, same-revision reruns, active-writer refusal,
+source drift, account/environment isolation and graceful console shutdown.
+The standalone shell suite passes 14 WSL wrapper cases and includes native
+Windows PowerShell/PowerShell cases in CI, without installing model dependencies.
+Combined browser evidence passes 70 checks at
+`receipts/browser/2026-09-06T05-31-44.699Z` and 14 four-host checks at
+`receipts/browser-multi-host/2026-09-06T05-29-17.537Z`. The merge's browser fixtures
+now use distinct NAS/Windows runtime IDs. No model calls or corporate credentials
+were used, and no installed host or existing session was changed.
+
 ## Corporate Copilot candidate
 
 The Windows x64 Copilot path is prepared on `copilot-windows-host`, with
