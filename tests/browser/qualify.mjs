@@ -89,7 +89,19 @@ function emitNative(nativeType, payload) {
   for (const subscription of subscriptions) if (subscription.input?.includeNative && subscription.input.sessions?.includes?.(session.sessionId)) subscription.socket.send(JSON.stringify({ id: subscription.id, result: { type: "data", data } }));
 }
 await page.route("**/auth/check", (route) => route.fulfill({ status: login ? 204 : 401, body: "" }));
-await page.route("**/auth/session", (route) => route.fulfill({ status: login ? 200 : 401, contentType: "application/json", body: JSON.stringify({ method: "tailscale" }) }));
+await page.route("**/auth/session", (route) => route.fulfill({ status: login ? 200 : 401, contentType: "application/json", body: JSON.stringify({ method: "tailscale", storageScope: "a".repeat(43) }) }));
+const watchedSessionIds = new Set();
+const watchChanges = [];
+await page.route("**/api/mobile/**", (route) => {
+  const pathname = new URL(route.request().url()).pathname;
+  if (pathname.startsWith("/api/mobile/watches/") && route.request().method() === "PUT") {
+    const sessionId = decodeURIComponent(pathname.slice("/api/mobile/watches/".length));
+    const { watched } = route.request().postDataJSON();
+    if (watched) watchedSessionIds.add(sessionId); else watchedSessionIds.delete(sessionId);
+    watchChanges.push({ sessionId, watched });
+  }
+  return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ devices: [], watchedSessionIds: [...watchedSessionIds], delivery: { pending: 0 } }) });
+});
 await page.route("**/trpc/**", async (route) => {
   const request = route.request();
   const url = new URL(request.url());
@@ -124,6 +136,8 @@ await page.route("**/trpc/**", async (route) => {
           break;
         }
         data = { harness: "codex", vendorSessionId: session.vendorSessionId, complete: true, payload: { encoding: "native-json-images-v1", images: [], json: { data: [{ turnId: "turn-fixture", item: { type: "userMessage", id: "user-fixture", content: [{ type: "text", text: "Check that my draft survives a host reconnect." }] } }, { turnId: "turn-fixture", item: { type: "agentMessage", id: "assistant-fixture", text: "The conversation remains visible while the host reconnects.\n\n- Preserve your draft\n- Keep stale sessions labeled\n- Resume actions after reconnection\n\n```text\n/work/disposable/long-directory-name/verification/unchanged-operation-identity\n```" } }], nextCursor: null } } }; break;
+      case "commands.get": data = null; break;
+      case "sessions.get": data = input === other.sessionId ? other : session; break;
       case "sessions.execute":
         commands.push(input);
         if (commands.length === 1) return route.abort("failed");
@@ -214,7 +228,7 @@ try {
   await page.locator('[data-native-item-id="assistant-fixture"]').waitFor();
   checks.push({ name: "reloading a created session with no catalog summary restores its history", passed: true });
   const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPioAAAAASUVORK5CYII=", "base64");
-  await page.locator('input[type="file"]').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
+  await page.getByTestId('image-file-input').setInputFiles({ name: "tailscale-http.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove tailscale-http.png" }).waitFor();
   await page.getByRole("button", { name: "Remove tailscale-http.png" }).click();
   checks.push({ name: "image attachment without HTTPS-only crypto APIs", passed: true });
@@ -379,11 +393,54 @@ try {
     if (width < 960 || (width < 1280 && height < 500)) {
       await page.getByTestId("agents-sheet-button").click();
       await page.getByTestId("session-card").waitFor();
-      await page.keyboard.press("Escape");
-      await page.waitForFunction(() => document.querySelector('[data-testid="agents-sheet-button"]') === document.activeElement);
+      await page.getByTestId("mobile-agents-home").waitFor();
+      await page.getByTestId("session-card").click();
+      await page.getByTestId("mobile-conversation").waitFor();
     }
   }
   await page.setViewportSize({ width: 390, height: 844 });
+  const domainMutationsBeforeWatch = mutations.length;
+  await page.getByTestId("watch-agent-button").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="watch-agent-button"]')?.getAttribute("aria-pressed") === "true");
+  assert.deepEqual(watchChanges.at(-1), { sessionId: session.sessionId, watched: true });
+  await page.getByTestId("agents-sheet-button").click();
+  const filters = page.getByTestId("mobile-agent-filters");
+  await filters.waitFor();
+  await filters.getByRole("button", { name: "Watched", exact: true }).click();
+  await page.getByTestId("session-card").waitFor();
+  assert.equal(await page.getByTestId("session-card").count(), 1);
+  await filters.getByRole("button", { name: "Needs input", exact: true }).click();
+  await page.getByText("No agents match this filter.", { exact: true }).waitFor();
+  session.runtimeStatus = "waitingForInput";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByTestId("session-card").waitFor();
+  assert.match(await page.getByTestId("session-card").innerText(), /Needs you/);
+  await filters.getByRole("button", { name: "Working", exact: true }).click();
+  await page.getByText("No agents match this filter.", { exact: true }).waitFor();
+  session.runtimeStatus = "running";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByTestId("session-card").waitFor();
+  assert.match(await page.getByTestId("session-card").innerText(), /Working/);
+  session.runtimeStatus = "idle";
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByText("No agents match this filter.", { exact: true }).waitFor();
+  await filters.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByTestId("session-card").click();
+  await page.getByTestId("inspector-sheet-button").click();
+  await page.getByRole("dialog").waitFor();
+  await page.goBack();
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.match(page.url(), /#\/agents\//, "Android Back left the conversation instead of closing Details");
+  await page.getByTestId("watch-agent-button").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="watch-agent-button"]')?.getAttribute("aria-pressed") === "false");
+  assert.deepEqual(watchChanges.at(-1), { sessionId: session.sessionId, watched: false });
+  await page.getByTestId("agents-sheet-button").click();
+  await filters.getByRole("button", { name: "Watched", exact: true }).click();
+  await page.getByText("No agents match this filter.", { exact: true }).waitFor();
+  await filters.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByTestId("session-card").click();
+  assert.equal(mutations.length, domainMutationsBeforeWatch, "Watch preferences or navigation issued an agent mutation");
+  checks.push({ name: "phone watched filters update immediately, unwatch removes the row, and Android Back dismisses Details before leaving the conversation", passed: true });
   const originalDraft = await page.getByTestId("prompt-input").inputValue();
   await page.getByTestId("prompt-input").fill("One line");
   const oneLineHeight = (await page.getByTestId("prompt-input").boundingBox()).height;
@@ -403,7 +460,7 @@ try {
   await page.setViewportSize({ width: 1720, height: 1180 });
   online = false; await refresh();
   await page.getByTestId("stale-session-notice").waitFor();
-  await waitEnabled("prompt-input", false);
+  await waitEnabled("prompt-input", true); await waitEnabled("send-button", false);
   assert.equal(await page.getByTestId("session-card").count(), 1);
   assert.equal(await page.getByTestId("session-card").getAttribute("data-stale"), "true");
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "A draft that must survive reconnects");
@@ -417,11 +474,11 @@ try {
   await waitEnabled("metadata-save", true);
   checks.push({ name: "host reconnect retains rows and drafts without mutations", passed: true });
 
-  gateway = false; await refresh(); await waitEnabled("prompt-input", false);
+  gateway = false; await refresh(); await waitEnabled("prompt-input", true); await waitEnabled("send-button", false);
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "A draft that must survive reconnects");
   gateway = true; await refresh(); await waitEnabled("prompt-input", true);
   checks.push({ name: "gateway reconnect preserves workspace", passed: true });
-  login = false; await refresh(); await waitEnabled("prompt-input", false);
+  login = false; await refresh(); await waitEnabled("prompt-input", true); await waitEnabled("send-button", false);
   await page.getByText("Your sign-in expired.", { exact: false }).waitFor();
   await screenshot("expired-login");
   login = true; await refresh(); await waitEnabled("prompt-input", true);
@@ -429,7 +486,7 @@ try {
   showOther = true; await refresh();
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).waitFor();
   await page.getByTestId("prompt-input").fill("Draft belonging to the first agent");
-  await page.locator('input[type="file"]').setInputFiles({ name: "retained-draft.png", mimeType: "image/png", buffer: image });
+  await page.getByTestId('image-file-input').setInputFiles({ name: "retained-draft.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove retained-draft.png" }).waitFor();
   await page.getByTestId("session-card").filter({ hasText: "Another disposable agent" }).click();
   await page.locator('[data-native-item-id="other-reply"]').waitFor();
@@ -458,6 +515,7 @@ try {
   await waitEnabled("send-button", false);
   assert.equal(commands.length, 1, "Switching retried an uncertain command automatically");
   await page.getByTestId("reconcile-command").evaluate((button) => { button.click(); button.click(); });
+  await page.getByTestId("retry-command").click();
   await page.waitForFunction(() => document.querySelector('[data-testid="prompt-input"]')?.value === "");
   assert.equal(commands.length, 2);
   assert.deepEqual(commands[1], commands[0], "Reconciliation changed the original command envelope");
@@ -600,7 +658,7 @@ try {
   await page.getByTestId("prompt-input").press("Escape");
   checks.push({ name: "slash validation and accessible keyboard completion stay local and preserve invalid drafts", passed: true });
 
-  await page.locator('input[type="file"]').setInputFiles({ name: "slash-draft.png", mimeType: "image/png", buffer: image });
+  await page.getByTestId('image-file-input').setInputFiles({ name: "slash-draft.png", mimeType: "image/png", buffer: image });
   await page.getByRole("button", { name: "Remove slash-draft.png" }).waitFor();
   await submitSlash("/plan");
   await eventually(() => commands.length === beforeSlash + 1, "Plan command was not dispatched");
@@ -668,6 +726,7 @@ try {
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "/model fixture-fast");
   await waitEnabled("send-button", false);
   await page.getByTestId("reconcile-command").click();
+  await page.getByTestId("retry-command").click();
   await page.getByTestId("agent-settings-button").filter({ hasText: "Fixture fast" }).waitFor();
   await page.getByTestId("reconcile-command").waitFor({ state: "detached" });
   assert.equal(commands.length, beforeDroppedSetting + 2);

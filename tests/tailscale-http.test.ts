@@ -36,7 +36,7 @@ describe("Tailscale HTTP/WebSocket edge", () => {
     const url = await fixture(false, publicOrigin);
     const headers = { ...trusted(), origin: publicOrigin };
     expect((await fetch(`${url}/auth/check`, { headers, method: "POST" })).status).toBe(204);
-    expect(await (await fetch(`${url}/auth/session`, { headers })).json()).toEqual({ method: "tailscale" });
+    expect(await (await fetch(`${url}/auth/session`, { headers })).json()).toEqual({ method: "tailscale", storageScope: expect.stringMatching(/^[\w-]{43}$/) });
     expect((await fetch(`${url}/auth/check`, { headers: { ...headers, "Tailscale-User-Login": "other@example.test" } })).status).toBe(401);
     for (const origin of ["https://100.100.20.30:8080", "http://100.100.20.30", "http://100.100.20.31:8080"]) {
       expect((await fetch(`${url}/auth/check`, { method: "POST", headers: { ...trusted(), origin } })).status).toBe(401);
@@ -59,7 +59,7 @@ describe("Tailscale HTTP/WebSocket edge", () => {
     expect(body).toContain('"dataAuthority":"none"');
     expect((await fetch(`${url}/auth/session`)).status).toBe(401);
     const session = await fetch(`${url}/auth/session`, { headers: trusted() });
-    expect(await session.json()).toEqual({ method: "tailscale" });
+    expect(await session.json()).toEqual({ method: "tailscale", storageScope: expect.stringMatching(/^[\w-]{43}$/) });
     expect(session.headers.get("cache-control")).toBe("no-store");
     expect((await fetch(`${url}/auth/check`, { headers: trusted() })).status).toBe(204);
     expect((await fetch(`${url}/trpc/sessions.stop`, { method: "POST", headers: trusted(), body: "{}" })).status).toBe(401);

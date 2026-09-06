@@ -87,3 +87,26 @@ owner-only destination files. See [the CLI runbook](docs/Agent-CLI.md).
 
 Report issues privately to the repository owner. Supply redacted versions and
 reproduction steps using disposable state, not raw production logs or databases.
+
+The Android PWA caches only a build-owned static shell, hashed assets and icons.
+Authenticated HTML/CSP nonces, auth responses, RPC traffic, runtime images and
+transcripts are excluded. Offline HTML receives a fresh stylesheet nonce and
+restrictive CSP. Updates wait for explicit activation after durable draft flush.
+Local drafts and exact pending action inputs are intentionally private durable
+browser data (IndexedDB); browser origin isolation and an opaque gateway/owner
+scope partition them. They are available offline to anyone with access to this
+browser profile and are not separately encrypted or remotely erased by logout.
+Quota and concurrent-editor failures block dispatch and preserve work; there is
+no automatic offline command queue. Never share an unlocked installed app or
+browser profile containing private drafts.
+
+Background notifications require explicit permission, a registered device and
+an explicitly watched agent. Their title/status payloads omit transcript and
+path fields, but the agent title itself appears on the lock screen. VAPID keys
+and push subscriptions are credentials and remain in private gateway state;
+client storage retains only the opaque device identity. Notification REST routes
+use the same owner authentication and origin checks as all gateway mutations.
+Push delivery permits only canonical HTTPS FCM endpoints, validates P-256 keys,
+never follows redirects, and bounds delivery bytes, retries, pending work and
+deduplication. Push failures do not interrupt domain-stream ingestion. Revoke
+lost devices from App settings. See [Android app](docs/Mobile-PWA.md).

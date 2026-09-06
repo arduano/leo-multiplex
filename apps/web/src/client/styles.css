@@ -106,13 +106,25 @@ summary::-webkit-details-marker { display: none; }
   }
 }
 
-@supports (padding: env(safe-area-inset-top)) {
-  body {
-    padding-top: env(safe-area-inset-top);
-    padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
+/* Size from the browser's visual viewport only. No DOM measurement feeds this
+   back into the layout when the Android keyboard opens or closes. */
+#root {
+  position: fixed;
+  top: var(--visible-top, 0px);
+  left: var(--visible-left, 0px);
+  height: var(--visible-height, 100dvh);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overflow: hidden;
+}
+html, body { overscroll-behavior: none; }
+
+@media (max-width: 959px), (max-width: 1279px) and (max-height: 499px) {
+  .mobile-fixed-layer {
+    top: var(--visible-top, 0px);
+    bottom: auto;
+    height: var(--visible-height, 100dvh);
   }
+  input, textarea, select { font-size: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -126,4 +138,19 @@ summary::-webkit-details-marker { display: none; }
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+@media (max-width: 959px), (max-width: 1279px) and (max-height: 499px) {
+  .session-header .session-heading,
+  .session-header .session-runtime-status { display: none; }
+  .session-header {
+    min-height: 0;
+    padding: 2px 8px;
+    gap: 0;
+  }
+  .session-header > div:last-child { width: 100%; gap: 4px; justify-content: flex-start; }
+  .session-header [data-testid="session-health"] { margin-left: auto; }
+  .session-header [role="tablist"] { height: auto; border: 0; background: transparent; padding: 0; }
+  .session-header [role="tab"] { min-height: 44px; padding-inline: 7px; font-size: 12px; }
+  .session-header [data-testid="interrupt-button"] { padding-inline: 8px; }
 }

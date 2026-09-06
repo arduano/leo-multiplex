@@ -6,6 +6,7 @@ import { sourceIdSchema } from "@arduano/agent-multiplex-protocol";
 import { OPERATOR_SCOPES, createAuthenticator } from "./auth.js";
 import { authenticationConfig, cloudflareSocketConfig, httpBindAddress } from "./auth-config.js";
 import { runPersonalGateway } from "./gateway.js";
+import { openMobileNotifications } from "./mobile-notifications.js";
 import { createPersonalHttpSurface } from "./http.js";
 
 export async function runPersonalServer(environment: NodeJS.ProcessEnv, signal: AbortSignal) {
@@ -30,19 +31,22 @@ export async function runPersonalServer(environment: NodeJS.ProcessEnv, signal: 
     };
   });
   await mkdir(state, { recursive: true, mode: 0o700 });
-  await runPersonalGateway({
-    sharedSecret: pairing.sharedSecret, identityPath: join(state, "gateway.identity"),
-    statePath: join(state, "gateway.sqlite"), sources,
-    ...(environment.LEO_GATEWAY_P2P_BIND === undefined ? {} : { p2pBindAddress: environment.LEO_GATEWAY_P2P_BIND }),
-    bindAddress, port, reconnectMaxMs: 30_000,
-  }, signal, { httpSurface: { authentication: "external", create: (projection, instanceId) =>
-    createPersonalHttpSurface(projection, instanceId, access, authenticate) },
-    ...(cloudflare === undefined ? {} : { additionalHttpSurfaces: [{
-      socketPath: cloudflare.socketPath,
-      httpSurface: { authentication: "external", create: (projection, instanceId) =>
-        createPersonalHttpSurface(projection, instanceId, cloudflare.access, authenticateCloudflare) },
-    }] }),
-  });
+  const mobile = await openMobileNotifications(state, cloudflare?.access.publicOrigin ?? access.publicOrigin, access.email);
+  try {
+    await runPersonalGateway({
+      sharedSecret: pairing.sharedSecret, identityPath: join(state, "gateway.identity"),
+      statePath: join(state, "gateway.sqlite"), sources,
+      ...(environment.LEO_GATEWAY_P2P_BIND === undefined ? {} : { p2pBindAddress: environment.LEO_GATEWAY_P2P_BIND }),
+      bindAddress, port, reconnectMaxMs: 30_000,
+    }, signal, { mobileNotifications: mobile, httpSurface: { authentication: "external", create: (projection, instanceId) =>
+      createPersonalHttpSurface(projection, instanceId, access, authenticate, mobile) },
+      ...(cloudflare === undefined ? {} : { additionalHttpSurfaces: [{
+        socketPath: cloudflare.socketPath,
+        httpSurface: { authentication: "external", create: (projection, instanceId) =>
+          createPersonalHttpSurface(projection, instanceId, cloudflare.access, authenticateCloudflare, mobile) },
+      }] }),
+    });
+  } finally { await mobile.close(); }
 }
 
 function required(environment: NodeJS.ProcessEnv, key: string) {

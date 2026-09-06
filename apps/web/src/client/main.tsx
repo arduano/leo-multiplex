@@ -7,6 +7,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 
 import { App } from "./app.js";
+import { PwaBootstrap } from "./pwa-bootstrap.js";
 import { styleNonceForDocument } from "./style-nonce.js";
 import "./styles.css";
 
@@ -35,7 +36,7 @@ if (!root) throw new Error("Agent Multiplex dashboard root is missing");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <PwaBootstrap><App /></PwaBootstrap>
     </QueryClientProvider>
   </StrictMode>,
 );

@@ -38,7 +38,9 @@ try {
     assert.equal((await get(path)).status, 401);
     assert.equal((await get(path, { "Tailscale-User-Login": config.email })).status, 401);
   }
-  assert.deepEqual(await (await get("/auth/session", headers)).json(), { method: "cloudflare" });
+  const identity = await (await get("/auth/session", headers)).json();
+  assert.equal(identity.method, "cloudflare");
+  assert.match(identity.storageScope, /^[A-Za-z0-9_-]{43}$/);
   const page = await get("/", headers);
   assert.equal(page.status, 200);
   assert.match(page.headers.get("content-security-policy"), /frame-ancestors 'none'/);

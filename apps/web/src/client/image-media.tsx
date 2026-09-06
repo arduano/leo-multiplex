@@ -1,9 +1,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { ImageIcon, LoaderCircle, X } from "lucide-react";
+import { ImageIcon, LoaderCircle, Minus, Plus, X } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import { imageTarget, readImage } from "@arduano/agent-multiplex-client/browser";
 import { type ImageDescriptor, type NativeImageUnavailable, type NativeModel, type SessionRecord } from "@arduano/agent-multiplex-protocol";
+import { useDismissOnBack } from "./mobile-navigation.js";
 import { useApi, errorMessage } from "./api.js";
 
 const ImageSession = createContext<{ session: SessionRecord | null; readOnly: boolean }>({ session: null, readOnly: false });
@@ -65,6 +66,8 @@ export function TranscriptImagePreview({ sourceKey, image, path, alt = "Image" }
   const [visible, setVisible] = useState(false);
   const [preview, setPreview] = useState<{ url?: string; error?: string; mediaType?: string }>({});
   const [attempt, setAttempt] = useState(0);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  useDismissOnBack(viewerOpen, () => setViewerOpen(false));
   const wasReadOnly = useRef(readOnly);
   useEffect(() => {
     if (readOnly) pendingRead.current?.abort();
@@ -114,19 +117,19 @@ export function TranscriptImagePreview({ sourceKey, image, path, alt = "Image" }
     : <span>{alt}: Unsupported image reference</span>;
 
   return <span ref={container} className="my-2 block min-w-0 max-w-full" data-testid="transcript-image">
-    {preview.url ? <Dialog.Root>
+    {preview.url ? <Dialog.Root open={viewerOpen} onOpenChange={setViewerOpen}>
       <Dialog.Trigger className="block max-w-full overflow-hidden rounded-md border border-[var(--border-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" aria-label={`Open ${alt}`}>
         <img src={preview.url} alt={alt} className="max-h-72 max-w-full object-contain" onError={() => setPreview({ error: "This image could not be decoded" })} />
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/80" />
-        <Dialog.Content className="fixed inset-3 z-50 flex min-h-0 flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-3 sm:inset-8">
-          <div className="mb-3 flex items-center gap-3">
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/90" />
+        <Dialog.Content className="mobile-fixed-layer fixed inset-0 z-50 flex min-h-0 flex-col bg-[var(--surface-canvas)] p-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-[max(12px,env(safe-area-inset-top))] sm:inset-8 sm:rounded-lg sm:border sm:border-[var(--border-subtle)]">
+          <div className="mb-2 flex shrink-0 items-center gap-3">
             <Dialog.Title className="min-w-0 flex-1 truncate text-sm font-medium">{alt}</Dialog.Title>
             <Dialog.Close className="grid size-11 place-items-center rounded-md hover:bg-[var(--surface-raised)]" aria-label="Close image"><X className="size-5" /></Dialog.Close>
           </div>
-          <Dialog.Description className="sr-only">Retained image from this session. Press Escape to close.</Dialog.Description>
-          <img src={preview.url} alt={alt} className="min-h-0 flex-1 object-contain" />
+          <Dialog.Description className="sr-only">Retained image from this session. Pinch to zoom, or use the zoom controls. Press Escape or Back to close.</Dialog.Description>
+          <ImageViewer url={preview.url} alt={alt} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root> : preview.error ? <span className="inline-flex max-w-full flex-wrap items-center gap-2 rounded border border-[var(--border-subtle)] p-2 text-xs text-[var(--text-secondary)]" role="status">
@@ -159,4 +162,46 @@ export async function prepareImageFile(file: File): Promise<File> {
     if (png.size > 10 * 1_024 * 1_024) throw new Error("Converted image exceeds 10 MiB");
     return new File([png], file.name.replace(/\.svg$/i, "") + ".png", { type: "image/png" });
   } finally { URL.revokeObjectURL(objectUrl); }
+}
+
+function ImageViewer({ url, alt }: { url: string; alt: string }) {
+  const [zoom, setZoom] = useState(1);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; zoom: number } | null>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const clampZoom = (value: number) => Math.min(5, Math.max(1, value));
+  const distance = () => {
+    const pair = [...pointers.current.values()];
+    return pair.length < 2 ? 0 : Math.hypot(pair[0]!.x - pair[1]!.x, pair[0]!.y - pair[1]!.y);
+  };
+  return <>
+    <div className="mb-2 flex shrink-0 items-center justify-center gap-2">
+      <button type="button" className="grid size-11 place-items-center rounded-md hover:bg-[var(--surface-raised)] disabled:opacity-40" aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => clampZoom(value - 0.5))}><Minus className="size-4" /></button>
+      <button type="button" className="min-h-11 min-w-16 text-xs tabular-nums" aria-label="Reset image zoom" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+      <button type="button" className="grid size-11 place-items-center rounded-md hover:bg-[var(--surface-raised)] disabled:opacity-40" aria-label="Zoom in" disabled={zoom >= 5} onClick={() => setZoom((value) => clampZoom(value + 0.5))}><Plus className="size-4" /></button>
+    </div>
+    <div ref={scroll} className="min-h-0 flex-1 overflow-auto overscroll-contain" style={{ touchAction: "none" }} data-testid="image-fullscreen-viewer"
+      onPointerDown={(event) => {
+        pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        event.currentTarget.setPointerCapture(event.pointerId);
+        if (pointers.current.size === 2) pinch.current = { distance: distance(), zoom };
+      }}
+      onPointerMove={(event) => {
+        const previous = pointers.current.get(event.pointerId);
+        if (!previous) return;
+        pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (pointers.current.size === 2 && pinch.current?.distance) setZoom(clampZoom(pinch.current.zoom * distance() / pinch.current.distance));
+        else if (pointers.current.size === 1 && scroll.current) {
+          scroll.current.scrollLeft -= event.clientX - previous.x;
+          scroll.current.scrollTop -= event.clientY - previous.y;
+        }
+      }}
+      onPointerUp={(event) => { pointers.current.delete(event.pointerId); pinch.current = null; }}
+      onPointerCancel={(event) => { pointers.current.delete(event.pointerId); pinch.current = null; }}
+      onDoubleClick={() => setZoom((value) => value === 1 ? 2 : 1)}>
+      <div className="flex items-center justify-center" style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}>
+        <img src={url} alt={alt} draggable={false} className="h-full w-full select-none object-contain" />
+      </div>
+    </div>
+  </>;
 }

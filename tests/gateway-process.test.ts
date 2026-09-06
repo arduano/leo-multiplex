@@ -135,9 +135,11 @@ it("serves independently authenticated TCP and private Unix edges from one gatew
     const url = `http://127.0.0.1:${address.port}`;
     const headers = { "Cf-Access-Jwt-Assertion": assertion };
     expect((await fetch(`${url}/auth/session`, { headers })).status).toBe(401);
-    expect(await (await fetch(`${url}/auth/session`, { headers: { "Tailscale-User-Login": tailscaleAccess.email } })).json()).toEqual({ method: "tailscale" });
+    expect(await (await fetch(`${url}/auth/session`, { headers: { "Tailscale-User-Login": tailscaleAccess.email } })).json()).toEqual({ method: "tailscale", storageScope: expect.stringMatching(/^[\w-]{43}$/) });
     expect((await socketRequest(fixture.socketPath, "/auth/session", { "Tailscale-User-Login": tailscaleAccess.email })).status).toBe(401);
-    expect((await socketRequest(fixture.socketPath, "/auth/session", headers))).toMatchObject({ status: 200, body: '{"method":"cloudflare"}\n' });
+    const cloudflareSession = await socketRequest(fixture.socketPath, "/auth/session", headers);
+    expect(cloudflareSession.status).toBe(200);
+    expect(JSON.parse(cloudflareSession.body)).toEqual({ method: "cloudflare", storageScope: expect.stringMatching(/^[\w-]{43}$/) });
     expect((await socketRequest(fixture.socketPath, "/auth/check", { ...headers, Origin: tailscaleAccess.publicOrigin }, "POST")).status).toBe(401);
     expect((await socketRequest(fixture.socketPath, "/auth/check", { ...headers, Origin: cloudflareAccess.publicOrigin }, "POST")).status).toBe(204);
     expect((await socketRequest(fixture.socketPath, "/trpc/system.describe", headers)).body).toContain('"dataAuthority":"none"');

@@ -633,3 +633,42 @@ redirects, Tailscale CLI queries and a catalog WebSocket subscription pass.
 All served entry/dynamic assets match the tested local build; both source and
 browser/layout receipt hashes were checked. Scrubbed, checksummed deployment
 evidence is `receipts/compact-ui-deployment/2026-09-06T01-45-05.295666+00-00`.
+
+## Android PWA — 2026-09-06
+
+The personal UI now includes an installable Android/Chrome shell, agent-list home,
+watched/input/working filters, phone Back navigation, visible-keyboard sizing,
+camera/gallery attachments, zoomable images and terminal touch controls.
+Text/image drafts and exact pending operations are durable device-local IndexedDB
+state. This supersedes the older memory-only draft description above. Offline
+launch exposes saved work only; native history stays in the existing bounded
+in-memory cache. Service-worker caches contain only static build assets and an
+anonymous shell; app updates wait for explicit save/activation.
+
+Watched-only title/status push is composed in the personal gateway from its
+already accepted native stream. Device registration, categories and revocation
+use the existing authenticated origin checks. Private VAPID/subscription/watch
+state lives in the existing NAS gateway state volume. The [Android runbook](Mobile-PWA.md)
+owns installation, draft recovery, notification behavior and device-test limits.
+Framework dependencies, the 200-message virtual window, and the accepted browser
+cache memory/TTL tradeoff are unchanged. No host rebuild is required.
+
+This source passes typechecking, 335 tests, production build, shipped-container
+smoke, and the Compose DNS/Unix-socket authentication regression. Browser
+qualification passes 57 checks and 32 screenshots across the six desktop/tablet/
+phone viewports, with no serious or critical axe violations. The production PWA
+suite passes seven checks with real service-worker/IndexedDB behavior and a
+mocked PushManager for registration controls. The layout suite passes 126 checks
+and 360 scroll samples. Local receipts are:
+`receipts/browser/2026-09-06T02-56-42.104Z`,
+`receipts/pwa/2026-09-06T02-57-52.028Z`,
+`receipts/transcript-layout/2026-09-06T02-58-06.492Z`.
+
+The new strict 50,000-turn / 100,001-item qualification passes unchanged latency
+bounds. Initial oldest-first loading took 41.2 seconds under the recorded host
+load. Concurrent scrolling/streaming/typing measured 15.3 ms p95 input-to-paint
+(27 ms maximum) and 33.3 ms p95 frame interval, with no long tasks during that
+interaction phase. Retained heap after switching was 73.2 MB decimal, consistent
+with the accepted cache tradeoff. This qualifies the recorded synthetic Chromium
+fixture, not arbitrary payloads or physical-phone latency. Its receipt is
+`receipts/long-thread/2026-09-06T02-56-56.596Z`.

@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
   Server,
   X,
 } from "lucide-react";
@@ -32,7 +33,11 @@ import { retainSessionRows, type RetainedSession } from "./session-retention.js"
 import { SpawnDialog } from "./spawn-dialog.js";
 import { terminalSideChannelCapability } from "./terminal-state.js";
 import { Badge, Button, IconButton, Input, classes } from "./ui.js";
-import { WorkspaceShell, type PaneActions } from "./workspace-shell.js";
+import { WorkspaceShell, useViewportMode, type PaneActions } from "./workspace-shell.js";
+import { navigateMobile, useDismissOnBack, useMobileRoute } from "./mobile-navigation.js";
+import { MobileSettings } from "./mobile-settings.js";
+import { flushDrafts } from "./session-drafts.js";
+import { useMobileState, toggleWatched, signOutMobile } from "./mobile-api.js";
 
 export function App() {
   return <ApiProvider connectionKey={0}><Dashboard /></ApiProvider>;
@@ -41,11 +46,41 @@ export function App() {
 function Dashboard() {
   const { client, connectionKey } = useApi();
   const queryClient = useQueryClient();
+  const route = useMobileRoute();
+  const viewport = useViewportMode();
+  const mobile = viewport === "mobile";
+  const mobileState = useMobileState();
+  const [watchBusy, setWatchBusy] = useState(false);
+  const [watchError, setWatchError] = useState("");
+  const [filter, setFilter] = useState<AgentFilter>("all");
+  const [online, setOnline] = useState(() => navigator.onLine);
   const [spawnOpen, setSpawnOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<SessionId | null>(null);
+  useDismissOnBack(spawnOpen, () => setSpawnOpen(false));
+  const [selectedId, setSelectedId] = useState<SessionId | null>(() => route.page === "session" ? route.sessionId : null);
   const [search, setSearch] = useState("");
   const [retained, setRetained] = useState<RetainedSession[]>([]);
   const deferredSearch = useDeferredValue(search);
+  useEffect(() => { if (route.page === "session") setSelectedId(route.sessionId); }, [route.page, route.page === "session" ? route.sessionId : null]);
+  useEffect(() => {
+    const refreshVisible = () => {
+      setOnline(navigator.onLine);
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      void queryClient.invalidateQueries({ queryKey: ["access-login"] });
+      void queryClient.invalidateQueries({ queryKey: ["authentication-method"] });
+      void invalidateFleet(queryClient);
+      // Existing watch clients reconnect and reconcile native cursors. Keep the
+      // API binding/transcript mounted and never replay uncertain mutations.
+    };
+    const networkChanged = () => { setOnline(navigator.onLine); refreshVisible(); };
+    document.addEventListener("visibilitychange", refreshVisible);
+    window.addEventListener("online", networkChanged);
+    window.addEventListener("offline", networkChanged);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshVisible);
+      window.removeEventListener("online", networkChanged);
+      window.removeEventListener("offline", networkChanged);
+    };
+  }, [queryClient]);
 
   const description = useQuery({
     queryKey: ["system", connectionKey],
@@ -54,7 +89,7 @@ function Dashboard() {
     refetchInterval: 10_000,
     queryFn: () => client.system.describe.query(),
   });
-  const connected = description.isSuccess;
+  const connected = description.isSuccess && online;
   const hasConnected = description.data !== undefined;
   const access = useQuery({
     queryKey: ["access-login"], retry: false, refetchInterval: 30_000,
@@ -116,6 +151,12 @@ function Dashboard() {
     return () => watcher.stop();
   }, [client, connected, connectionKey, queryClient]);
 
+  const directSession = useQuery({
+    queryKey: ["session-link", connectionKey, selectedId],
+    enabled: connected && selectedId !== null && !(sessions.data?.sessions.some((session) => session.sessionId === selectedId)),
+    queryFn: () => client.sessions.get.query(selectedId!),
+    retry: false,
+  });
   const projectionFresh = connected && !sessions.isError && !sources.isError && access.data !== false;
   const rows = useMemo(() => retainSessionRows(retained, sessions.data?.sessions ?? [], sources.data ?? [], projectionFresh, sessions.dataUpdatedAt >= sources.dataUpdatedAt),
     [retained, sessions.data, sources.data, projectionFresh, sessions.dataUpdatedAt, sources.dataUpdatedAt]);
@@ -124,20 +165,24 @@ function Dashboard() {
   }, [sessions.data, sources.data, projectionFresh, sessions.dataUpdatedAt, sources.dataUpdatedAt]);
 
   useEffect(() => {
-    if (selectedId) return;
+    if (selectedId || mobile || route.page === "settings") return;
     const preferred = rows.find((row) => !row.stale && row.session.availability === "active") ?? rows[0];
-    if (preferred) setSelectedId(preferred.session.sessionId);
-  }, [selectedId, rows]);
+    if (preferred) {
+      setSelectedId(preferred.session.sessionId);
+      navigateMobile({ page: "session", sessionId: preferred.session.sessionId }, true);
+    }
+  }, [selectedId, rows, mobile, route.page]);
 
   const selectedRow = rows.find((row) => row.session.sessionId === selectedId);
-  const selected = selectedRow?.session ?? null;
-  const selectedStale = selectedRow?.stale ?? false;
+  const selected = selectedRow?.session ?? (directSession.data?.sessionId === selectedId ? directSession.data : null);
+  const selectedStale = (selectedRow?.stale ?? false) || !projectionFresh;
+  const watchedIds = mobileState.data?.watchedSessionIds ?? [];
   const filteredRows = useMemo(() => {
     const needle = deferredSearch.trim().toLocaleLowerCase();
     return [...rows]
-      .filter(({ session }) => !needle || sessionSearchText(session).includes(needle))
+      .filter(({ session }) => (!needle || sessionSearchText(session).includes(needle)) && (!mobile || matchesAgentFilter(session, filter, watchedIds)))
       .sort((left, right) => Number(left.stale) - Number(right.stale) || sessionRank(left.session) - sessionRank(right.session) || right.session.updatedAt.localeCompare(left.session.updatedAt));
-  }, [deferredSearch, rows]);
+  }, [deferredSearch, rows, mobile, filter, watchedIds]);
 
   const globalStatus = description.isPending ? "connecting" : connected ? "connected" : "connection failed";
 
@@ -145,9 +190,25 @@ function Dashboard() {
     void invalidateFleet(queryClient);
   }
 
-  function spawned(sessionId: SessionId): void {
+  function selectSession(sessionId: SessionId): void {
     setSelectedId(sessionId);
+    navigateMobile({ page: "session", sessionId });
+  }
+
+  function spawned(sessionId: SessionId): void {
+    selectSession(sessionId);
     void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+  }
+
+  async function watchSelected(): Promise<void> {
+    if (!selected || watchBusy) return;
+    setWatchBusy(true);
+    setWatchError("");
+    try {
+      await toggleWatched(selected.sessionId, !watchedIds.includes(selected.sessionId));
+      await queryClient.invalidateQueries({ queryKey: ["mobile-state"] });
+    } catch (error) { setWatchError(errorMessage(error)); }
+    finally { setWatchBusy(false); }
   }
 
   const selectedRuntime = selected
@@ -160,19 +221,25 @@ function Dashboard() {
   return (
     <DialogPrimitive.Root open={spawnOpen} onOpenChange={setSpawnOpen}>
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--surface-canvas)] text-[var(--text-primary)]">
-      <AppHeader
+      {(!mobile || route.page === "agents") && route.page !== "settings" ? <AppHeader
         connected={hasConnected}
         globalStatus={globalStatus}
         onRefresh={refresh}
-      />
+        onSettings={() => navigateMobile({ page: "settings" })}
+        mobile={mobile}
+      /> : null}
 
-      {connected && access.data === false ? (
+      {access.data === false ? (
         <div className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--status-waiting)]" role="status">
           Your sign-in expired. Your draft is still here. {" "}
-          <a href="/" target="_blank" rel="noopener" className="underline">Sign in again in a new tab</a>
+          <ReauthenticateLink />
         </div>
       ) : null}
 
+      {hasConnected && (!online || !connected) && access.data !== false ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--status-waiting)]" role="status" data-testid="workspace-offline">{!online ? "Offline. Your draft is saved on this device." : "Reconnecting to your workspace…"}</p> : null}
+      {watchError ? <p role="alert" className="shrink-0 px-3 py-1 text-xs text-[var(--status-error)]">{watchError}</p> : null}
+      {route.page === "settings" ? <MobileSettings onClose={() => { if (typeof history.state?.leoPreviousHash === "string") history.back(); else navigateMobile({ page: "agents" }, true); }} /> : null}
+      <div className={classes("min-h-0 flex-1 flex-col", route.page === "settings" ? "hidden" : "flex")}>
       {!hasConnected ? (
         <ConnectionPanel
           onConnect={() => { void description.refetch(); }}
@@ -182,7 +249,12 @@ function Dashboard() {
         />
       ) : (
         <WorkspaceShell
-          selectedLabel={selected ? sessionTitle(selected) : "No agent selected"}
+          selectedLabel={selected ? sessionTitle(selected) : "Opening agent…"}
+          mobilePage={route.page === "session" ? "session" : "agents"}
+          selectedStatus={selected ? `${selected.harness} · ${selectedStale ? "Offline" : sessionStatus(selected, false)}` : "Connecting"}
+          watched={selected ? watchedIds.includes(selected.sessionId) : false}
+          watchBusy={watchBusy}
+          onToggleWatched={selected && mobileState.isSuccess ? () => void watchSelected() : undefined}
           left={(actions) => (
             <FleetPane
               actions={actions}
@@ -193,12 +265,16 @@ function Dashboard() {
               runtimeNodes={runtimeNodes.data ?? []}
               connected={connected}
               loading={sessions.isPending}
-              onSelect={setSelectedId}
+              onSelect={selectSession}
+              mobile={mobile}
+              filter={filter}
+              onFilter={setFilter}
             />
           )}
           center={<div className="flex h-full min-h-0 flex-col">
-            {selectedStale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
-            <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} onNewSession={() => setSpawnOpen(true)} />
+            {selectedRow?.stale ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
+            {selectedId && !selected ? <div className="grid min-h-0 flex-1 place-items-center p-5 text-sm text-[var(--text-secondary)]" role="status">{directSession.isError || directSession.isSuccess ? "This agent is unavailable. Return to Agents to choose another." : "Opening agent…"}</div> : null}
+            {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} onNewSession={() => setSpawnOpen(true)} /> : null}
           </div>}
           inspector={(actions) => (
             <InspectorPane
@@ -214,6 +290,7 @@ function Dashboard() {
         />
       )}
 
+      </div>
       <SpawnDialog
         open={spawnOpen}
         runtimeNodes={projectionFresh ? runtimeNodes.data ?? [] : []}
@@ -225,10 +302,12 @@ function Dashboard() {
   );
 }
 
-function AppHeader({ connected, globalStatus, onRefresh }: {
+function AppHeader({ connected, globalStatus, onRefresh, onSettings, mobile }: {
   readonly connected: boolean;
   readonly globalStatus: string;
   readonly onRefresh: () => void;
+  readonly onSettings: () => void;
+  readonly mobile: boolean;
 }) {
   return (
     <header className="z-30 flex h-13 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-3 sm:px-4 [@media(max-height:500px)]:h-11">
@@ -241,12 +320,13 @@ function AppHeader({ connected, globalStatus, onRefresh }: {
       {connected ? (
         <>
           <ConnectionMenu status={globalStatus} />
-          <IconButton
+          {!mobile ? <IconButton
             icon={RefreshCw}
             label="Refresh workspace" data-testid="refresh-workspace"
             tone="ghost"
             onClick={onRefresh}
-          />
+          /> : null}
+          <IconButton icon={Settings} label="App settings" tone="ghost" onClick={onSettings} data-testid="mobile-settings-button" />
           <DialogPrimitive.Trigger asChild>
             <Button icon={Plus} tone="primary" data-testid="spawn-button">
               <span className="hidden sm:inline">New agent</span>
@@ -265,6 +345,7 @@ function AppHeader({ connected, globalStatus, onRefresh }: {
 }
 
 function ConnectionMenu({ status }: { readonly status: string }) {
+  const [signOutError, setSignOutError] = useState("");
   const authentication = useQuery({
     queryKey: ["authentication-method"], retry: false, staleTime: 60_000,
     queryFn: async () => {
@@ -287,7 +368,8 @@ function ConnectionMenu({ status }: { readonly status: string }) {
         <Popover.Content sideOffset={8} align="end" className="z-50 w-64 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-base)] p-4 text-sm text-[var(--text-primary)]">
           <p>{method === "tailscale" ? "Connected through Tailscale" : method === "cloudflare" ? "Signed in with Cloudflare Access" : "Authenticated connection"}</p>
           {method === "tailscale" ? <p className="mt-2 text-xs text-[var(--text-secondary)]">Access follows your Tailscale account.</p> : null}
-          {method === "cloudflare" ? <a className="mt-3 block text-[var(--accent)] underline" href="/cdn-cgi/access/logout">Sign out</a> : null}
+          {signOutError ? <p role="alert" className="mt-2 text-xs text-[var(--status-error)]">{signOutError}</p> : null}
+          {method === "cloudflare" ? <a className="mt-3 block text-[var(--accent)] underline" href="/cdn-cgi/access/logout" onClick={(event) => { event.preventDefault(); void signOutMobile().catch((error: unknown) => setSignOutError(errorMessage(error))); }}>Sign out</a> : null}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -308,7 +390,7 @@ function ConnectionPanel({ onConnect, status, pending, error }: {
         {error ? <p className="text-sm text-[var(--status-error)]" role="alert">{error}</p> : null}
         <div className="flex gap-3">
           <Button icon={RefreshCw} onClick={onConnect} disabled={pending} data-testid="connect-button">Retry connection</Button>
-          {!pending ? <a className="inline-flex min-h-9 items-center text-sm text-[var(--accent)] underline" href="/" target="_blank" rel="noopener">Sign in again</a> : null}
+          {!pending ? <ReauthenticateLink /> : null}
         </div>
         <p className="text-xs text-[var(--text-muted)]" data-testid="connection-panel-status">{status}</p>
       </div>
@@ -316,7 +398,7 @@ function ConnectionPanel({ onConnect, status, pending, error }: {
   );
 }
 
-function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, connected, loading, onSelect }: {
+function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, connected, loading, onSelect, mobile, filter, onFilter }: {
   readonly actions: PaneActions;
   readonly search: string;
   readonly onSearch: (value: string) => void;
@@ -326,10 +408,13 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
   readonly connected: boolean;
   readonly loading: boolean;
   readonly onSelect: (id: SessionId) => void;
+  readonly mobile: boolean;
+  readonly filter: AgentFilter;
+  readonly onFilter: (filter: AgentFilter) => void;
 }) {
   return (
     <aside className="flex h-full min-h-0 flex-col bg-[var(--surface-shell)]">
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-3">
+      {!mobile ? <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-3">
         <div className="flex min-w-0 items-baseline gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Agents</h2>
           <span className="text-xs tabular-nums text-[var(--text-muted)]">{rows.length}</span>
@@ -346,7 +431,7 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
         ) : actions.close ? (
           <IconButton icon={X} label="Close agents pane" tone="ghost" className="size-8 min-h-8" onClick={actions.close} />
         ) : null}
-      </header>
+      </header> : null}
       <div className="shrink-0 border-b border-[var(--border-subtle)] p-2.5">
         <label className="relative block">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-[var(--text-muted)]" />
@@ -359,6 +444,9 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
           />
         </label>
       </div>
+      {mobile ? <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border-subtle)] px-2 py-1" role="group" aria-label="Filter agents" data-testid="mobile-agent-filters">
+        {([["all", "All"], ["watched", "Watched"], ["needsInput", "Needs input"], ["working", "Working"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => onFilter(value)} className={classes("min-h-11 shrink-0 rounded-md px-3 text-xs", filter === value ? "bg-[var(--surface-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)]")}>{label}</button>)}
+      </div> : null}
       <div
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-2"
         role="region"
@@ -381,7 +469,7 @@ function FleetPane({ actions, search, onSearch, rows, selectedId, runtimeNodes, 
             />
           ))}
           {connected && !loading && rows.length === 0 ? (
-            <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">No agents here yet.</p>
+            <p className="px-3 py-8 text-center text-xs leading-5 text-[var(--text-muted)]">{filter === "all" ? "No agents here yet." : "No agents match this filter."}</p>
           ) : null}
         </div>
       </div>
@@ -716,4 +804,24 @@ async function invalidateFleet(queryClient: ReturnType<typeof useQueryClient>): 
     queryClient.invalidateQueries({ queryKey: ["interactions"] }),
     queryClient.invalidateQueries({ queryKey: ["metadata"] }),
   ]);
+}
+
+export type AgentFilter = "all" | "watched" | "needsInput" | "working";
+export function matchesAgentFilter(session: Pick<SessionRecord, "sessionId" | "runtimeStatus">, filter: AgentFilter, watched: readonly string[]): boolean {
+  return filter === "all" || filter === "watched" && watched.includes(session.sessionId) || filter === "needsInput" && (session.runtimeStatus === "waitingForInput" || session.runtimeStatus === "error") || filter === "working" && session.runtimeStatus === "running";
+}
+
+function ReauthenticateLink() {
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  return <span>
+    <a href={`/${window.location.hash}`} className="inline-flex min-h-11 items-center text-[var(--accent)] underline" aria-disabled={pending} onClick={(event) => {
+      event.preventDefault();
+      if (pending) return;
+      setPending(true);
+      setError("");
+      void flushDrafts().then(() => { window.location.href = `/${window.location.hash}`; }).catch((error: unknown) => { setError(errorMessage(error)); setPending(false); });
+    }}>{pending ? "Saving draft…" : "Sign in again"}</a>
+    {error ? <span role="alert" className="ml-2 text-xs text-[var(--status-error)]">{error}</span> : null}
+  </span>;
 }

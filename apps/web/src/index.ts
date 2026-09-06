@@ -34,6 +34,7 @@ const contentTypes: Readonly<Record<string, string>> = Object.freeze({
   ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
@@ -69,13 +70,13 @@ export function webAsset(
     const extension = extname(filename).toLowerCase();
     const source = readFileSync(filename);
     return {
-      body: extension === ".html" && options.styleNonce !== undefined
+      body: extension === ".html" && relative !== "offline-shell.html" && options.styleNonce !== undefined
         ? injectStyleNonce(source, options.styleNonce)
         : source,
       contentType: contentTypes[extension] ?? "application/octet-stream",
       cacheControl: extension === ".html"
         ? "no-store"
-        : "public, max-age=31536000, immutable",
+        : relative.startsWith("assets/") ? "public, max-age=31536000, immutable" : "private, no-cache",
     };
   } catch {
     return null;

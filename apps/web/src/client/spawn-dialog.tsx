@@ -7,6 +7,7 @@ import type {
   Harness,
   JsonObject,
   LaunchId,
+  LaunchRequest,
   LaunchProfileDescriptor,
   LaunchProfileIdentity,
   RuntimeNodeDescriptor,
@@ -15,6 +16,7 @@ import type {
 
 import { errorMessage, useApi } from "./api.js";
 import { Button, Dialog, Field, Input, Select } from "./ui.js";
+import { forgetOperation, listOperations, reconcileOperation, saveOperation } from "./operation-recovery.js";
 
 export function SpawnDialog({
   open,
@@ -47,10 +49,24 @@ export function SpawnDialog({
   const launchAttempt = useRef<Awaited<ReturnType<typeof launchRequest>> | null>(null);
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState("");
+  const [recoveryReady, setRecoveryReady] = useState(false);
   const [pendingLaunch, setPendingLaunch] = useState<{
     readonly launchId: LaunchId;
     readonly sessionId: SessionId;
   } | null>(null);
+
+  useEffect(() => {
+    if (!open || launchAttempt.current) return;
+    void listOperations().then(operations => {
+      const pending = operations.find(operation => operation.kind === "launch");
+      if (!pending || launchAttempt.current) return;
+      const request = pending.payload as LaunchRequest;
+      launchAttempt.current = request;
+      setRuntimeId(request.runtimeNodeId); setHarness(request.harness);
+      setPendingLaunch({ launchId: request.launchId, sessionId: request.sessionId });
+      setStatus("Checking the saved launch before any retry.");
+    }).catch(error => setStatus(errorMessage(error))).finally(() => setRecoveryReady(true));
+  }, [open]);
 
   const runtime = eligible.find((node) => node.runtimeNodeId === runtimeId);
   const availableHarnesses = runtime?.harnesses.filter((entry) => entry.available) ?? [];
@@ -143,6 +159,7 @@ export function SpawnDialog({
     }
     if (record.state === "succeeded") {
       rememberWorkdir(runtimeId, cwd.trim());
+      void forgetOperation(pendingLaunch.launchId).catch(error => setStatus(errorMessage(error)));
       launchAttempt.current = null;
       onSpawned(pendingLaunch.sessionId);
       setPendingLaunch(null);
@@ -152,6 +169,7 @@ export function SpawnDialog({
       return;
     }
     if (record.state === "failed") {
+      void forgetOperation(pendingLaunch.launchId).catch(error => setStatus(errorMessage(error)));
       launchAttempt.current = null;
       setPendingLaunch(null);
       setStatus(record.error ?? `Launch ${record.state}`);
@@ -170,6 +188,9 @@ export function SpawnDialog({
     mutationFn: async () => {
       if (launchAttempt.current) {
         const request = launchAttempt.current;
+        const operation = await saveOperation("launch", request);
+        const receipt = await reconcileOperation(client, operation);
+        if (receipt?.state === "succeeded" || receipt?.state === "failed") return { request, record: await client.launches.get.query(request.launchId).then(record => { if (!record) throw new Error("Launch receipt disappeared"); return record; }) };
         return { request, record: await client.launches.create.mutate(request) };
       }
       if (!runtime) throw new Error("Choose an available runtime node");
@@ -196,11 +217,13 @@ export function SpawnDialog({
         input,
         title.trim() ? { "agent.title": title.trim() } : undefined,
       );
+      await saveOperation("launch", request);
       launchAttempt.current = request;
       return { request, record: await client.launches.create.mutate(request) };
     },
     onSettled: () => { dispatching.current = false; },
-    onSuccess: ({ request, record }) => {
+    onSuccess: async ({ request, record }) => {
+      if (record.state === "succeeded" || record.state === "failed") await forgetOperation(request.launchId);
       if (record.state === "failed") {
         setPendingLaunch(null);
         launchAttempt.current = null;
@@ -227,7 +250,7 @@ export function SpawnDialog({
   });
 
   function dispatch(): void {
-    if (dispatching.current) return;
+    if (dispatching.current || !recoveryReady) return;
     dispatching.current = true;
     mutation.mutate();
   }
@@ -352,7 +375,7 @@ export function SpawnDialog({
             type="submit"
             tone="primary"
             icon={mutation.isPending ? LoaderCircle : Plus}
-            disabled={!runtime || !profile || !cwd.trim() || launchPending}
+            disabled={!recoveryReady || !runtime || !profile || !cwd.trim() || launchPending}
             className={launchPending ? "[&_svg]:animate-spin" : undefined}
             data-testid="spawn-submit"
           >

@@ -43,6 +43,7 @@ import {
   type TerminalTarget,
 } from "@arduano/agent-multiplex-protocol";
 
+import { useDismissOnBack } from "./mobile-navigation.js";
 import { errorMessage, useApi } from "./api.js";
 import {
   mergeTerminalLease,
@@ -516,6 +517,10 @@ function TerminalViewport({
   const streamReadyRef = useRef(false);
   const [streamState, setStreamState] = useState("connecting");
   const [streamReady, setStreamReady] = useState(false);
+  const [controlKey, setControlKey] = useState(false);
+  const controlKeyRef = useRef(false);
+  controlKeyRef.current = controlKey;
+  useEffect(() => { if (!keyboardActive) setControlKey(false); }, [keyboardActive]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -575,7 +580,9 @@ function TerminalViewport({
       if (!streamReadyRef.current) return;
       const keyboard = keyboardRef.current;
       if (!keyboard || (keyboard.state.state !== "active" && keyboard.state.state !== "renewing")) return;
-      void keyboard.write(data).catch((error: unknown) => {
+      const input = controlKeyRef.current && data.length === 1 ? String.fromCharCode(data.toUpperCase().charCodeAt(0) & 31) : data;
+      if (controlKeyRef.current) { controlKeyRef.current = false; setControlKey(false); }
+      void keyboard.write(input).catch((error: unknown) => {
         onError(`Terminal input failed: ${errorMessage(error)}`);
       });
     });
@@ -732,8 +739,19 @@ function TerminalViewport({
   }, [client.terminals.attach, onError, onStreamState, onTerminal, target, terminal.terminalId]);
 
   return (
-    <div className="h-full min-h-0 w-full overflow-auto p-2" data-stream-state={streamState} data-testid="terminal-viewport">
-      <div ref={hostRef} className="terminal-xterm h-full min-h-[180px] min-w-max" />
+    <div className="flex h-full min-h-0 w-full flex-col" data-stream-state={streamState} data-testid="terminal-viewport">
+      <div className="min-h-0 flex-1 overflow-auto p-2"><div ref={hostRef} className="terminal-xterm h-full min-h-[100px] min-w-max" /></div>
+      <div className="hidden shrink-0 gap-0.5 overflow-x-auto border-t border-[var(--border-subtle)] bg-[var(--surface-shell)] px-1 [@media(pointer:coarse)]:flex" role="group" aria-label="Terminal touch keys" data-testid="terminal-touch-keys">
+        {([["Esc", "\u001b"], ["Tab", "\t"], ["Ctrl", null], ["←", "\u001b[D"], ["↓", "\u001b[B"], ["↑", "\u001b[A"], ["→", "\u001b[C"]] as const).map(([label, input]) => <button key={label} type="button" className="min-h-11 min-w-11 shrink-0 rounded px-2 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-raised)] disabled:opacity-40" disabled={!keyboardActive || !streamReady} aria-label={label === "←" ? "Arrow left" : label === "↓" ? "Arrow down" : label === "↑" ? "Arrow up" : label === "→" ? "Arrow right" : label} aria-pressed={input === null ? controlKey : undefined}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const keyboard = keyboardRef.current;
+            if (!streamReadyRef.current || !keyboard || (keyboard.state.state !== "active" && keyboard.state.state !== "renewing")) return;
+            if (input === null) setControlKey((value) => !value);
+            else void keyboard.write(input).catch((error: unknown) => onError(`Terminal input failed: ${errorMessage(error)}`));
+            xtermRef.current?.focus();
+          }}>{label}</button>)}
+      </div>
       <span className="sr-only" aria-live="polite">Terminal stream {streamState}</span>
     </div>
   );
@@ -758,6 +776,7 @@ function TerminalConfirmationDialog({ confirmation, harness, busy, onCancel, onC
   readonly onCancel: () => void;
   readonly onConfirm: () => void;
 }) {
+  useDismissOnBack(Boolean(confirmation), onCancel);
   const restarting = confirmation?.kind === "open" && confirmation.reason === "restart";
   const switching = confirmation?.kind === "open" && confirmation.reason === "foregroundSwitch";
   const terminating = confirmation?.kind === "terminate";
@@ -790,6 +809,7 @@ function TakeoverDialog({ open, onOpenChange, onConfirm }: {
   readonly onOpenChange: (open: boolean) => void;
   readonly onConfirm: () => void;
 }) {
+  useDismissOnBack(open, () => onOpenChange(false));
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <Dialog

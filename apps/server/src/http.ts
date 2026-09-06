@@ -9,6 +9,8 @@ import {
   webAsset, installBoundedWebSocketEgress, TRPC_HTTP_BODY_LIMIT_BYTES,
   WEBSOCKET_INGRESS_MESSAGE_LIMIT_BYTES,
 } from "../../web/src/index.js";
+import { mobileStorageScope, type MobileNotifications } from "./mobile-notifications.js";
+import { serveMobileRequest } from "./mobile-http.js";
 import { AuthenticationError, createAuthenticator, type AuthenticationConfig, type AccessIdentity } from "./auth.js";
 
 export function createPersonalHttpSurface(
@@ -16,6 +18,7 @@ export function createPersonalHttpSurface(
   instanceId: string,
   access: AuthenticationConfig,
   authenticate = createAuthenticator(access),
+  mobile?: MobileNotifications,
 ): GatewayHttpSurface {
   const router = createAccessGatewayRouter(projection, { instanceId });
   const identities = new WeakMap<IncomingMessage, AccessIdentity>();
@@ -52,8 +55,9 @@ export function createPersonalHttpSurface(
     }
     if (path === "/auth/session" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      response.end(JSON.stringify({ method: access.mode ?? "cloudflare" }) + "\n"); return;
+      response.end(JSON.stringify({ method: access.mode ?? "cloudflare", storageScope: mobileStorageScope(instanceId, access.email) }) + "\n"); return;
     }
+    if (path.startsWith("/api/mobile/")) { await serveMobileRequest(request, response, path, projection, instanceId, access, mobile); return; }
     if (path.startsWith("/trpc/")) { handler(request, response); return; }
     if (request.method !== "GET" && request.method !== "HEAD") {
       response.writeHead(405); response.end(); return;

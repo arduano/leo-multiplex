@@ -11,9 +11,11 @@ import { loadOrCreateGatewaySecretKey, type GatewayAppConfig, type GatewayCompos
 import type { SourceId, StreamCursor } from "@arduano/agent-multiplex-protocol";
 import type { PinnedPeerTarget } from "@arduano/agent-multiplex-transport-p2prpc";
 import type { GatewaySourceConfig } from "@arduano/agent-multiplex-gateway";
+import type { MobileNotifications } from "./mobile-notifications.js";
 import { assertSocketPath } from "./auth-config.js";
 
 export type PersonalGatewayComposition = GatewayComposition & {
+  readonly mobileNotifications?: MobileNotifications;
   readonly additionalHttpSurfaces?: readonly {
     readonly socketPath: string;
     readonly httpSurface: NonNullable<GatewayComposition["httpSurface"]>;
@@ -150,6 +152,7 @@ export async function runPersonalGateway(
         renewedTickets,
         config.reconnectMaxMs,
         signal,
+        composition.mobileNotifications,
       ));
     }
     await aborted(signal);
@@ -227,11 +230,14 @@ async function superviseSource(
   renewedTickets: ReadonlyMap<SourceId, string>,
   reconnectMaxMs: number,
   signal: AbortSignal,
+  mobile?: MobileNotifications,
 ): Promise<void> {
   let attempt = 0;
   while (!signal.aborted) {
     try {
       await projection.refreshSource(source.sourceId);
+      try { mobile?.synchronize(source.sourceId, projection); }
+      catch { /* Optional operational state cannot make an accepted source unavailable. */ }
       const diagnostic = projection.diagnostics().find(
         (candidate) => candidate.sourceId === source.sourceId,
       );
@@ -257,7 +263,11 @@ async function superviseSource(
           resynchronize = true;
           break;
         }
-        projection.ingest(source.sourceId, item);
+        const accepted = projection.ingest(source.sourceId, item);
+        if (accepted) {
+          try { mobile?.observe(source.sourceId, item); }
+          catch { /* Operational push failures cannot interrupt domain ingestion. */ }
+        }
         cursor = advanceAccessCursor(cursor, item);
         // Native output can be extremely chatty and remains app-server-owned;
         // do not force a FULL-sync SQLite write for every token/chunk.
@@ -284,6 +294,7 @@ async function superviseSource(
       if (!signal.aborted) throw new Error("control-node source requested resynchronization");
     } catch (error) {
       if (signal.aborted) return;
+      mobile?.unavailable(source.sourceId);
       projection.markUnavailable(source.sourceId, error);
       persistSource(
         store,

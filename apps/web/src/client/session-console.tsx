@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleStop,
+  Camera,
   CornerDownRight,
   ImagePlus,
   LoaderCircle,
@@ -61,6 +62,8 @@ import { SessionTranscript } from "./session-transcript.js";
 import { SubagentView } from "./subagent-view.js";
 import { VirtualTranscript, type TranscriptHandle } from "./virtual-transcript.js";
 import { useSessionDraft } from "./session-drafts.js";
+import { useDismissOnBack } from "./mobile-navigation.js";
+import { forgetOperation, saveOperation, reconcileOperation, listOperations } from "./operation-recovery.js";
 import type { TerminalSideChannelCapability } from "./terminal-state.js";
 import { Badge, Button, EmptyState, Textarea, classes } from "./ui.js";
 
@@ -127,14 +130,29 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const [historyError, setHistoryError] = useState("");
   const [historySignal, setHistorySignal] = useState<NativeHistorySignal | null>(null);
   const [recentEvents, setRecentEvents] = useState<readonly { kind: string; type: string; sequence?: number }[]>([]);
-  const { prompt, setPrompt, images: draftImages, setImages: setDraftImages, uncertain, setUncertain, uncertainPrompt, setUncertainPrompt } = useSessionDraft(`${connectionKey}:${bindingIdentity}`);
+  const { prompt, setPrompt, images: draftImages, setImages: setDraftImages, uncertain, setUncertain, uncertainPrompt, setUncertainPrompt, loaded: draftLoaded, saveError, save: saveDraft } = useSessionDraft(session?.sessionId ?? "no-session");
+  const [retryAllowed, setRetryAllowed] = useState(false);
+  const [recoveryLoaded, setRecoveryLoaded] = useState(false);
+  useEffect(() => {
+    if (!draftLoaded || !session) return;
+    let active = true;
+    void listOperations().then(operations => {
+      if (!active) return;
+      const pending = operations.find(operation => operation.kind === "command" && operation.payload.sessionId === session.sessionId && "request" in operation.payload);
+      if (pending && !uncertain) setUncertain(pending.payload as CommandEnvelope);
+      setRecoveryLoaded(true);
+    }).catch(() => { if (active) setRecoveryLoaded(true); });
+    return () => { active = false; };
+  }, [draftLoaded, session?.sessionId]);
   const draftsRef = useRef(draftImages);
   draftsRef.current = draftImages;
   const mounted = useRef(true);
   const preparing = useRef(false);
   const dispatching = useRef(false);
+  const sending = useRef(false);
   const [preparingImages, setPreparingImages] = useState(false);
   const imagePicker = useRef<HTMLInputElement>(null);
+  const cameraPicker = useRef<HTMLInputElement>(null);
   const imageUpload = useRef<AbortController | null>(null);
   const [uploading, setUploading] = useState(false);
   useEffect(() => { if (readOnly) imageUpload.current?.abort(); }, [readOnly]);
@@ -144,6 +162,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }; }, []);
   const [actionStatus, setActionStatus] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useDismissOnBack(settingsOpen, () => setSettingsOpen(false));
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("model");
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -365,16 +384,18 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       if (!session) throw new Error("Select a session first");
       if (readOnly) throw new Error("Reconnect the host before changing this session");
       const envelope = action.envelope ?? await sessionCommand(session, action.request, action.images);
+      await saveOperation("command", envelope);
       setUncertain(envelope);
-      setUncertainPrompt(action.consumePrompt ?? null);
+      setUncertainPrompt(action.consumePrompt ?? (action.request.command.type === "send" || action.request.command.type === "steer" ? prompt : null));
+      await saveDraft();
+      setRetryAllowed(false);
       if (action.optimistic && !action.envelope) {
         store.addLocal({ ...action.optimistic!, id: `local:${envelope.commandId}` });
       }
       const record = await client.sessions.execute.mutate(envelope);
-      if (record.state !== "outcomeUnknown" && record.state !== "received" && record.state !== "started") { setUncertain(null); setUncertainPrompt(null); }
-      return { action, record };
+      return { action, record, envelope };
     },
-    onSuccess: async ({ action, record }) => {
+    onSuccess: async ({ action, record, envelope }) => {
       setActionStatus(commandStatus(action.success, record));
       if (record.state === "succeeded" && (action.request.command.type === "send" || action.request.command.type === "steer")) {
         setPrompt("");
@@ -382,11 +403,39 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
         setDraftImages([]);
       }
       if (record.state === "succeeded" && action.consumePrompt !== undefined) setPrompt(current => current === action.consumePrompt ? "" : current);
+      const finished = record.state === "succeeded" || record.state === "failed";
+      if (finished) { setUncertain(null); setUncertainPrompt(null); }
+      try { await saveDraft(); } catch (error) { setUncertain(envelope); throw error; }
+      if (finished) await forgetOperation(envelope.commandId);
       await queryClient.invalidateQueries({ queryKey: ["sessions"] });
       if (record.state === "succeeded" && action.request.command.type === "setModel" && session?.harness === "codex" && settingsOpen) setSettingsSection("effort");
     },
     onError: (error) => setActionStatus(errorMessage(error)),
   });
+
+  async function checkOriginalCommand(): Promise<void> {
+    if (!uncertain || readOnly) return;
+    try {
+      const operation = await saveOperation("command", uncertain);
+      const record = await reconcileOperation(client, operation);
+      if (record && (record.state === "succeeded" || record.state === "failed")) {
+        if (record.state === "succeeded" && uncertainPrompt !== null) {
+          setPrompt(current => current === uncertainPrompt ? "" : current);
+          if (uncertain.request.command.type === "send" || uncertain.request.command.type === "steer") { for (const image of draftsRef.current) URL.revokeObjectURL(image.url); setDraftImages([]); }
+        }
+        setUncertain(null); setUncertainPrompt(null);
+        try { await saveDraft(); } catch (error) { setUncertain(uncertain); throw error; }
+        await forgetOperation(uncertain.commandId);
+        setActionStatus(record.state === "succeeded" ? "Original command succeeded" : "Original command failed");
+        void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      } else { setRetryAllowed(true); setActionStatus(record ? `Original command ${record.state}; retry only its saved request if needed.` : "No receipt found. The command may have reached the host; retry only its saved request."); }
+    } catch (error) { setActionStatus(errorMessage(error)); }
+  }
+
+  useEffect(() => {
+    if (!uncertain || !recoveryLoaded || readOnly || mutation.isPending || dispatching.current) return;
+    void checkOriginalCommand();
+  }, [uncertain?.commandId, recoveryLoaded, readOnly, mutation.isPending]);
 
   function executeAction(action: CommandAction): void {
     if (dispatching.current || readOnly) return;
@@ -408,7 +457,8 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
 
   const active = !readOnly && session.availability === "active";
   const running = session.runtimeStatus === "running";
-  const busy = mutation.isPending || uploading || preparingImages || Boolean(uncertain);
+  const busy = !draftLoaded || !recoveryLoaded || mutation.isPending || uploading || preparingImages || Boolean(uncertain);
+  const originalBinding = !uncertain || uncertain.bindingRevision === session.bindingRevision && uncertain.runtimeNodeId === session.runtimeNodeId;
   const suggestions = active && !busy && slashDismissed !== prompt ? slashSuggestions(prompt, session.harness) : [];
   const selectedSlash = Math.min(slashIndex, suggestions.length - 1);
   const composerIntent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
@@ -465,7 +515,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }
 
   async function attachImages(files: readonly File[]): Promise<void> {
-    if (!active || uploading || mutation.isPending || uncertain || preparing.current) return;
+    if (!draftLoaded || uploading || mutation.isPending || uncertain || preparing.current) return;
     preparing.current = true;
     setPreparingImages(true);
     try {
@@ -485,68 +535,73 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }
 
   async function send(kind: "send" | "steer"): Promise<void> {
-    if (!session || !active || (!prompt.trim() && !draftImages.length) || uploading || imageUpload.current || uncertain || preparing.current || dispatching.current) return;
-    const intent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
-    if (intent.kind !== "message") { performSlash(intent, prompt); return; }
-    if (draftImages.length && (imageLimits.support === "unsupported" || draftImages.length > imageLimits.count ||
-      draftImages.some((image) => image.file.size > imageLimits.bytes || imageLimits.mediaTypes && !imageLimits.mediaTypes.includes(image.file.type)))) {
-      setActionStatus("Attachments exceed the applied model's image capabilities");
-      return;
-    }
-    transcript.current?.followLatest();
-    const body = intent.text.trim();
-    let request: HarnessCommand = session.harness === "codex"
-      ? kind === "send"
-        ? { harness: "codex", command: { type: "send", input: body } }
-        : { harness: "codex", command: { type: "steer", input: body } }
-      : kind === "send"
-        ? { harness: "copilot", command: { type: "send", prompt: body, mode: "enqueue" } }
-        : { harness: "copilot", command: { type: "steer", prompt: body, mode: "immediate" } };
-    let images: CommandEnvelope["images"];
-    let descriptors: ImageDescriptor[] = [];
-    if (draftImages.length) {
-      const controller = new AbortController();
-      imageUpload.current = controller;
-      setUploading(true);
-      try {
-        const runtime = (await client.runtimeNodes.list.query()).find((item) => item.runtimeNodeId === session.runtimeNodeId);
-        if (!runtime) throw new Error("The session runtime is unavailable");
-        const target = imageTarget(session, runtime);
-        for (const draft of draftImages) {
-          controller.signal.throwIfAborted();
-          const descriptor = draft.descriptor ?? await uploadImage(client, target, new Uint8Array(await draft.file.arrayBuffer()), draft.file.type as ImageMediaType, {
-            imageId: draft.id,
-            signal: controller.signal,
-            onProgress: (sent, total) => setActionStatus(`Uploading ${draft.file.name} · ${Math.round(sent / total * 100)}%`),
-          });
-          descriptors.push(descriptor);
-          setDraftImages((current) => current.map((item) => item.id === draft.id ? { ...item, descriptor } : item));
-        }
-        const message = imageMessage(session.harness, kind, body, descriptors);
-        request = message.request;
-        images = message.images;
-      } catch (error) {
-        setActionStatus(controller.signal.aborted ? "Upload cancelled; your draft is retained" : errorMessage(error));
+    if (sending.current || !session || !active || !draftLoaded || !recoveryLoaded || (!prompt.trim() && !draftImages.length) || uploading || imageUpload.current || uncertain || preparing.current || dispatching.current) return;
+    sending.current = true;
+    try {
+      const intent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
+      if (intent.kind !== "message") { performSlash(intent, prompt); return; }
+      if (draftImages.length && (imageLimits.support === "unsupported" || draftImages.length > imageLimits.count ||
+        draftImages.some((image) => image.file.size > imageLimits.bytes || imageLimits.mediaTypes && !imageLimits.mediaTypes.includes(image.file.type)))) {
+        setActionStatus("Attachments exceed the applied model's image capabilities");
         return;
-      } finally { if (mounted.current) setUploading(false); imageUpload.current = null; }
-      if (!mounted.current) return;
-    }
-    setActionStatus("Dispatching command once…");
-    executeAction({ request, images, success: kind === "send" ? "Message sent" : "Steering message sent", optimistic: {
-      id: "local:pending",
-      kind: "user",
-      title: kind === "send" ? "You" : "You · steer",
-      body,
-      timestamp: new Date().toISOString(),
-      raw: { local: true, kind },
-      sequence: 2_000_000_000 + Date.now(),
-      pending: true,
-      images: descriptors.map((image) => ({ image })),
-    } });
+      }
+      try { await saveDraft(); } catch (error) { setActionStatus(errorMessage(error)); return; }
+      transcript.current?.followLatest();
+      const body = intent.text.trim();
+      let request: HarnessCommand = session.harness === "codex"
+        ? kind === "send"
+          ? { harness: "codex", command: { type: "send", input: body } }
+          : { harness: "codex", command: { type: "steer", input: body } }
+        : kind === "send"
+          ? { harness: "copilot", command: { type: "send", prompt: body, mode: "enqueue" } }
+          : { harness: "copilot", command: { type: "steer", prompt: body, mode: "immediate" } };
+      let images: CommandEnvelope["images"];
+      let descriptors: ImageDescriptor[] = [];
+      if (draftImages.length) {
+        const controller = new AbortController();
+        imageUpload.current = controller;
+        setUploading(true);
+        try {
+          const runtime = (await client.runtimeNodes.list.query()).find((item) => item.runtimeNodeId === session.runtimeNodeId);
+          if (!runtime) throw new Error("The session runtime is unavailable");
+          const target = imageTarget(session, runtime);
+          for (const draft of draftImages) {
+            controller.signal.throwIfAborted();
+            const descriptor = draft.binding === bindingIdentity && draft.descriptor ? draft.descriptor : await uploadImage(client, target, new Uint8Array(await draft.file.arrayBuffer()), draft.file.type as ImageMediaType, {
+              imageId: draft.id,
+              signal: controller.signal,
+              onProgress: (sent, total) => setActionStatus(`Uploading ${draft.file.name} · ${Math.round(sent / total * 100)}%`),
+            });
+            descriptors.push(descriptor);
+            setDraftImages((current) => current.map((item) => item.id === draft.id ? { ...item, descriptor, binding: bindingIdentity } : item));
+          }
+          const message = imageMessage(session.harness, kind, body, descriptors);
+          request = message.request;
+          images = message.images;
+        } catch (error) {
+          setActionStatus(controller.signal.aborted ? "Upload cancelled; your draft is retained" : errorMessage(error));
+          return;
+        } finally { if (mounted.current) setUploading(false); imageUpload.current = null; }
+        if (!mounted.current) return;
+      }
+      setActionStatus("Dispatching command once…");
+      executeAction({ request, images, success: kind === "send" ? "Message sent" : "Steering message sent", optimistic: {
+        id: "local:pending",
+        kind: "user",
+        title: kind === "send" ? "You" : "You · steer",
+        body,
+        timestamp: new Date().toISOString(),
+        raw: { local: true, kind },
+        sequence: 2_000_000_000 + Date.now(),
+        pending: true,
+        images: descriptors.map((image) => ({ image })),
+      } });
+    } finally { sending.current = false; }
   }
 
   function keyboardSend(event: KeyboardEvent<HTMLElement>): void {
     if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" && window.matchMedia("(pointer: coarse)").matches) return;
     if (suggestions.length) {
       if (event.key === "Escape") { event.preventDefault(); setSlashDismissed(prompt); promptInput.current?.focus(); return; }
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -572,7 +627,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
       data-testid="session-console"
     >
       <header className="session-header flex min-h-[72px] flex-col items-stretch justify-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:px-5 [@media(max-height:500px)]:min-h-12 [@media(max-height:500px)]:py-0">
-        <div className="min-w-0 sm:flex-1">
+        <div className="session-heading min-w-0 sm:flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="truncate text-sm font-semibold text-[var(--text-primary)]" title={title}>{title}</h1>
             <Badge tone={session.harness === "codex" ? "brand" : "good"}>{session.harness}</Badge>
@@ -608,7 +663,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               Terminal
             </Tabs.Trigger>
           </Tabs.List>
-          <StatusLabel tone={sessionFailure ? "bad" : runtimeTone(session.runtimeStatus)}>{sessionFailure ? "Error reported" : humanizeStatus(session.runtimeStatus)}</StatusLabel>
+          <span className="session-runtime-status"><StatusLabel tone={sessionFailure ? "bad" : runtimeTone(session.runtimeStatus)}>{sessionFailure ? "Error reported" : humanizeStatus(session.runtimeStatus)}</StatusLabel></span>
           <Popover.Root open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
             <Popover.Trigger asChild><button className="min-h-9 text-xs text-[var(--text-secondary)]" title="Connection and history details" data-testid="session-health">{readOnly ? "Offline" : streamState === "live" ? "Live" : "Connecting"}</button></Popover.Trigger>
             <Popover.Portal><Popover.Content sideOffset={8} collisionPadding={12} className="z-50 w-72 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-xs text-[var(--text-secondary)]">
@@ -667,7 +722,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
           aria-label="Pending agent interactions"
           tabIndex={0}
         >
-          <fieldset disabled={readOnly}><InteractionCards interactions={pendingInteractions} /></fieldset>
+          <InteractionCards interactions={pendingInteractions} readOnly={readOnly} />
         </div>
       ) : null}
 
@@ -701,13 +756,15 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               onChange={(event) => { setPrompt(event.target.value); setSlashIndex(0); setSlashDismissed(null); }}
               onKeyDown={keyboardSend}
               onPaste={(event) => { const files = [...event.clipboardData.files]; if (files.length) { event.preventDefault(); void attachImages(files); } }}
-              placeholder={readOnly ? "Reconnect the host before sending a message" : active ? "Message this agent, or / for commands…" : "Resume this session before sending a message"}
-              disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
+              placeholder={readOnly ? "Write a draft · send when connected" : active ? "Message this agent, or / for commands…" : "Write a draft · send after resuming"}
+              disabled={!draftLoaded || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
               data-testid="prompt-input"
             />
             <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2 sm:gap-2">
               <input ref={imagePicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" multiple className="hidden" onChange={(event) => { void attachImages([...(event.target.files ?? [])]); event.target.value = ""; }} data-testid="image-file-input" />
-              <Button icon={ImagePlus} disabled={!active || mutation.isPending || uploading || preparingImages || Boolean(uncertain) || imageLimits.support === "unsupported"} aria-label="Attach images" title={imageLimits.support === "unsupported" ? "The applied model does not accept images" : "Attach images"} onClick={() => imagePicker.current?.click()} data-testid="attach-images-button" />
+              <Button icon={ImagePlus} disabled={!draftLoaded || mutation.isPending || uploading || preparingImages || Boolean(uncertain) || imageLimits.support === "unsupported"} aria-label="Attach images" title={imageLimits.support === "unsupported" ? "The applied model does not accept images" : "Attach images"} onClick={() => imagePicker.current?.click()} data-testid="attach-images-button" />
+              <input ref={cameraPicker} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => { void attachImages([...(event.target.files ?? [])]); event.target.value = ""; }} data-testid="camera-file-input" />
+              <Button className="sm:hidden" icon={Camera} disabled={!draftLoaded || busy || imageLimits.support === "unsupported"} aria-label="Take a photo" onClick={() => cameraPicker.current?.click()} data-testid="camera-button" />
               <ModelPicker session={session} models={models.data ?? []} loading={models.isPending} loadError={models.isError}
                 onRetryModels={() => { void models.refetch(); }} disabled={!active || busy} open={settingsOpen} onOpenChange={value => { setSettingsOpen(value); if (value) setActionStatus(""); }}
                 section={settingsSection} onSectionChange={setSettingsSection} status={actionStatus}
@@ -721,7 +778,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
                 <Button
                   className={running && !isSlash ? undefined : "hidden"}
                   icon={CornerDownRight}
-                  disabled={!active || !running || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
+                  disabled={!active || !draftLoaded || !recoveryLoaded || !running || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
                   onClick={() => send("steer")}
                   data-testid="steer-button"
                 >
@@ -731,7 +788,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
                   tone="primary"
                   icon={mutation.isPending ? LoaderCircle : Send}
                   className={mutation.isPending ? "[&_svg]:animate-spin" : undefined}
-                  disabled={!active || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
+                  disabled={!active || !draftLoaded || !recoveryLoaded || (!prompt.trim() && !draftImages.length) || mutation.isPending || uploading || preparingImages || Boolean(uncertain)}
                   onClick={() => send("send")}
                   data-testid="send-button"
                 >
@@ -741,7 +798,12 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
             </div>
           </div>
           {uploading ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => imageUpload.current?.abort()}>Cancel upload</button> : null}
-          {uncertain && !mutation.isPending ? <button className="col-span-full min-h-9 text-xs text-[var(--accent)]" onClick={() => executeAction({ request: uncertain.request, envelope: uncertain, success: "Command reconciled", ...(uncertainPrompt !== null ? { consumePrompt: uncertainPrompt } : {}) })} disabled={readOnly} data-testid="reconcile-command">Check the original command</button> : null}
+          {saveError ? <p className="py-2 text-xs text-[var(--status-error)]" role="alert" data-testid="draft-save-error">{saveError} <button className="min-h-11 underline" onClick={() => { void saveDraft().catch(() => {}); }}>Try saving again</button></p> : null}
+          {uncertain && !mutation.isPending ? <div className="flex flex-wrap gap-2 text-xs">
+            <button className="min-h-11 text-[var(--accent)]" onClick={() => { void checkOriginalCommand(); }} disabled={readOnly} data-testid="reconcile-command">Check the original command</button>
+            {retryAllowed && originalBinding ? <button className="min-h-11 text-[var(--accent)]" onClick={() => executeAction({ request: uncertain.request, envelope: uncertain, success: "Command reconciled", ...(uncertainPrompt !== null ? { consumePrompt: uncertainPrompt } : {}) })} disabled={readOnly} data-testid="retry-command">Retry the same command</button> : null}
+            {!originalBinding ? <p role="status">This operation belongs to an earlier runtime binding. Check its receipt; it cannot be sent to this replacement.</p> : null}
+          </div> : null}
           <div className={classes(!actionStatus && "hidden sm:flex", "col-span-full mt-1.5 flex min-h-6 items-center justify-between gap-3 [@media(max-height:500px)]:mt-0 [@media(max-height:500px)]:min-h-0")}>
             <p className="min-w-0 truncate text-xs text-[var(--text-secondary)]" role="status" title={actionStatus} data-testid="action-status">{actionStatus}</p>
             <span className="hidden shrink-0 text-xs text-[var(--text-secondary)] sm:inline [@media(max-height:500px)]:hidden">/ for commands · Shift+Enter for newline</span>

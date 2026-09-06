@@ -18,3 +18,8 @@ licenses. These images are deployment dependencies, not part of the Leo image.
 
 No runtime credentials or configuration from Leo's machines are distribution
 inputs. Nix and Docker builds consume code and immutable public artifacts only.
+
+Android Web Push uses `web-push` 3.6.7 (MPL-2.0), `http_ece` 1.2.0 (MIT),
+`asn1.js` 5.4.1 (MIT), and their pinned dependencies. Their license/source files
+remain in redistributed `node_modules`; web-push source is unmodified. The new
+Leo app icons are original vector-derived raster assets authored for this repo.

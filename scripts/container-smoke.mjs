@@ -56,7 +56,9 @@ try {
   assert.equal((await fetch(`${origin}/auth/session`)).status, 401);
   assert.equal((await fetch(`${origin}/auth/session`, { headers: { "Tailscale-User-Login": "wrong@example.test" } })).status, 401);
   const headers = { "Tailscale-User-Login": tailConfig.email };
-  assert.deepEqual(await (await fetch(`${origin}/auth/session`, { headers })).json(), { method: "tailscale" });
+  const identity = await (await fetch(`${origin}/auth/session`, { headers })).json();
+  assert.equal(identity.method, "tailscale");
+  assert.match(identity.storageScope, /^[A-Za-z0-9_-]{43}$/);
   assert.equal((await fetch(origin, { headers })).status, 200);
   assert.equal((await fetch(`${origin}/auth/check`, { method: "POST", headers: { ...headers, origin: "https://wrong.example.test" } })).status, 401);
   console.log(JSON.stringify({ ok: true, authentication: "Tailscale loopback fixture", modelCalls: 0 }));

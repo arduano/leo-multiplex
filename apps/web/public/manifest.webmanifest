@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "Leo / agents",
+  "short_name": "Leo agents",
+  "description": "Your agents, wherever you are.",
+  "start_url": "/#/agents",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#141615",
+  "theme_color": "#141615",
+  "icons": [
+    {
+      "src": "/icons/leo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/leo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/leo-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

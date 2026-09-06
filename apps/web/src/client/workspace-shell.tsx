@@ -7,6 +7,10 @@ import {
   type Layout,
 } from "react-resizable-panels";
 import {
+  ArrowLeft,
+  Bell,
+  BellOff,
+  MoreHorizontal,
   PanelLeftOpen,
   PanelRightOpen,
 } from "lucide-react";
@@ -20,7 +24,8 @@ import {
 
 import { createPortal } from "react-dom";
 
-import { Button, IconButton, classes } from "./ui.js";
+import { IconButton, classes } from "./ui.js";
+import { backToAgents, useDismissOnBack } from "./mobile-navigation.js";
 
 const LAYOUT_STORAGE_KEY = "leo.ui.layout.v2";
 const LEFT_DEFAULT_PX = 288;
@@ -51,6 +56,11 @@ export interface WorkspaceShellProps {
   readonly center: ReactNode;
   readonly inspector: (actions: PaneActions) => ReactNode;
   readonly selectedLabel: string;
+  readonly mobilePage?: "agents" | "session";
+  readonly selectedStatus?: string | undefined;
+  readonly watched?: boolean | undefined;
+  readonly watchBusy?: boolean | undefined;
+  readonly onToggleWatched?: (() => void) | undefined;
 }
 
 const DEFAULT_LAYOUT: LayoutPreferences = {
@@ -60,7 +70,7 @@ const DEFAULT_LAYOUT: LayoutPreferences = {
   rightCollapsed: true,
 };
 
-export function WorkspaceShell({ left, center, inspector, selectedLabel }: WorkspaceShellProps) {
+export function WorkspaceShell({ left, center, inspector, selectedLabel, mobilePage = "session", selectedStatus, watched, watchBusy, onToggleWatched }: WorkspaceShellProps) {
   const mode = useViewportMode();
   // Keep the conversation mounted when responsive shells change. Uploads,
   // uncertain command IDs, and drafts belong to the session, not a viewport.
@@ -85,7 +95,7 @@ export function WorkspaceShell({ left, center, inspector, selectedLabel }: Works
     ? <DesktopWorkspace layout={layout} onLayout={updateLayout} left={left} center={mount} inspector={inspector} />
     : mode === "compact"
       ? <CompactWorkspace layout={layout} onLayout={updateLayout} left={left} center={mount} inspector={inspector} selectedLabel={selectedLabel} />
-      : <MobileWorkspace left={left} center={mount} inspector={inspector} selectedLabel={selectedLabel} />;
+      : <MobileWorkspace left={left} center={mount} inspector={inspector} selectedLabel={selectedLabel} mobilePage={mobilePage} selectedStatus={selectedStatus} watched={watched} watchBusy={watchBusy} onToggleWatched={onToggleWatched} />;
   return <>{workspace}{createPortal(center, conversationHost)}</>;
 }
 
@@ -252,6 +262,7 @@ function CompactWorkspace({ layout, onLayout, left, center, inspector, selectedL
   const latestLeftPixels = useRef(layout.leftPx);
   const [leftCollapsed, setLeftCollapsed] = useState(layout.leftCollapsed);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  useDismissOnBack(inspectorOpen, () => setInspectorOpen(false));
 
   function commitLayout(nextLayout: Layout): void {
     const groupWidth = groupElement.current?.getBoundingClientRect().width ?? 0;
@@ -328,45 +339,34 @@ function CompactWorkspace({ layout, onLayout, left, center, inspector, selectedL
   );
 }
 
-function MobileWorkspace({ left, center, inspector, selectedLabel }: WorkspaceShellProps) {
-  const [agentsOpen, setAgentsOpen] = useState(false);
+function MobileWorkspace({ left, center, inspector, selectedLabel, selectedStatus, mobilePage, watched, watchBusy, onToggleWatched }: WorkspaceShellProps) {
   const [inspectorOpen, setInspectorOpen] = useState(false);
-
+  useDismissOnBack(inspectorOpen, () => setInspectorOpen(false));
   return (
-    <DialogPrimitive.Root open={agentsOpen} onOpenChange={setAgentsOpen}>
-      <main className="flex min-h-0 flex-1 flex-col bg-[var(--surface-canvas)]">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-2">
-          <DialogPrimitive.Trigger asChild>
-            <Button
-              icon={PanelLeftOpen}
-              aria-label="Open agents and hosts"
-              tone="ghost"
-              className="min-h-10 px-2 text-xs"
-              data-testid="agents-sheet-button"
-            >Agents</Button>
-          </DialogPrimitive.Trigger>
-          <span className="flex-1" /><span className="sr-only">{selectedLabel}</span>
+    <main className="flex min-h-0 flex-1 flex-col bg-[var(--surface-canvas)]" data-testid="mobile-workspace">
+      <div className={classes("min-h-0 flex-1 flex-col", mobilePage === "agents" ? "flex" : "hidden")} data-testid="mobile-agents-home">
+        {left({})}
+      </div>
+      <div className={classes("min-h-0 min-w-0 flex-1 flex-col", mobilePage === "session" ? "flex" : "hidden")} data-testid="mobile-conversation">
+        <div className="flex min-h-12 shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] bg-[var(--surface-shell)] px-1.5" data-testid="mobile-conversation-toolbar">
+          <IconButton icon={ArrowLeft} label="Back to agents" tone="ghost" data-testid="agents-sheet-button" onClick={backToAgents} />
+          <div className="min-w-0 flex-1 px-1">
+            <h1 className="truncate text-sm font-semibold" title={selectedLabel}>{selectedLabel}</h1>
+            <p className="truncate text-xs text-[var(--text-muted)]">{selectedStatus}</p>
+          </div>
+          {onToggleWatched ? <IconButton icon={watched ? Bell : BellOff} label={watched ? "Stop watching this agent" : "Watch this agent"} tone="ghost" aria-pressed={watched} disabled={watchBusy} onClick={onToggleWatched} data-testid="watch-agent-button" /> : null}
           <DialogPrimitive.Root open={inspectorOpen} onOpenChange={setInspectorOpen}>
             <DialogPrimitive.Trigger asChild>
-              <Button
-                icon={PanelRightOpen}
-                aria-label="Open details"
-                tone="ghost"
-                className="min-h-10 px-2 text-xs"
-                data-testid="inspector-sheet-button"
-              >Details</Button>
+              <IconButton icon={MoreHorizontal} label="Open details" tone="ghost" data-testid="inspector-sheet-button" />
             </DialogPrimitive.Trigger>
             <WorkspaceSheetContent side="right" title="Details">
               {inspector({ close: () => setInspectorOpen(false) })}
             </WorkspaceSheetContent>
           </DialogPrimitive.Root>
         </div>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{center}</div>
-      </main>
-      <WorkspaceSheetContent side="left" title="Agents & hosts">
-        {left({ close: () => setAgentsOpen(false) })}
-      </WorkspaceSheetContent>
-    </DialogPrimitive.Root>
+        {center}
+      </div>
+    </main>
   );
 }
 
@@ -434,7 +434,7 @@ function WorkspaceSheetContent({ side, title, children }: {
       <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/60" />
       <DialogPrimitive.Content
         className={classes(
-          "fixed inset-y-0 z-50 flex w-[min(92vw,420px)] flex-col border-[var(--border-subtle)] bg-[var(--surface-shell)] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] outline-none",
+          "mobile-fixed-layer fixed inset-y-0 z-50 flex w-[min(92vw,420px)] flex-col border-[var(--border-subtle)] bg-[var(--surface-shell)] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] outline-none",
           side === "left"
             ? "left-0 border-r pl-[env(safe-area-inset-left)]"
             : "right-0 border-l pr-[env(safe-area-inset-right)]",
@@ -448,7 +448,7 @@ function WorkspaceSheetContent({ side, title, children }: {
   );
 }
 
-function useViewportMode(): ViewportMode {
+export function useViewportMode(): ViewportMode {
   const [mode, setMode] = useState<ViewportMode>(viewportMode);
 
   useEffect(() => {

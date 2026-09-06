@@ -107,7 +107,8 @@ function sendNative(nativeType, json) {
   }
 }
 await page.route("**/auth/check", (route) => route.fulfill({ status: 204, body: "" }));
-await page.route("**/auth/session", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ method: "tailscale" }) }));
+await page.route("**/auth/session", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ method: "tailscale", storageScope: "a".repeat(43) }) }));
+await page.route("**/api/mobile/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ devices: [], watchedSessionIds: [], delivery: { pending: 0 } }) }));
 await page.route("**/trpc/**", async (route) => {
   const request = route.request();
   const url = new URL(request.url());

@@ -104,3 +104,13 @@ reflow, tool expansion and remounting, streamed output, and live/history item
 reconciliation. Visible rows must not intersect or duplicate, and the transcript
 must retain visible content with at most 200 mounted messages. Scrubbed passing
 receipts and screenshot/source checksums live in `receipts/transcript-layout/`.
+
+After `npm run build`, `node tests/browser/pwa.mjs` uses a disposable HTTP server
+with the production assets and real service worker. It covers Android list home,
+install metadata, static-only caching, cold offline text/image recovery, offline
+camera input, autosave, explicit updates, invalid push rejection and expired auth.
+No external push delivery or real model is used. `node tests/browser/durable-drafts.mjs`
+uses real IndexedDB to check scopes, quota rejection, conflict preservation and
+exact request/receipt recovery. Set `LEO_TEST_CHROMIUM` when Playwright's default
+Chromium is unavailable. Physical Android installation, OS keyboard/camera
+permissions and FCM background delivery remain operator device checks.

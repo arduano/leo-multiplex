@@ -35,7 +35,7 @@ describe("personal HTTP/WebSocket edge", () => {
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect((await fetch(`${url}/auth/check`, { headers: { "Cf-Access-Jwt-Assertion": token } })).status).toBe(204);
     expect((await fetch(`${url}/auth/session`)).status).toBe(401);
-    expect(await (await fetch(`${url}/auth/session`, { headers: { "Cf-Access-Jwt-Assertion": token } })).json()).toEqual({ method: "cloudflare" });
+    expect(await (await fetch(`${url}/auth/session`, { headers: { "Cf-Access-Jwt-Assertion": token } })).json()).toEqual({ method: "cloudflare", storageScope: expect.stringMatching(/^[\w-]{43}$/) });
   });
   it("rejects websocket upgrades before connection without a valid identity and origin", async () => {
     const { url, token } = await fixture();
