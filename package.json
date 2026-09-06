@@ -14,6 +14,7 @@
     "test": "vitest run",
     "start:host": "node dist/apps/host/src/main.js",
     "start:control": "node dist/apps/host/src/control.js",
+    "host": "node bin/leo-host.js",
     "start:server": "node dist/apps/server/src/main.js",
     "cli": "node dist/apps/agent-cli/src/main.js"
   },
@@ -37,6 +38,8 @@
     "@arduano/p2prpc-core": "https://github.com/arduano/p2prpc/releases/download/v0.2.1/arduano-p2prpc-core-0.2.1.tgz",
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
+    "@github/copilot": "1.0.81",
+    "@github/copilot-sdk": "1.0.11",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-tabs": "^1.1.21",
@@ -110,6 +113,7 @@
     "node-pty@1.1.0": true
   },
   "bin": {
-    "leo-agents": "bin/leo-agents.js"
+    "leo-agents": "bin/leo-agents.js",
+    "leo-host": "bin/leo-host.js"
   }
 }

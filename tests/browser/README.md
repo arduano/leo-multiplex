@@ -23,6 +23,10 @@ It verifies:
 - Lost launch responses, repeated submit events, dialog close/reopen, and retry
   retain exactly one launch ID and request body; terminal settlement unlocks
   the next launch.
+- Copilot launch selects its exact workspace profile and native models/modes,
+  preserves Windows paths, excludes Codex effort and authentication fields, and
+  resets settings when switching hosts or harnesses. Missing profiles explain
+  why creation is unavailable. Its form is checked across all six viewports.
 
 The composer/model checks also exercise local slash parsing and keyboard
 completion, native reasoning choices, delayed setting acknowledgment, failed and

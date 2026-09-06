@@ -54,6 +54,12 @@ let pendingSetting;
 const runtime = { runtimeNodeId: id(5), name: "Disposable test host", presence: "online", reachability: "reachable", runtimeNodeBootId: id(7), capabilities: [], harnesses: [{ harness: "codex", available: true, capabilities: [] }] };
 const source = { sourceId: "fixture", displayName: "Disposable test host", endpointId: "fixture", state: "selected", manifest: { coveredControlNodeIds: [id(2)] }, updatedAt: timestamp };
 const profile = { providerId: "leo.local", profileId: "workspace", contractVersion: 1, requestSchemaHash: "a".repeat(64), implementationVersion: "1.0.0", harnesses: ["codex"], available: true, capabilities: [] };
+const copilotRuntime = { ...runtime, runtimeNodeId: id(25), name: "Disposable Windows laptop", harnesses: [{ harness: "copilot", available: true, capabilities: [] }] };
+const dualRuntime = { ...runtime, runtimeNodeId: id(26), name: "Disposable dual host", harnesses: [...runtime.harnesses, ...copilotRuntime.harnesses] };
+const unconfiguredRuntime = { ...copilotRuntime, runtimeNodeId: id(27), name: "Disposable unconfigured laptop" };
+const copilotProfile = { ...profile, profileId: "copilot-workspace", requestSchemaHash: "b".repeat(64), harnesses: ["copilot"] };
+const copilotModels = [{ harness: "copilot", id: "corporate-fixture-model", name: "Corporate fixture model" }];
+let showCopilotHosts = false;
 let online = true;
 let login = true;
 let gateway = true;
@@ -117,11 +123,20 @@ await page.route("**/trpc/**", async (route) => {
       case "system.describe": data = { componentKind: "access-gateway", protocolVersion: 5 }; break;
       case "sources.list": data = [{ ...source, state: online ? "selected" : "unavailable", manifest: online ? source.manifest : null }]; break;
       case "controlNodes.list": data = online ? [{ controlNodeId: id(2) }] : []; break;
-      case "runtimeNodes.list": data = online ? [runtime] : []; break;
+      case "runtimeNodes.list": data = online ? showCopilotHosts ? [runtime, copilotRuntime, dualRuntime, unconfiguredRuntime] : [runtime] : []; break;
       case "sessions.search": data = { sessions: online && !empty ? showOther ? [session, other] : [session] : [], nextCursor: null }; break;
-      case "harness.models":
-      case "launchProfiles.models": data = models; break;
-      case "launchProfiles.list": data = [profile]; break;
+      case "harness.models": data = models; break;
+      case "launchProfiles.models": {
+        const chosenProfile = input.harness === "copilot" ? copilotProfile : profile;
+        assert.equal(input.profile.profileId, chosenProfile.profileId, "Model list used another harness's launch profile");
+        assert.equal(input.profile.requestSchemaHash, chosenProfile.requestSchemaHash, "Model list lost its exact profile fence");
+        data = input.harness === "copilot" ? copilotModels : models; break;
+      }
+      case "launchProfiles.list": {
+        const chosenRuntime = [runtime, copilotRuntime, dualRuntime, unconfiguredRuntime].find(candidate => candidate.runtimeNodeId === input.runtimeNodeId);
+        assert(chosenRuntime?.harnesses.some(entry => entry.harness === input.harness), "Queried a harness unavailable on the selected host");
+        data = input.runtimeNodeId === unconfiguredRuntime.runtimeNodeId ? [] : input.harness === "copilot" ? [copilotProfile] : [profile]; break;
+      }
       case "interactions.list": data = []; break;
       case "metadata.get": data = session.metadata; break;
       case "sessions.readNativeHistory":
@@ -161,6 +176,7 @@ await page.route("**/trpc/**", async (route) => {
         break;
       case "launches.create":
         launches.push(input);
+        if (input.harness === "copilot") { data = { state: "failed", launchId: input.launchId, sessionId: input.sessionId, error: "Disposable launch captured; no agent was started." }; break; }
         if (launches.length === 1) return route.abort("failed");
         data = { state: "accepted", launchId: input.launchId, sessionId: input.sessionId }; recovery = "accepted"; break;
       case "launches.get": data = recovery === "missing" ? null : { state: recovery, launchId: input }; break;
@@ -783,6 +799,54 @@ try {
   }
   checks.push({ name: "model picker and slash commands fit narrow portrait and landscape without accessibility regressions", passed: true });
   await page.setViewportSize({ width: 1440, height: 900 });
+  showCopilotHosts = true; await refresh();
+  await page.getByTestId("spawn-button").click();
+  await page.getByTestId("spawn-runtime-select").selectOption(runtime.runtimeNodeId);
+  await page.getByTestId("spawn-effort-select").selectOption("high");
+  await page.getByTestId("spawn-mode-select").selectOption("plan");
+  await page.getByTestId("spawn-runtime-select").selectOption(copilotRuntime.runtimeNodeId);
+  await page.getByTestId("spawn-dialog").filter({ hasText: "GitHub account signed in on this host" }).waitFor();
+  await waitEnabled("spawn-model-select", true);
+  assert.equal(await page.getByTestId("spawn-effort-select").count(), 0, "Copilot must not expose Codex reasoning effort");
+  assert.equal(await page.getByTestId("spawn-status").count(), 0, "Another host's launch error leaked into the Copilot form");
+  assert.equal(await page.getByTestId("spawn-harness-select").count(), 0, "A single-harness host needs no redundant selector");
+  assert.equal(await page.getByTestId("spawn-mode-select").inputValue(), "interactive", "Switching hosts retained the other harness's mode");
+  const windowsCwd = "C:\\Users\\Leo\\Work Projects\\corporate-fixture";
+  await page.getByTestId("spawn-cwd-input").fill(windowsCwd);
+  await page.getByTestId("spawn-model-select").selectOption("corporate-fixture-model");
+  await page.getByTestId("spawn-mode-select").selectOption("autopilot");
+  for (const [width, height] of [[1720, 1180], [1440, 900], [1024, 768], [768, 1024], [390, 844], [844, 390]]) {
+    await page.setViewportSize({ width, height });
+    await withinViewport("spawn-dialog", `Copilot launch at ${width}x${height}`);
+    await page.getByTestId("spawn-submit").scrollIntoViewIfNeeded();
+    await withinViewport("spawn-submit", `Copilot launch submit at ${width}x${height}`);
+    await screenshot(`copilot-launch-${width}x${height}`);
+    await axe(`copilot-launch-${width}x${height}`);
+  }
+  await page.getByTestId("spawn-submit").click();
+  await page.getByTestId("spawn-status").filter({ hasText: "Disposable launch captured" }).waitFor();
+  const copilotLaunch = launches.at(-1);
+  assert.equal(copilotLaunch.runtimeNodeId, copilotRuntime.runtimeNodeId);
+  assert.equal(copilotLaunch.harness, "copilot");
+  assert.deepEqual(copilotLaunch.profile, { providerId: "leo.local", profileId: "copilot-workspace", contractVersion: 1, requestSchemaHash: copilotProfile.requestSchemaHash });
+  assert.deepEqual(copilotLaunch.input, { cwd: windowsCwd, model: "corporate-fixture-model", mode: "autopilot" }, "Copilot launch must preserve the Windows path and exclude Codex effort or auth configuration");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("spawn-runtime-select").selectOption(dualRuntime.runtimeNodeId);
+  await page.getByTestId("spawn-harness-select").selectOption("copilot");
+  await waitEnabled("spawn-model-select", true);
+  assert.equal(await page.getByTestId("spawn-mode-select").inputValue(), "interactive");
+  await page.getByTestId("spawn-mode-select").selectOption("autopilot");
+  await page.getByTestId("spawn-harness-select").selectOption("codex");
+  await page.getByTestId("spawn-effort-select").waitFor();
+  assert.equal(await page.getByTestId("spawn-mode-select").inputValue(), "default", "Copilot autopilot leaked into Codex selection");
+  assert.equal(await page.getByTestId("spawn-effort-select").inputValue(), "", "Old host effort leaked into new host selection");
+  await page.getByTestId("spawn-runtime-select").selectOption(unconfiguredRuntime.runtimeNodeId);
+  await page.getByTestId("spawn-cwd-input").fill(windowsCwd);
+  await page.getByTestId("spawn-dialog").filter({ hasText: "no available Copilot workspace profile" }).waitFor();
+  await waitEnabled("spawn-submit", false);
+  await page.keyboard.press("Escape");
+  assert(await page.getByTestId("spawn-button").evaluate(element => document.activeElement === element), "Closing launch must restore focus");
+  checks.push({ name: "Copilot launch chooses exact native profile and model, preserves Windows paths, excludes effort/auth, supports host/harness switching, and explains missing profiles across six viewports", passed: true });
   empty = true; await refresh();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="session-card"]').length === 0);
   checks.push({ name: "fresh authority removal clears stale row", passed: true });

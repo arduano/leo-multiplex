@@ -1,18 +1,30 @@
 import { randomBytes } from "node:crypto";
 import { chmod, link, lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import * as storage from "@arduano/agent-multiplex-storage-sqlite";
 
 export async function privateDirectory(path: string): Promise<void> {
+  if (process.platform === "win32") {
+    const ensure = (storage as { ensurePrivateDirectorySync?: (path: string) => void }).ensurePrivateDirectorySync;
+    if (!ensure) throw new Error("Native Windows requires the framework Windows ACL update; this package graph is not ready for Windows");
+    ensure(path);
+    return;
+  }
   await mkdir(path, { recursive: true, mode: 0o700 });
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Managed state must use a real directory");
   await chmod(path, 0o700);
 }
 
-async function verifyPrivateTarget(path: string): Promise<void> {
+export async function verifyPrivateTarget(path: string): Promise<void> {
   try {
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("Managed state file must not be a symlink");
+    if (process.platform === "win32") {
+      const assert = (storage as { assertPrivateFileSync?: (path: string) => void }).assertPrivateFileSync;
+      if (!assert) throw new Error("Native Windows requires the framework Windows ACL update");
+      assert(path);
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
