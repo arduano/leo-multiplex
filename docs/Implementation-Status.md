@@ -1,5 +1,39 @@
 # Implementation status — 2026-09-06
 
+## Windows background task
+
+The work laptop now has the own-user scheduled task **Leo Multiplex -
+work-windows** installed from service source
+`10c7ba30c6ab5989bb5ce8ec15606dfc08704180`. It starts at sign-in with Interactive
+logon and Limited privilege, no password/elevation, no battery stop and no
+execution timeout. The private runner is confirmed active and
+**waiting-for-foreground**; the owner must press Ctrl+C once in the old host
+terminal to complete the clean handoff. Recovery commands still work through
+that foreground host. The task then calls the existing launcher with plain
+`start`, closing enrollment. The installed host source remains
+`0e79d73fc093f7a039694d9686b04c0b5be7c997`; identity, state and Copilot auth were
+preserved. Signed out/asleep is offline; locking or closing unrelated terminals
+is supported. No model call or native session was created.
+
+The task runner has 17 passing disposable lifecycle tests; all 438 application
+tests, typecheck and build pass. Native scheduler tests in
+[exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34028734922)
+verify foreground writer waiting, task survival after the recovery command's
+kill-on-close job, plain-start handoff, graceful stop, duplicate prevention and
+private-state preservation. Hosted CI retains its existing admin token even
+with Limited configuration, which its receipt records; separate real-laptop
+registration and execution succeeded under a non-administrator account.
+All six downloaded Windows receipt inventories were independently rehashed at
+`receipts/windows-user-service-ci/10c7ba3/`. The laptop installation receipt is
+under `receipts/windows-user-service-deployment/`. Earlier failed workflow
+attempts are diagnostics only.
+
+[The Windows runbook](../deploy/windows/README.md#run-in-the-background-under-your-windows-account)
+owns service control and update guidance. Recovery commands can stage updates,
+but an independent scheduled task must perform stop/backup/source-switch/start.
+An automated revision-upgrade flow is not implemented; never modify the live
+pinned checkout or assume code rollback reverses database migrations.
+
 ## Installation handoff and gateway readiness
 
 Laptop setup requires native x64 Node 24+ and Git, without comparing global npm
