@@ -23,8 +23,8 @@ function Invoke-Checked {
 
 try {
     if ($env:OS -ne 'Windows_NT') { throw 'Run this installer in Windows PowerShell. Use deploy/wsl/install.sh inside WSL.' }
-    $node = (Get-Command node.exe -CommandType Application -ErrorAction Stop).Source
-    $npm = (Get-Command npm.cmd -CommandType Application -ErrorAction Stop).Source
+    $node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $npm = (Get-Command npm.cmd -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $null = Get-Command git.exe -CommandType Application -ErrorAction Stop
     $options = @('--platform', 'windows', '--revision', $Revision.ToLowerInvariant(), '--name', $Name, '--github-host', $GitHubHost)
     foreach ($root in $Workspace) { $options += @('--workspace', $root) }
