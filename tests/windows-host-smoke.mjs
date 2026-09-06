@@ -35,7 +35,20 @@ try {
   for (const enroll of [true, false]) {
     const abort = new AbortController();
     let outcome;
-    console.log = () => {}; console.error = () => {};
+    const observed = { enroll, runtimeStarted: false, runtimeConnected: false, runtimeRows: 0, harnessAvailable: false, databaseRead: false, errorKinds: [] };
+    console.log = (line) => {
+      if (typeof line === 'string' && line.startsWith('Agent Multiplex runtime node')) observed.runtimeStarted = true;
+      if (typeof line === 'string' && line.startsWith('Connected to control node')) observed.runtimeConnected = true;
+    };
+    console.error = (line) => {
+      if (typeof line !== 'string') return;
+      const kind = /timed? ?out|timeout/i.test(line) ? 'timeout'
+        : /unauthor|forbidden|permission/i.test(line) ? 'authorization'
+        : /connect/i.test(line) ? 'connection'
+        : /inventory/i.test(line) ? 'inventory'
+        : /metadata/i.test(line) ? 'metadata' : 'other';
+      if (!observed.errorKinds.includes(kind)) observed.errorKinds.push(kind);
+    };
     const running = runManagedHost({ ...config, enrollRuntimes: enroll, enrollGateways: false }, abort.signal)
       .then(() => { outcome = 'stopped'; }, () => { outcome = 'failed'; });
     try {
@@ -46,7 +59,10 @@ try {
           const db = new DatabaseSync(join(state, 'control', 'catalog.sqlite'), { readOnly: true });
           try {
             const rows = db.prepare('SELECT record_json FROM runtime_nodes').all();
+            observed.databaseRead = true;
+            observed.runtimeRows = rows.length;
             const record = rows.length === 1 ? JSON.parse(rows[0].record_json) : undefined;
+            observed.harnessAvailable = record?.harnesses?.some(harness => harness.harness === 'copilot' && harness.available) ?? false;
             joined = record?.presence === 'online' && record.runtimeNodeBootId !== previousBoot
               && record.harnesses?.some(harness => harness.harness === 'copilot' && harness.available);
           }
@@ -63,6 +79,7 @@ try {
       try { await Promise.race([running, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('host shutdown exceeded its deadline')), 30_000); })]); }
       finally { clearTimeout(timer); }
       console.log = savedLog; console.error = savedError;
+      savedLog(JSON.stringify({ windowsHostObservation: observed }));
     }
     assert.notEqual(outcome, 'failed', 'managed host must shut down cleanly');
     const catalog = new ControlNodeCatalog({ filename: join(state, 'control', 'catalog.sqlite'), controlNodeName: config.name });
