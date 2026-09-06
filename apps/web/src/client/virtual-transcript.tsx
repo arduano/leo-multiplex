@@ -13,6 +13,7 @@ import { NativeErrorNotice } from "./session-error.js";
 export interface TranscriptHandle { followLatest(): void; }
 
 const TRANSCRIPT_WINDOW = 200;
+const executionEntry = (entry: TimelineEntry) => entry.kind === "tool" || entry.kind === "reasoning" || entry.kind === "subagent" || entry.kind === "raw";
 /** Keep a full readable window around the viewport, shifting it at either end. */
 function transcriptRange({ startIndex, endIndex, count }: Range): number[] {
   const size = Math.min(count, TRANSCRIPT_WINDOW);
@@ -41,7 +42,7 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
     count: store.count, getScrollElement: () => viewport.current, getItemKey,
     estimateSize: (index) => {
       const entry = store.at(index)!;
-      return entry.kind === "tool" || entry.kind === "reasoning" || entry.kind === "subagent" ? 68 : 160;
+      return executionEntry(entry) ? 44 : 160;
     },
     rangeExtractor: transcriptRange, paddingStart: 24, paddingEnd: working ? 60 : 24,
     // Our row observer commits the complete measurement batch once. Flushing
@@ -149,12 +150,14 @@ export const VirtualTranscript = memo(forwardRef<TranscriptHandle, {
             the same browser layout, before ResizeObserver updates estimates. */}
         <div className="absolute left-0 top-0 w-full min-w-0 transition-none" style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}>
         {rows.map((row) => {
+          const entry = store.at(row.index)!;
+          const compact = executionEntry(entry) && !entry.failure;
           if (row.index >= (virtualizer.range?.startIndex ?? 0) - 5 && row.index <= (virtualizer.range?.endIndex ?? 0) + 5) richRows.current.add(row.key);
           const rich = richRows.current.has(row.key);
           return <div key={row.key} data-index={row.index} data-row-key={row.key}
-            ref={observeRow} className="w-full min-w-0 px-4 pb-6 sm:px-8 transition-none"
-            style={{ contentVisibility: "auto", containIntrinsicBlockSize: `auto ${Math.max(0, row.size - 24)}px` }}>
-            <TimelineItem entry={store.at(row.index)!} store={store} rich={rich} />
+            ref={observeRow} className={classes("w-full min-w-0 px-4 sm:px-8 transition-none", compact ? "pb-2" : "pb-6")}
+            style={{ contentVisibility: "auto", containIntrinsicBlockSize: `auto ${Math.max(0, row.size - (compact ? 8 : 24))}px` }}>
+            <TimelineItem entry={entry} store={store} rich={rich} />
           </div>;
         })}
         {working && rows.at(-1)?.index === store.count - 1 ? <div className="px-4 sm:px-8"><WorkingIndicator /></div> : null}
@@ -199,7 +202,7 @@ function BoundedBody({ body, sourceKey, store, rich = true, plain = false, code 
 }
 
 const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readonly entry: TimelineEntry; readonly store: TranscriptStore; readonly rich: boolean }) {
-  const isExecution = entry.kind === "reasoning" || entry.kind === "tool" || entry.kind === "subagent" || entry.kind === "raw";
+  const isExecution = executionEntry(entry);
   const isFailed = entry.status === "failed" || entry.status === "error";
   const [expanded, setExpanded] = useState(() => store.view(entry.id)?.expanded ?? Boolean(entry.pending || isFailed));
   const lifecycle = `${Boolean(entry.pending)}:${isFailed}`;
@@ -215,9 +218,16 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
     <NativeErrorNotice failure={entry.failure} />
   </article>;
   if (isExecution) {
+    const hasOutput = /\S/.test(entry.body);
+    const heading = <>
+      {hasOutput ? <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-[var(--text-muted)] transition group-open:rotate-90" /> : <span aria-hidden="true" className="w-3.5 shrink-0" />}
+      <span className="min-w-0 flex-1 truncate" title={entry.title}>{entry.title}</span>
+      {entry.status ? <ExecutionStatus status={entry.status} /> : entry.pending ? <ExecutionStatus status="running" /> : <span className="text-xs text-[var(--text-muted)]">Done</span>}
+    </>;
+    const headingClass = "flex min-h-9 items-center gap-2 px-1 py-1 text-xs text-[var(--text-secondary)]";
     return (
       <article
-        className="execution-row min-w-0 max-w-full border-l border-[var(--border-subtle)] pl-3"
+        className="execution-row min-w-0 max-w-full border-l border-[var(--border-subtle)] pl-2"
         data-testid="chat-message"
         data-role={entry.kind}
         data-entry-id={entry.id}
@@ -225,17 +235,13 @@ const TimelineItem = memo(function TimelineItem({ entry, store, rich }: { readon
         data-thread-id={entry.threadId}
         data-turn-id={entry.turnId}
       >
-        <details className="group min-w-0 max-w-full overflow-hidden" open={expanded} onToggle={(event) => {
+        {hasOutput ? <details className="group min-w-0 max-w-full overflow-hidden" open={expanded} onToggle={(event) => {
           setExpanded(event.currentTarget.open);
           store.rememberView(entry.id, { expanded: event.currentTarget.open });
         }}>
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs text-[var(--text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/60">
-            <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-[var(--text-muted)] transition group-open:rotate-90" />
-            <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-            {entry.status ? <ExecutionStatus status={entry.status} /> : entry.pending ? <ExecutionStatus status="running" /> : <span className="text-xs text-[var(--text-muted)]">Done</span>}
-          </summary>
-          {expanded ? <BoundedBody body={entry.body || "No output"} sourceKey={entry.id} store={store} plain code={entry.kind === "tool" || entry.kind === "raw"} pending={entry.pending} /> : null}
-        </details>
+          <summary className={classes(headingClass, "cursor-pointer list-none [@media(pointer:coarse)]:min-h-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]/60")}>{heading}</summary>
+          {expanded ? <div className="pb-2 text-xs leading-5 text-[var(--text-secondary)]"><BoundedBody body={entry.body} sourceKey={entry.id} store={store} plain code={entry.kind === "tool" || entry.kind === "raw"} pending={entry.pending} /></div> : null}
+        </details> : <div className={headingClass}>{heading}</div>}
         {entry.images?.map((image, index) => <TranscriptImagePreview key={index} {...image} sourceKey={`${entry.id}:image:${index}`} />)}
       </article>
     );
@@ -310,7 +316,7 @@ function ExecutionStatus({ status }: { readonly status: string }) {
   const failed = status === "failed" || status === "error";
   const running = status === "running" || status === "inProgress";
   return (
-    <span className={classes(
+    <span title={status} className={classes(
       "shrink-0 text-xs",
       failed ? "text-[var(--status-error)]" : running ? "text-[var(--accent)]" : "text-[var(--text-secondary)]",
     )}>{humanizeStatus(status)}</span>
@@ -318,4 +324,9 @@ function ExecutionStatus({ status }: { readonly status: string }) {
 }
 
 
-function humanizeStatus(value: string): string { return value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll(/[./_-]+/g, " "); }
+function humanizeStatus(value: string): string {
+  if (value === "inProgress" || value === "running") return "Running";
+  if (value === "completed") return "Done";
+  const label = value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll(/[./_-]+/g, " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}

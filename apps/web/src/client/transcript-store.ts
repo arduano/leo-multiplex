@@ -8,8 +8,12 @@ interface RowViewState { readonly expanded?: boolean; readonly page?: number | n
 export class TranscriptStore {
   private readonly entries = new Map<string, TimelineEntry>();
   private readonly historyIds: string[] = [];
-  private readonly historySet = new Set<string>();
+  // Native order includes undisclosed reasoning so later content can become
+  // visible in its original position, without empty virtual rows or rescans.
+  private readonly historyOrder = new Map<string, number>();
   private readonly liveIds: string[] = [];
+  private readonly liveOrder = new Map<string, number>();
+  private nextLiveOrder = 0;
   private readonly localIds: string[] = [];
   private readonly assets = new Map<string, TranscriptImage>();
   private readonly assetUsers = new Map<string, Set<string>>();
@@ -56,27 +60,31 @@ export class TranscriptStore {
     const hadTail = this.liveIds.length + this.localIds.length > 0;
     const moved = new Set<string>();
     for (const entry of page) {
-      if (!this.historySet.has(entry.id)) {
-        this.historySet.add(entry.id);
-        this.historyIds.push(entry.id);
-        if (this.entries.has(entry.id)) moved.add(entry.id);
+      const newlyHistorical = !this.historyOrder.has(entry.id);
+      if (newlyHistorical) {
+        this.historyOrder.set(entry.id, this.historyOrder.size);
+        if (this.liveOrder.has(entry.id)) moved.add(entry.id);
       }
       const previous = this.entries.get(entry.id);
-      if (previous?.pending === false && entry.historySnapshot) continue;
+      if (previous?.pending === false && entry.historySnapshot) {
+        if (newlyHistorical) this.syncVisible(previous);
+        continue;
+      }
       if (entry.historySnapshot) {
         const previousHydration = this.hydrating.get(entry.id);
         const live = previousHydration?.live ?? (previous && !previous.historySnapshot ? previous : undefined);
         this.hydrating.set(entry.id, { snapshot: entry, ...(live ? { live } : {}) });
-        this.put(this.hydrated(entry, live), true);
+        this.put(this.hydrated(entry, live), true, newlyHistorical);
       } else {
         this.hydrating.delete(entry.id);
-        this.put(entry, true);
+        this.put(entry, true, newlyHistorical);
       }
     }
     if (moved.size) {
       let write = 0;
       for (const id of this.liveIds) if (!moved.has(id)) this.liveIds[write++] = id;
       this.liveIds.length = write;
+      for (const id of moved) this.liveOrder.delete(id);
     }
     if (moved.size || hadTail && previousHistoryCount !== this.historyIds.length) this.orderRevision += 1;
     this.emit();
@@ -90,7 +98,7 @@ export class TranscriptStore {
         const hydration = this.hydrating.get(id);
         return hydration ? hydration.live : this.entries.get(id);
       })) {
-        if (!this.entries.has(entry.id)) this.liveIds.push(entry.id);
+        if (!this.entries.has(entry.id)) this.liveOrder.set(entry.id, this.nextLiveOrder++);
         const hydration = this.hydrating.get(entry.id);
         if (hydration && entry.pending !== false) {
           hydration.live = entry;
@@ -122,7 +130,30 @@ export class TranscriptStore {
     if (live?.streamStarted && live.body.startsWith(snapshot.body)) return live;
     return snapshot;
   }
-  private put(incoming: TimelineEntry, fromHistory = false): void {
+  private syncVisible(entry: TimelineEntry): void {
+    const historical = this.historyOrder.has(entry.id);
+    const ids = historical ? this.historyIds : this.liveIds;
+    const order = historical ? this.historyOrder : this.liveOrder;
+    const position = order.get(entry.id)!;
+    // Most items append. A formerly empty item needs only a binary search;
+    // normal stream deltas never revisit ordering or copy the history array.
+    let start = 0;
+    let end = ids.length;
+    while (start < end) {
+      const middle = (start + end) >>> 1;
+      if (order.get(ids[middle]!)! < position) start = middle + 1;
+      else end = middle;
+    }
+    const present = ids[start] === entry.id;
+    if (visible(entry) && !present) {
+      if (start < ids.length || !historical && this.localIds.length > 0) this.orderRevision += 1;
+      ids.splice(start, 0, entry.id);
+    } else if (!visible(entry) && present) {
+      ids.splice(start, 1);
+      this.orderRevision += 1;
+    }
+  }
+  private put(incoming: TimelineEntry, fromHistory = false, reindex = false): void {
     const previous = this.entries.get(incoming.id);
     const keepTerminal = previous?.pending === false && incoming.pending === true;
     let entry: TimelineEntry = keepTerminal ? previous : {
@@ -139,6 +170,7 @@ export class TranscriptStore {
       return retained?.image ? { ...image, image: retained.image } : image;
     }) };
     this.entries.set(entry.id, entry);
+    if (reindex || !previous || visible(previous) !== visible(entry)) this.syncVisible(entry);
     const raw = entry.raw as { type?: unknown; data?: { assetId?: unknown } } | null;
     if (raw?.type === "session.binary_asset" && typeof raw.data?.assetId === "string") {
       const retained = entry.images?.find((image) => image.image && !("unavailable" in image.image));
@@ -162,6 +194,12 @@ export class TranscriptStore {
     }
   }
   private emit(): void { this.version += 1; for (const listener of this.listeners) listener(); }
+}
+
+/** Providers may disclose no reasoning text. Keep its native lifecycle for
+ * replay protection, but allocate a display row only when there is content. */
+function visible(entry: TimelineEntry): boolean {
+  return entry.kind !== "reasoning" || /\S/.test(entry.body) || Boolean(entry.images?.length || entry.failure) || entry.status === "failed" || entry.status === "error";
 }
 
 function sameUser(left: TimelineEntry, right: TimelineEntry): boolean {

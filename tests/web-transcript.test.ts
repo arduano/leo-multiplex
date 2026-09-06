@@ -12,6 +12,55 @@ const event = (sequence: number, nativeType: string, json: unknown): NativeEvent
 const session = { sessionId: "session", harness: "codex" } as SessionRecord;
 
 describe("indexed transcript", () => {
+  it("omits empty reasoning from display indexing while retaining native snapshots and replay protection", () => {
+    const store = new TranscriptStore();
+    const hidden = { ...entry("reasoning", " \n"), kind: "reasoning" as const };
+    store.appendHistory([entry("first"), hidden, entry("last")]);
+    expect(store.count).toBe(2);
+    expect(store.historyCount).toBe(2);
+    expect(store.get(hidden.id)).toMatchObject(hidden);
+    expect(store.indexOf(hidden.id)).toBe(-1);
+    store.applyEvents([event(1, "item/reasoning/summaryTextDelta", { itemId: "reasoning", delta: "stale replay" })]);
+    expect(store.count).toBe(2);
+    expect(store.at(1)?.body).toBe("last");
+  });
+
+  it("reveals streamed reasoning in its original native position and promotes it into history once", () => {
+    const store = new TranscriptStore();
+    store.applyEvents([
+      event(1, "item/started", { item: { type: "reasoning", id: "reasoning", summary: [], content: [] } }),
+      event(2, "item/started", { item: { type: "commandExecution", id: "tool", command: "inspect", aggregatedOutput: "", status: "inProgress" } }),
+    ]);
+    expect(store.count).toBe(1);
+    store.applyEvents([event(3, "item/reasoning/summaryTextDelta", { itemId: "reasoning", delta: "Disclosed summary" })]);
+    expect([store.at(0)?.kind, store.at(1)?.kind]).toEqual(["reasoning", "tool"]);
+    store.appendHistory([{ ...entry("reasoning", "Disclosed summary"), kind: "reasoning" }, { ...entry("tool", ""), kind: "tool" }]);
+    expect(store.count).toBe(2);
+    expect(store.historyCount).toBe(2);
+    expect(store.at(0)?.body).toBe("Disclosed summary");
+  });
+
+  it("reveals reasoning from a historical empty snapshot without shifting it to the live tail", () => {
+    const store = new TranscriptStore();
+    store.appendHistory([entry("before"), { ...entry("reasoning", ""), kind: "reasoning", pending: undefined, historySnapshot: true }, entry("after")]);
+    store.applyEvents([
+      event(1, "item/started", { item: { type: "reasoning", id: "reasoning", summary: [], content: [] } }),
+      event(2, "item/reasoning/summaryTextDelta", { itemId: "reasoning", delta: "Native summary" }),
+    ]);
+    expect([0, 1, 2].map((index) => store.at(index)?.body)).toEqual(["before", "Native summary", "after"]);
+    expect(store.ordering).toBeGreaterThan(0);
+  });
+
+  it("retains failed reasoning, images and disclosed summaries without model-specific assumptions", () => {
+    const store = new TranscriptStore();
+    store.appendHistory([
+      { ...entry("failed", ""), kind: "reasoning", status: "failed" },
+      { ...entry("image", ""), kind: "reasoning", images: [{ path: "/disposable.png" }] },
+      { ...entry("summary", "Actual summary"), kind: "reasoning" },
+    ]);
+    expect(store.count).toBe(3);
+  });
+
   it("retains 100,000 ordered items and updates a single live item without replacing settled row identities", () => {
     const store = new TranscriptStore();
     for (let page = 0; page < 1_000; page += 1) store.appendHistory(Array.from({ length: 100 }, (_, index) => entry(String(page * 100 + index))));

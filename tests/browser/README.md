@@ -40,6 +40,11 @@ view; returning to Chat preserves the parent draft. Child history is explicitly
 partial, and viewing it sends no agent commands. Desktop and mobile screenshots
 and accessibility checks cover the separate view.
 
+Compact execution checks hide undisclosed/whitespace reasoning, preserve real
+reasoning and failures, and remove disclosures from tools without output. They
+verify keyboard expansion, smaller desktop rows, and 44 px disclosure targets
+with a coarse pointer.
+
 Passing screenshots and a manifest covering all UI source, dependency lockfile,
 font/license notices, and screenshot checksums are written under the ignored
 `receipts/browser/` directory. Failed runs retain diagnostic screenshots only.
@@ -73,6 +78,24 @@ bounds on the recorded machine/browser, not a guarantee that every device or
 arbitrary native payload can never pause. Native loading still requires network
 round trips, and the current API makes reaching recent history in an existing
 large thread an automatic, cancellable forward scan.
+
+The long-thread suite also records renderer heap before and after forced garbage
+collection, DOM counts, and serialized fixture bytes. Samples cover initial
+history, full history, expanded output, scrolling/streaming, and switching to a
+one-item session. `LEO_MEMORY_AUDIT_ONLY=1` records timing bounds as observations
+while retaining functional assertions; its result is explicitly
+`memory-audit-completed`, not a passing latency qualification. The default run
+continues to enforce all timing thresholds. `LEO_HEAP_SNAPSHOT=1` additionally
+writes a potentially large, local synthetic heap snapshot after switching.
+
+After `npm run build`, `node scripts/gateway-memory-audit.mjs` measures the
+published projection and personal HTTP surface in an isolated child process.
+It forwards 100,000 synthetic history items and concurrent reads, then samples
+live journal rotation, a stalled subscriber, and consumed replay retention.
+The parent fixture/client allocations are outside the measured process. No
+native provider or production gateway is contacted. Aggregate measurements and
+checksums go to `receipts/gateway-memory/`. See [Memory audit](../../docs/Memory-Audit.md)
+for the measured results, limitations, and follow-up priorities.
 
 `node tests/browser/transcript-layout.mjs` checks the geometry of an 801-item
 production-build fixture with varied Markdown and tool heights. It checks both

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import { resolve, join, relative } from "node:path";
 import { chromium } from "playwright-core";
 import { build, preview } from "vite";
@@ -45,10 +46,28 @@ const port = vite.httpServer.address().port;
 const browser = await chromium.launch({ ...(process.env.LEO_TEST_CHROMIUM ? { executablePath: process.env.LEO_TEST_CHROMIUM } : {}), headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
 const page = await context.newPage();
+const cdp = await context.newCDPSession(page);
+await cdp.send("Performance.enable");
 page.setDefaultTimeout(15_000);
 const errors = [];
 const checks = [];
 const measurements = {};
+const memory = [];
+const memoryAuditOnly = process.env.LEO_MEMORY_AUDIT_ONLY === "1";
+function timing(condition, message) {
+  if (memoryAuditOnly) checks.push({ name: message, passed: Boolean(condition), category: "timing observation, not qualification" });
+  else assert(condition, message);
+}
+async function sampleMemory(stage) {
+  // GC distinguishes retained conversation state from temporary parsing/layout
+  // allocation. CDP measures this renderer, not the Node fixture generator.
+  const before = await cdp.send("Runtime.getHeapUsage");
+  await cdp.send("HeapProfiler.collectGarbage");
+  const heap = await cdp.send("Runtime.getHeapUsage");
+  const dom = await cdp.send("Memory.getDOMCounters");
+  memory.push({ stage, beforeGcBytes: before.usedSize, retainedHeapBytes: heap.usedSize,
+    backingStorageBytes: heap.backingStorageSize, embedderHeapBytes: heap.embedderHeapUsedSize, ...dom });
+}
 page.on("pageerror", (error) => errors.push(error.message));
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const authority = { realmId: id(1), controlNodeId: id(2), epochId: id(3) };
@@ -230,6 +249,7 @@ try {
   const fullStartRequest = historyRequests.length;
   await page.getByTestId("session-card").filter({ hasText: "50,000-turn disposable fixture" }).click();
   await waitCount(100);
+  await sampleMemory("100 historical items");
   await page.getByTestId("prompt-input").fill("");
   await startMetrics();
   const loadingStart = performance.now();
@@ -241,9 +261,9 @@ try {
   await waitCount(fixtureItems, 120_000);
   measurements.loadMs = performance.now() - loadingStart;
   const loadMetrics = await stopMetrics("historyLoading");
-  assert(loadMetrics.inputPaints.count >= 50, "History loading sampled too few keyboard events");
-  assert(loadMetrics.inputPaints.p95 < 100 && loadMetrics.inputPaints.max < 250, `History import blocked input: ${JSON.stringify(loadMetrics)}`);
-  assert(loadMetrics.longTasks.max < 250, `History import caused a task over 250ms: ${JSON.stringify(loadMetrics)}`);
+  timing(loadMetrics.inputPaints.count >= 50, "History loading sampled too few keyboard events");
+  timing(loadMetrics.inputPaints.p95 < 100 && loadMetrics.inputPaints.max < 250, `History import blocked input: ${JSON.stringify(loadMetrics)}`);
+  timing(loadMetrics.longTasks.max < 250, `History import caused a task over 250ms: ${JSON.stringify(loadMetrics)}`);
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "Typing remains available while a very long thread loads.");
   const fullRequests = historyRequests.slice(fullStartRequest).filter((item) => item.sessionId === session.sessionId);
   assert.equal(fullRequests.length, pages.length, "Full history missed or replayed pages");
@@ -259,6 +279,7 @@ try {
   });
   checks.push({ name: "reselected 50,000-turn session automatically loads every native page and displays latest", turns: fixtureTurns, items: fixtureItems, pageRequests: fullRequests.length });
   await boundedDOM("all 100,001 items loaded");
+  await sampleMemory("100,001 historical items");
   await scrollTo(0);
   await page.locator('[data-native-item-id="user-0"]').waitFor();
   await boundedDOM("first native turn remains accessible");
@@ -275,6 +296,7 @@ try {
   assert((await outputBody.textContent()).length <= 16_384);
   checks.push({ name: "multi-megabyte output renders bounded parts with final bytes reachable", nativeBytes: Buffer.byteLength(hugeOutput), mountedCharacters: (await outputBody.textContent()).length });
   await boundedDOM("expanded multi-megabyte command output");
+  await sampleMemory("large tool output expanded");
 
   await scrollTo(0.45);
   const anchorBefore = await page.getByTestId("chat-transcript").evaluate((element) => ({ top: element.scrollTop, first: element.querySelector('[data-testid="chat-message"]')?.getAttribute("data-entry-id") }));
@@ -301,11 +323,11 @@ try {
   const anchorAfter = await page.getByTestId("chat-transcript").evaluate((element) => ({ top: element.scrollTop, first: element.querySelector('[data-testid="chat-message"]')?.getAttribute("data-entry-id") }));
   assert.equal(anchorAfter.first, anchorBefore.first, "Streaming pulled the reader away from older history");
   assert(Math.abs(anchorAfter.top - anchorBefore.top) < 100, "Streaming moved the older-history scroll anchor");
-  assert(streamMetrics.inputPaints.count >= 50, "Input timing sampled too few real keyboard events");
-  assert(streamMetrics.inputPaints.p95 < 100, `p95 input-to-paint exceeded 100ms: ${JSON.stringify(streamMetrics)}`);
-  assert(streamMetrics.inputPaints.max < 250, `Input-to-paint exceeded 250ms: ${JSON.stringify(streamMetrics)}`);
-  assert(streamMetrics.frames.p95 < 50, `p95 frame interval exceeded 50ms: ${JSON.stringify(streamMetrics)}`);
-  assert(streamMetrics.longTasks.max < 250, `Streaming caused a blocking task over 250ms: ${JSON.stringify(streamMetrics)}`);
+  timing(streamMetrics.inputPaints.count >= 50, "Input timing sampled too few real keyboard events");
+  timing(streamMetrics.inputPaints.p95 < 100, `p95 input-to-paint exceeded 100ms: ${JSON.stringify(streamMetrics)}`);
+  timing(streamMetrics.inputPaints.max < 250, `Input-to-paint exceeded 250ms: ${JSON.stringify(streamMetrics)}`);
+  timing(streamMetrics.frames.p95 < 50, `p95 frame interval exceeded 50ms: ${JSON.stringify(streamMetrics)}`);
+  timing(streamMetrics.longTasks.max < 250, `Streaming caused a blocking task over 250ms: ${JSON.stringify(streamMetrics)}`);
   await boundedDOM("streaming plus typing at 100,001 historical items");
   await page.getByTestId("jump-to-latest").click();
   await page.locator('[data-native-item-id="streamed-reply"]').filter({ hasText: "FINAL STREAMED FIXTURE REPLY" }).waitFor();
@@ -330,15 +352,15 @@ try {
   await waitCount(fixtureItems + 2);
   const concurrentMetrics = await stopMetrics("streamingWhileScrollingAndTyping");
   assert.equal(await page.getByTestId("prompt-input").inputValue(), "A draft stays editable while scrolling and receiving new output.");
-  assert(concurrentMetrics.inputPaints.count >= 50, "Concurrent scroll/stream sampled too few keyboard events");
-  assert(concurrentMetrics.inputPaints.p95 < 100 && concurrentMetrics.inputPaints.max < 250, `Concurrent scrolling and native output blocked input: ${JSON.stringify(concurrentMetrics)}`);
-  assert(concurrentMetrics.frames.p95 < 50, `Concurrent scrolling/streaming p95 frame interval exceeded 50ms: ${JSON.stringify(concurrentMetrics)}`);
-  assert(concurrentMetrics.longTasks.max < 250, `Concurrent scrolling and native output caused a task over 250ms: ${JSON.stringify(concurrentMetrics)}`);
+  timing(concurrentMetrics.inputPaints.count >= 50, "Concurrent scroll/stream sampled too few keyboard events");
+  timing(concurrentMetrics.inputPaints.p95 < 100 && concurrentMetrics.inputPaints.max < 250, `Concurrent scrolling and native output blocked input: ${JSON.stringify(concurrentMetrics)}`);
+  timing(concurrentMetrics.frames.p95 < 50, `Concurrent scrolling/streaming p95 frame interval exceeded 50ms: ${JSON.stringify(concurrentMetrics)}`);
+  timing(concurrentMetrics.longTasks.max < 250, `Concurrent scrolling and native output caused a task over 250ms: ${JSON.stringify(concurrentMetrics)}`);
   assert.equal(historyRequests.length, beforeCompletionReads, "Subsequent completed turn replayed history");
   await startMetrics();
   for (let step = 0; step < 20; step++) { await scrollTo((step % 10) / 9); await boundedDOM(`scroll sample ${step + 1}`); }
   const scrollMetrics = await stopMetrics("scrollingCompleteThread");
-  assert(scrollMetrics.longTasks.max < 250, `Scrolling caused a blocking task over 250ms: ${JSON.stringify(scrollMetrics)}`);
+  timing(scrollMetrics.longTasks.max < 250, `Scrolling caused a blocking task over 250ms: ${JSON.stringify(scrollMetrics)}`);
   await page.screenshot({ path: join(output, "long-thread-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await scrollTo(1);
@@ -350,16 +372,35 @@ try {
   assert(composer.y + composer.height <= mobileSend.y + 1, "Wrapped stress-test draft overlaps mobile Send controls");
   assert(mobileSend.y + mobileSend.height <= 844, "Mobile Send fell outside viewport");
   await page.screenshot({ path: join(output, "long-thread-mobile.png"), fullPage: true });
+  await sampleMemory("after scrolling, streaming and mobile resize");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByTestId("session-card").filter({ hasText: "Switch cancellation fixture" }).click();
+  await waitCount(1);
+  await page.waitForTimeout(500);
+  await sampleMemory("switched to a one-item session");
+  if (process.env.LEO_HEAP_SNAPSHOT === "1") {
+    // This fixture contains no production content. Keep the optional large
+    // diagnostic local; normal audit receipts contain only aggregate metrics.
+    const stream = createWriteStream(join(output, "heap-after-switch.heapsnapshot"));
+    const chunk = ({ chunk }) => stream.write(chunk);
+    cdp.on("HeapProfiler.addHeapSnapshotChunk", chunk);
+    await cdp.send("HeapProfiler.takeHeapSnapshot", { reportProgress: false });
+    cdp.off("HeapProfiler.addHeapSnapshotChunk", chunk);
+    await new Promise(resolve => stream.end(resolve));
+  }
+  await page.waitForTimeout(5_000);
+  await sampleMemory("five seconds after switching");
   assert.deepEqual(errors, []);
   for (const [path, hash] of Object.entries(hashes)) assert.equal(sha256(await readFile(join(root, path))), hash, `Source changed during qualification: ${path}; rerun the suite`);
   const artifacts = ["long-thread-desktop.png", "long-thread-mobile.png"];
   const artifactHashes = Object.fromEntries(await Promise.all(artifacts.map(async (name) => [name, sha256(await readFile(join(output, name)))])));
   const buildHashes = Object.fromEntries(await Promise.all((await sourceFiles(join(output, "site"))).map(async (path) => [relative(join(output, "site"), path), sha256(await readFile(path))])));
-  const manifest = { buildHashes, status: "passed", fixture: "intercepted production-build browser APIs; ascending native 100-item pages", realModelCalls: 0, viewport: { width: 1440, height: 900 }, browser: browser.version(), fixtureTurns, fixtureItems, checks, measurements, hashes, artifactHashes };
+  const fixtureJsonBytes = pages.reduce((sum, page) => sum + Buffer.byteLength(JSON.stringify(page)), 0);
+  const manifest = { buildHashes, status: memoryAuditOnly ? "memory-audit-completed" : "passed", fixture: "intercepted production-build browser APIs; ascending native 100-item pages", realModelCalls: 0, viewport: { width: 1440, height: 900 }, browser: browser.version(), fixtureTurns, fixtureItems, fixtureJsonBytes, checks, measurements, memory, hashes, artifactHashes };
   await writeFile(join(output, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-  console.log(JSON.stringify({ status: "passed", output, measurements }, null, 2));
+  console.log(JSON.stringify({ status: memoryAuditOnly ? "memory-audit-completed" : "passed", output, measurements, memory, fixtureJsonBytes }, null, 2));
 } catch (error) {
   await page.screenshot({ path: join(output, "failure.png"), fullPage: true }).catch(() => {});
-  await writeFile(join(output, "failure.json"), JSON.stringify({ status: "failed", error: String(error), errors, measurements, checks, hashes }, null, 2) + "\n");
+  await writeFile(join(output, "failure.json"), JSON.stringify({ status: "failed", error: String(error), errors, measurements, memory, checks, hashes }, null, 2) + "\n");
   throw error;
 } finally { await context.close(); await browser.close(); await new Promise((resolve) => vite.httpServer.close(resolve)); }

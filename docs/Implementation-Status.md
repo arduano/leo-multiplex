@@ -563,7 +563,7 @@ successful retry added only this project's network and containers. The prior
 environment is preserved privately as `.env.before-cloudflare` for rollback.
 See the [NAS runbook](../deploy/nas/README.md#cloudflare-and-tailscale-together).
 
-The deployed Leo image is
+The initial Cloudflare rollout used Leo image
 `sha256:d21b2758612f8eff66e183d1f24f5d818e36251e4733e46efc005f12ffde1cb7`.
 Typecheck, all 302 tests, production build, shipped-image smoke and the pinned
 Docker proxy test passed. The proxy test exercises actual Compose-name DNS,
@@ -586,3 +586,37 @@ the new Docker proxy regression. Deployed server modules match the tested local
 build byte-for-byte. The original Tailscale WebSocket upgrade and read-only CLI
 host/session queries also passed. Scrubbed, checksummed deployment evidence is
 `receipts/cloudflare-deployment/2026-09-06T01-10-00Z`.
+
+## Compact execution and memory audit — 2026-09-06
+
+Empty reasoning keeps its native identity and replay state without occupying a
+display row. Disclosed summaries, images, and failures remain visible; reasoning
+that later receives text appears in its original native position. Tools without
+output show their title and status without an empty disclosure or “No output”.
+Collapsed desktop execution rows now occupy 44 px instead of 68 px, while coarse
+pointer disclosures retain a 44 px touch target. The 200-row window and existing
+scroll protections remain in place.
+
+Typechecking, all 306 tests, production build, and shipped-container smoke pass.
+Browser qualification passes 56 checks across six viewports, including compact
+execution and keyboard/touch disclosure checks, with no serious or critical axe
+findings. The layout suite passes 126 checks and 360 scroll samples. Receipts:
+`receipts/browser/2026-09-06T01-27-18.477Z` and
+`receipts/transcript-layout/2026-09-06T01-26-19.913Z`. The full unit suite needed a
+sequential rerun under heavy host load; that rerun passed. An exploratory full
+coarse-pointer viewport run also exposed an existing short-landscape capacity
+banner height issue; the scoped compact disclosure touch check passes.
+
+The [memory audit](Memory-Audit.md) records a 50,000-turn browser fixture and an
+isolated gateway history/live-event workload. The browser retains full loaded
+transcripts and cached closures keep a previous thread reachable after switching.
+Gateway history forwarding is uncached, but live buffers are count-bounded and
+consumed replay references remain retained by active subscriptions. These are
+documented follow-ups, not fixes claimed by this UI pass. No native session
+mutation or model call was used.
+
+The new 50,000-turn runs provide memory measurements and functional checks, not
+a fresh latency qualification: strict import timing failed under substantial
+background CPU load. Audit mode explicitly labels timings as observations and
+leaves the default thresholds unchanged. The earlier successful timing receipt
+above applies only to its recorded source and environment.
