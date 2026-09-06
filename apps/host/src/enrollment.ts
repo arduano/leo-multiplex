@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { link, readFile, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { privateDirectory, writePrivateFile } from "./private-state.js";
+import { privateDirectory, verifyPrivateTarget, writePrivateFile } from "./private-state.js";
 
 /** Join the existing private fleet before identities or host state are created. */
 export async function importEnrollmentSecret(stateDirectory: string, inputFile: string): Promise<void> {
@@ -10,6 +10,7 @@ export async function importEnrollmentSecret(stateDirectory: string, inputFile: 
   if (Buffer.byteLength(value) < 32 || /\s/.test(value)) throw new Error("Enrollment secret file is invalid");
   await privateDirectory(stateDirectory);
   const target = join(stateDirectory, "shared-secret");
+  await verifyPrivateTarget(target);
   const candidate = join(stateDirectory, `.enrollment-${randomBytes(8).toString("hex")}`);
   await writePrivateFile(candidate, value + "\n");
   try {

@@ -2,8 +2,25 @@
 
 This is a trusted personal control plane, not a multi-tenant sandbox. A signed-in
 operator can run Codex and use a managed terminal with the host account's access.
-The host runs YOLO sessions by design. No application setting grants extra root
+The Codex host runs YOLO sessions by design. No application setting grants extra root
 privileges.
+
+The corporate Copilot composition uses its own native home, GitHub OAuth account
+and launch profile. It has native permission questions and no Codex/BYOK provider
+override. Login records the GitHub account/host privately; normal startup and
+doctor refuse a different identity or ambient `gh` CLI fallback. Provider/token
+environment overrides are withheld from Copilot; standard corporate proxy and CA
+configuration remains available. Runtime authentication never enters launch
+input, metadata, gateway receipts or diagnostics.
+
+Native Windows requires the framework's protected DACL checks before any state
+or endpoint identity is written. Existing broad file ACLs and reparse points are
+rejected, and only the current user, SYSTEM and Administrators may access state.
+No execution-policy, TLS, firewall or corporate-policy bypass is part of setup.
+The one fleet enrollment secret remains distinct from GitHub authentication; a
+new host imports it privately before startup and closes enrollment after pairing.
+The current public framework pin does not yet contain these Windows changes;
+the [Windows runbook](deploy/windows/README.md) describes the release gate.
 
 Select exactly one authentication mode per listener. In Cloudflare mode, Access assertions are
 verified at the origin using RS256, the configured issuer, application audience,

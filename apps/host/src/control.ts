@@ -8,7 +8,7 @@ import { type ActionScope } from "@arduano/agent-multiplex-protocol";
 import { hostConfig, type HostConfig } from "./config.js";
 import { assertIsolatedState } from "./codex-config.js";
 import { prepareCopilotHome } from "./copilot.js";
-import { privateDirectory, sharedSecret, writePrivateFile } from "./private-state.js";
+import { privateDirectory, sharedSecret, verifyPrivateTarget, writePrivateFile } from "./private-state.js";
 
 export const OPERATOR_SCOPES: readonly ActionScope[] = ["read", "agent-launch", "agent-archive", "agent-control", "terminal-view", "terminal-control", "metadata-propose"];
 
@@ -31,6 +31,7 @@ export async function runHostControl(config: HostConfig, signal: AbortSignal, re
   const secret = await sharedSecret(config.stateDirectory);
   const controlDirectory = join(config.stateDirectory, "control");
   await privateDirectory(controlDirectory);
+  await verifyPrivateTarget(join(controlDirectory, "identity"));
   await runControlNode({
     sharedSecret: secret,
     statePath: join(controlDirectory, "catalog.sqlite"),

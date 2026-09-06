@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { CopilotClient } from "@github/copilot-sdk";
 import type { HostConfig } from "./config.js";
 import { copilotClientOptions } from "./copilot.js";
-import { writePrivateFile } from "./private-state.js";
+import { verifyPrivateTarget, writePrivateFile } from "./private-state.js";
 
 export interface CopilotAccount { login: string; host: string }
 export function signedInAccount(auth: { isAuthenticated: boolean; authType?: string; login?: string; host?: string }): CopilotAccount | undefined {
@@ -16,6 +16,7 @@ export function signedInAccount(auth: { isAuthenticated: boolean; authType?: str
 
 export async function readCopilotAccount(config: HostConfig): Promise<CopilotAccount | undefined> {
   try {
+    await verifyPrivateTarget(join(config.stateDirectory, "copilot-account.json"));
     const value = JSON.parse(await readFile(join(config.stateDirectory, "copilot-account.json"), "utf8"));
     if (value.version !== 1 || typeof value.login !== "string" || !value.login || value.host !== config.copilotGithubHost) return;
     return { login: value.login, host: value.host };

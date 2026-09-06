@@ -14,7 +14,7 @@ import { LeoWorkspaceLaunchProvider } from "../../../packages/launch/src/index.j
 import { LeoCopilotLaunchProvider } from "../../../packages/launch/src/copilot.js";
 import { hostConfig, type HostConfig } from "./config.js";
 import { assertIsolatedState, prepareManagedCodexConfig } from "./codex-config.js";
-import { privateDirectory, sharedSecret } from "./private-state.js";
+import { privateDirectory, sharedSecret, verifyPrivateTarget } from "./private-state.js";
 import { copilotClientOptions, prepareCopilotHome } from "./copilot.js";
 
 const sourceSchema = z.object({
@@ -74,6 +74,7 @@ export async function runHost(config: HostConfig, signal: AbortSignal): Promise<
   const source = await waitForControlSource(config.stateDirectory, signal);
   const runtimeDirectory = join(config.stateDirectory, "runtime");
   await privateDirectory(runtimeDirectory);
+  await verifyPrivateTarget(join(runtimeDirectory, "identity.json"));
   const runtimeConfig: RuntimeNodeAppConfig = {
     stateDirectory: runtimeDirectory, runtimeNodeName: config.name,
     allowedRoots: config.allowedRoots, enabledHarnesses: new Set([config.harness]), adapterMode: "native",

@@ -16,7 +16,7 @@ export async function privateDirectory(path: string): Promise<void> {
   await chmod(path, 0o700);
 }
 
-async function verifyPrivateTarget(path: string): Promise<void> {
+export async function verifyPrivateTarget(path: string): Promise<void> {
   try {
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw new Error("Managed state file must not be a symlink");
