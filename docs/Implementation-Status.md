@@ -32,6 +32,15 @@ The installed host source remains
 preserved. Signed out/asleep is offline; locking or closing unrelated terminals
 is supported. No model call or native session was created.
 
+Reconciliation at 11:55 UTC confirmed the same active user-task run and both
+listeners through a successful remote read-only command. The live authenticated
+Tailscale web UI shows `work-windows` as **Online · copilot**, retains it after
+workspace refresh, offers it in New agent with all 21 corporate models, and lists
+its PowerShell command target as available. Desktop and phone launch forms were
+visually checked with no horizontal overflow or page errors. No session was
+created. The scrubbed, checksummed browser receipt is
+`receipts/windows-host-web-reconciliation/2026-09-06T11-55-11.815Z/`.
+
 The task runner has 17 passing disposable lifecycle tests; all 438 application
 tests, typecheck and build pass. Native scheduler tests in
 [exact-revision CI](https://github.com/arduano/leo-multiplex/actions/runs/34028734922)
