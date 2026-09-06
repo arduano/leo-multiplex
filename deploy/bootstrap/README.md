@@ -7,7 +7,9 @@ review the script before running it; no credential belongs in a download URL or
 a gist. GitHub secret gists are unlisted, not access-controlled.
 
 The [current downloadable handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
-contains the exact tested revision and installation commands. Both OS installers use the published `0.2.1` framework artifacts. Use the new
+contains the original tested revision and installation commands. Current source
+pins published `0.2.2` framework artifacts; existing installations retain their
+saved revision until explicitly updated. Use the new
 source directory in that handoff if an older failed preflight already prepared
 the default checkout; the old checkout remains intact.
 

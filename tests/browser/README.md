@@ -146,3 +146,11 @@ turns, visible-only acknowledgment, offline/stopped fences, desktop/mobile watch
 opt-in and six viewport layouts with axe. It also rejects native subscriptions
 or history fanout for background rows. Receipts with source and screenshot hashes
 live under `receipts/browser-session-status/`.
+
+`node tests/browser/copilot-yolo.mjs` qualifies Copilot session permissions using
+intercepted API/WS traffic. It checks acknowledgment-only YOLO state, native
+refusal, exact-command recovery through reload, image-draft retention without
+upload, capability/offline gates, and user questions remaining separate from
+resolved permission requests. The permission picker receives keyboard and axe
+checks across six viewports. No real host or model is contacted; checksummed
+source and screenshot receipts live under `receipts/browser-copilot-yolo/`.

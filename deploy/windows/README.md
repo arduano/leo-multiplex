@@ -7,8 +7,8 @@ The laptop owns its control catalog, runtime journals and native session state.
 
 ## Release status
 
-The host pins the published framework **0.2.1** artifacts, including Windows
-private-state support and trusted runtime path-policy injection. The
+The current source pins published framework **0.2.2**, adding native Copilot
+permission controls to the Windows private-state and path-policy support. The
 [downloadable installer handoff](https://gist.github.com/arduano/13b94161cb7ebfb054a2d4629b764aa5)
 records the exact installation revision.
 

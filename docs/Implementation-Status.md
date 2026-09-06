@@ -1,5 +1,39 @@
 # Implementation status — 2026-09-06
 
+
+## Native Copilot YOLO controls
+
+The current source pins all 16 published framework `0.2.2` artifacts and Copilot
+SDK `1.0.13`, retaining CLI `1.0.81` and transport `0.2.1`. The framework uses the
+CLI's native `permissions.getMode/setMode` RPCs; the former SDK's generated
+allow-all methods were incompatible with this CLI. Permission settings remain
+independent of interaction mode and user questions. The host reports native
+acknowledged state, fences stale updates, and preserves uncertain command IDs.
+
+The composer exposes a compact YOLO control and a Permissions tab with **Ask for
+approval** and **YOLO**. `/yolo` toggles known state; `/yolo on` and `/yolo off`
+choose explicitly. Unsupported/offline hosts cannot mutate the setting. Draft
+text and images survive settings changes. The [workspace command guide](Workspace-Commands.md)
+owns usage, and [security](../SECURITY.md) records the native permission boundary.
+
+The owner explicitly waived model-using release qualification for this update.
+Framework `v0.2.2` source `1baacd49d44f9fe3d10f52b5fab0a8175d35a508` passed CI,
+Windows startup and no-model native permission checks, CodeQL, and deterministic
+Docker tree/100-agent checks. This is not a passing model qualification claim.
+Candidate UI qualification passed ten checks across all six viewports, including
+keyboard access/focus restoration, preserved drafts, native failures and unknown
+outcomes, with no serious/critical axe violations. Receipt:
+`receipts/copilot-yolo-candidate/browser-copilot-yolo/2026-09-06T14-34-31.136Z/`.
+The full candidate browser regression also passed. These disposable candidates
+used packed release artifacts for testing; installed deployments use only the
+published graph and their exact recorded source revision.
+
+The ordinary public-artifact install passes typechecking, all **479 tests**, and
+the production build. All 16 lockfile integrities match the signed release's
+artifact manifest; publication completed in
+[run 34039674529](https://github.com/arduano/agent-multiplex/actions/runs/34039674529).
+Model-using qualification was explicitly waived and no model prompt was sent.
+
 ## Session status and review markers
 
 Deployed gateway/UI source `2c1c4b86852b8b59e9b9b6eddd230d473ea3f2ca` as image

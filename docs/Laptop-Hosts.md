@@ -13,7 +13,9 @@ change installed personal hosts.
 The [download bootstraps](../deploy/bootstrap/README.md) prepare a separate
 checkout at the exact revision in the installation handoff, then run these
 installers. They preserve existing source and state; keep their source checkout
-for the saved launcher. Windows uses the published framework `0.2.1` graph qualified in its runbook.
+for the saved launcher. The current source pins published framework `0.2.2`,
+including native Copilot YOLO controls. The original installed-source evidence
+and subsequent updates are recorded in [implementation status](Implementation-Status.md).
 Both installed work profiles also provide the bespoke
 [command recovery service](Work-Host-Commands.md). The CLI is its normal entry
 point; web exposes it only as an experimental App settings hatch.

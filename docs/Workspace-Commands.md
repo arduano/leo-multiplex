@@ -9,6 +9,8 @@ same native session API as the buttons; they are not sent as agent prompts.
 | --- | --- |
 | `/plan` or `/plan on` | Use Plan mode for subsequent turns |
 | `/plan off` or `/default` | Return to Agent mode (Interactive for Copilot) |
+| `/yolo` | Toggle Copilot automatic tool, path and URL permissions for this session |
+| `/yolo on` or `/yolo off` | Set Copilot automatic permissions explicitly |
 | `/model` | Open model selection |
 | `/model MODEL_ID` | Select an exact catalog model ID or unique full name |
 | `/effort` | Open Codex reasoning options |
@@ -27,6 +29,15 @@ Unrecognized commands, including unsupported native-TUI commands such as
 `/compact`, show local guidance and preserve the draft. Prefix a command with
 another slash to send it literally: `//plan` sends `/plan` as message text.
 Workspace paths such as `/home/leo/project` remain ordinary messages.
+
+On updated work hosts, the **YOLO on/off** control beside the composer opens
+Permissions. Choose **YOLO** or **Ask for approval**; the label changes only when
+Copilot reports its native state. This is independent of Plan/Interactive/Autopilot
+and applies immediately when acknowledged. Questions still require an answer.
+Corporate policy can refuse the change, and turning YOLO off cannot undo work
+already dispatched. New sessions retain Copilot’s normal approval defaults.
+An unknown permission state needs an explicit `/yolo on` or `/yolo off` choice.
+Personal Codex hosts already run with full access and do not offer this control.
 
 The model name beside the composer opens the model picker directly. Choose a
 model once to apply it; no separate Apply button is needed. The Reasoning tab

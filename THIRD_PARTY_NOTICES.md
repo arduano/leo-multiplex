@@ -11,7 +11,7 @@ in the dependency artifacts. Cloudflare integration uses the `jose` library for
 JWT verification and `smol-toml` for local configuration parsing; their package
 license files must remain in redistributed dependencies.
 
-Corporate Copilot composition directly pins `@github/copilot-sdk` 1.0.11 (MIT)
+Corporate Copilot composition directly pins `@github/copilot-sdk` 1.0.13 (MIT)
 and `@github/copilot` 1.0.81, whose upstream license is in its `LICENSE.md`.
 Their existing dependency graph and native platform packages remain unmodified;
 redistribution retains those notices. Windows ACL validation uses installed

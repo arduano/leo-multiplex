@@ -13,14 +13,21 @@ environment overrides are withheld from Copilot; standard corporate proxy and CA
 configuration remains available. Runtime authentication never enters launch
 input, metadata, gateway receipts or diagnostics.
 
+Copilot sessions retain native approval defaults. The operator can explicitly
+select native allow-all permissions through the YOLO control or `/yolo` command;
+the displayed setting comes from Copilot's acknowledged state. This applies to
+tool, path and URL permissions independently of Plan/Interactive/Autopilot.
+It does not answer user questions, elevate the account or override corporate
+native policy. A lost response is reconciled under its original command ID.
+
 Native Windows requires the framework's protected DACL checks before any state
 or endpoint identity is written. Existing broad file ACLs and reparse points are
 rejected, and only the current user, SYSTEM and Administrators may access state.
 No execution-policy, TLS, firewall or corporate-policy bypass is part of setup.
 The one fleet enrollment secret remains distinct from GitHub authentication; a
 new host imports it privately before startup and closes enrollment after pairing.
-The current public framework pin does not yet contain these Windows changes;
-the [Windows runbook](deploy/windows/README.md) describes the release gate.
+The published framework includes these Windows checks;
+the [Windows runbook](deploy/windows/README.md) records their qualification.
 
 The Windows/WSL installers require a clean checkout at an explicit commit and
 locked public dependency artifacts. Each OS keeps a separate private installation,

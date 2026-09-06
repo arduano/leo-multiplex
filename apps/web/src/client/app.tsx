@@ -36,6 +36,7 @@ import type {
 } from "@arduano/agent-multiplex-protocol";
 
 import { ApiProvider, errorMessage, useApi } from "./api.js";
+import { supportsCopilotPermissions } from "./agent-settings.js";
 import { MetadataPanel } from "./metadata-panel.js";
 import { SessionConsole } from "./session-console.js";
 import { retainSessionRows, type RetainedSession } from "./session-retention.js";
@@ -311,7 +312,7 @@ function Dashboard() {
           center={<div className="flex h-full min-h-0 flex-col">
             {selected && selectedStale && projectionFresh ? <p className="shrink-0 border-b border-[var(--border-subtle)] px-4 py-2 text-xs text-[var(--status-waiting)]" role="status" data-testid="stale-session-notice">Host offline. Your conversation and draft are still here.</p> : null}
             {selectedId && !selected ? <div className="grid min-h-0 flex-1 place-items-center p-5 text-sm text-[var(--text-secondary)]" role="status">{directSession.isError || directSession.isSuccess ? "This agent is unavailable. Return to Agents to choose another." : "Opening agent…"}</div> : null}
-            {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} readOnly={selectedStale} status={selectedStatus} watched={watchedIds.includes(selected?.sessionId ?? "")} watchBusy={watchBusy} onToggleWatched={selected && mobileState.isSuccess ? () => void watchSelected() : undefined} onNewSession={() => setSpawnOpen(true)} /> : null}
+            {!selectedId || selected ? <SessionConsole session={selected} terminalCapability={terminalCapability} permissionsSupported={supportsCopilotPermissions(selectedRuntime)} readOnly={selectedStale} status={selectedStatus} watched={watchedIds.includes(selected?.sessionId ?? "")} watchBusy={watchBusy} onToggleWatched={selected && mobileState.isSuccess ? () => void watchSelected() : undefined} onNewSession={() => setSpawnOpen(true)} /> : null}
           </div>}
           inspector={(actions) => (
             <InspectorPane

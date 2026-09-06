@@ -44,7 +44,7 @@ import type {
   SessionRecord,
 } from "@arduano/agent-multiplex-protocol";
 
-import { appliedSettingsSummary, preferredModel } from "./agent-settings.js";
+import { appliedSettingsSummary, copilotPermissionLabel, preferredModel } from "./agent-settings.js";
 import { ModelPicker } from "./model-picker.js";
 import { resolveSlash, slashSuggestions, type SlashResult, type SettingsSection } from "./slash-commands.js";
 import { errorMessage, useApi } from "./api.js";
@@ -84,10 +84,11 @@ interface CommandAction {
   readonly consumePrompt?: string;
 }
 
-export function SessionConsole({ session, terminalCapability, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
+export function SessionConsole({ session, terminalCapability, permissionsSupported = false, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly permissionsSupported?: boolean;
   readonly status?: AgentStatus | undefined;
   readonly watched?: boolean | undefined;
   readonly watchBusy?: boolean | undefined;
@@ -102,6 +103,7 @@ export function SessionConsole({ session, terminalCapability, readOnly = false, 
       session={session}
       bindingIdentity={bindingIdentity}
       terminalCapability={terminalCapability}
+      permissionsSupported={permissionsSupported}
       readOnly={readOnly}
       status={status} watched={watched} watchBusy={watchBusy} onToggleWatched={onToggleWatched}
       onNewSession={onNewSession}
@@ -109,11 +111,12 @@ export function SessionConsole({ session, terminalCapability, readOnly = false, 
   );
 }
 
-function BoundSessionConsole({ session, bindingIdentity, terminalCapability, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
+function BoundSessionConsole({ session, bindingIdentity, terminalCapability, permissionsSupported = false, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly bindingIdentity: string;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly permissionsSupported?: boolean;
   readonly status?: AgentStatus | undefined;
   readonly watched?: boolean | undefined;
   readonly watchBusy?: boolean | undefined;
@@ -477,9 +480,9 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   const running = session.runtimeStatus === "running";
   const busy = !draftLoaded || !recoveryLoaded || mutation.isPending || uploading || preparingImages || Boolean(uncertain);
   const originalBinding = !uncertain || uncertain.bindingRevision === session.bindingRevision && uncertain.runtimeNodeId === session.runtimeNodeId;
-  const suggestions = active && !busy && slashDismissed !== prompt ? slashSuggestions(prompt, session.harness) : [];
+  const suggestions = active && !busy && slashDismissed !== prompt ? slashSuggestions(prompt, session.harness, permissionsSupported) : [];
   const selectedSlash = Math.min(slashIndex, suggestions.length - 1);
-  const composerIntent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
+  const composerIntent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running, permissionsSupported, permissionMode: session.harnessSettings?.copilotPermissions?.mode });
   const isSlash = composerIntent.kind !== "message";
   const pendingInteractions = interactions.data?.filter((item) => item.state === "pending") ?? [];
   const title = sessionTitle(session);
@@ -522,12 +525,12 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
   }
 
   function chooseSlash(name: string) {
-    const intent = resolveSlash(`/${name}`, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running });
+    const intent = resolveSlash(`/${name}`, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running, permissionsSupported, permissionMode: session!.harnessSettings?.copilotPermissions?.mode });
     if (intent.kind !== "message") performSlash(intent, prompt);
   }
 
   function changeSetting(text: string) {
-    const intent = resolveSlash(text, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running });
+    const intent = resolveSlash(text, { harness: session!.harness, models: models.data ?? [], model: session!.harnessSettings?.model, running, permissionsSupported, permissionMode: session!.harnessSettings?.copilotPermissions?.mode });
     if (intent.kind === "command") dispatch(intent.request, intent.success);
     else if (intent.kind === "error") setActionStatus(intent.message);
   }
@@ -556,7 +559,7 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
     if (sending.current || !session || !active || !draftLoaded || !recoveryLoaded || (!prompt.trim() && !draftImages.length) || uploading || imageUpload.current || uncertain || preparing.current || dispatching.current) return;
     sending.current = true;
     try {
-      const intent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running });
+      const intent = resolveSlash(prompt, { harness: session.harness, models: models.data ?? [], model: session.harnessSettings?.model, running, permissionsSupported, permissionMode: session.harnessSettings?.copilotPermissions?.mode });
       if (intent.kind !== "message") { performSlash(intent, prompt); return; }
       if (draftImages.length && (imageLimits.support === "unsupported" || draftImages.length > imageLimits.count ||
         draftImages.some((image) => image.file.size > imageLimits.bytes || imageLimits.mediaTypes && !imageLimits.mediaTypes.includes(image.file.type)))) {
@@ -789,10 +792,19 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               <ModelPicker session={session} models={models.data ?? []} loading={models.isPending} loadError={models.isError}
                 onRetryModels={() => { void models.refetch(); }} disabled={!active || busy} open={settingsOpen} onOpenChange={value => { setSettingsOpen(value); if (value) setActionStatus(""); }}
                 section={settingsSection} onSectionChange={setSettingsSection} status={actionStatus}
+                permissionsSupported={permissionsSupported} onAllowAll={enabled => changeSetting(`/yolo ${enabled ? "on" : "off"}`)}
                 onModel={value => changeSetting(`/model ${value}`)} onMode={value => changeSetting(`/mode ${value}`)} onEffort={value => changeSetting(`/effort ${value}`)} />
               <Button className="min-w-0 shrink-0 px-2 text-xs" disabled={!active || busy} onClick={() => openSettings("mode")} aria-label="Change agent mode" data-testid="composer-mode-button">
                 {session.harnessSettings?.mode === "plan" ? "Plan" : session.harnessSettings?.mode === "default" ? "Agent" : session.harnessSettings?.mode === "interactive" ? "Interactive" : session.harnessSettings?.mode ?? "Mode"}
               </Button>
+              {session.harness === "copilot" ? <Button
+                className={classes("shrink-0 px-2 text-xs", session.harnessSettings?.copilotPermissions?.mode === "allow-all" && "border-[var(--status-waiting)]/40 text-[var(--status-waiting)]")}
+                disabled={!active || busy || !permissionsSupported}
+                aria-label="Copilot permissions"
+                title={permissionsSupported ? "YOLO automatically approves tool, path and URL permissions for this session" : "Update this work host to enable YOLO controls"}
+                onClick={() => openSettings("permissions")} data-testid="composer-yolo-button">
+                {copilotPermissionLabel(session.harnessSettings)}
+              </Button> : null}
               {session.harness === "codex" && session.harnessSettings?.effort ? <button className="hidden min-h-9 shrink-0 text-xs text-[var(--text-secondary)] lg:block" disabled={!active || busy} onClick={() => openSettings("effort")} aria-label="Change reasoning effort" data-testid="composer-effort-button">{humanizeStatus(session.harnessSettings.effort)}</button> : null}
               <span className="sr-only">{settingsSummary}</span>
               <div className="ml-auto flex gap-1.5">

@@ -2,6 +2,7 @@ import type { Harness, HarnessCommand, NativeModel } from "@arduano/agent-multip
 
 export const slashCommands = [
   { name: "plan", description: "Plan before making changes", usage: "/plan [on|off]" },
+  { name: "yolo", description: "Toggle automatic permission approvals", usage: "/yolo [on|off]", copilotOnly: true },
   { name: "model", description: "Choose a model", usage: "/model [model ID]" },
   { name: "effort", description: "Change reasoning effort", usage: "/effort [level]", codexOnly: true },
   { name: "mode", description: "Choose how the agent works", usage: "/mode [mode]" },
@@ -13,7 +14,7 @@ export const slashCommands = [
   { name: "help", description: "Show available commands", usage: "/help" },
 ] as const;
 export type SlashCommandName = typeof slashCommands[number]["name"];
-export type SettingsSection = "model" | "effort" | "mode";
+export type SettingsSection = "model" | "effort" | "mode" | "permissions";
 export type SlashResult =
   | { kind: "message"; text: string }
   | { kind: "error"; message: string }
@@ -28,10 +29,10 @@ export function slashToken(input: string) {
   const first = /^\/([a-z][a-z0-9_-]*)(?=\s|$)/i.exec(text);
   return first ? { name: first[1]!.toLowerCase(), argument: text.slice(first[0].length).trim() } : null;
 }
-export function slashSuggestions(input: string, harness: Harness) {
+export function slashSuggestions(input: string, harness: Harness, permissionsSupported = false) {
   const text = input.trimStart();
   if (!/^\/[a-z]*$/i.test(text)) return [];
-  return slashCommands.filter(item => (!("codexOnly" in item) || harness === "codex") && item.name.startsWith(text.slice(1).toLowerCase()));
+  return slashCommands.filter(item => (!("codexOnly" in item) || harness === "codex") && (!("copilotOnly" in item) || harness === "copilot" && permissionsSupported) && item.name.startsWith(text.slice(1).toLowerCase()));
 }
 export function reasoningOptions(model: NativeModel | undefined): readonly { value: string; description: string }[] {
   const native = object(model?.native);
@@ -43,7 +44,7 @@ export function reasoningOptions(model: NativeModel | undefined): readonly { val
   }
   return [...options.values()];
 }
-export function resolveSlash(input: string, context: { harness: Harness; models: readonly NativeModel[]; model?: string | undefined; running: boolean }): SlashResult {
+export function resolveSlash(input: string, context: { harness: Harness; models: readonly NativeModel[]; model?: string | undefined; running: boolean; permissionsSupported?: boolean; permissionMode?: "manual" | "assisted" | "allow-all" | undefined }): SlashResult {
   const trimmed = input.trimStart();
   if (trimmed.startsWith("//")) return { kind: "message", text: input.slice(0, input.length - trimmed.length) + trimmed.slice(1) };
   const token = slashToken(input);
@@ -52,6 +53,14 @@ export function resolveSlash(input: string, context: { harness: Harness; models:
   const definition = slashCommands.find(item => item.name === name);
   if (!definition) return { kind: "error", message: `/${name} isn’t available here. Use /help for commands, or //${name} to send it as text.` };
   if ("codexOnly" in definition && context.harness !== "codex") return { kind: "error", message: `/${name} is available for Codex sessions.` };
+  if (name === "yolo") {
+    if (context.harness !== "copilot") return { kind: "error", message: "/yolo is a Copilot control. Personal Codex hosts already run with full access." };
+    if (!context.permissionsSupported) return { kind: "error", message: "This work host needs an update before it can change YOLO settings." };
+    if (!["", "on", "off"].includes(argument)) return usage(definition.usage);
+    if (!argument && context.permissionMode === undefined) return { kind: "error", message: "Copilot hasn’t reported its permission state. Use /yolo on or /yolo off to choose explicitly." };
+    const enabled = argument ? argument === "on" : context.permissionMode !== "allow-all";
+    return { kind: "command", request: { harness: "copilot", command: { type: "setPermissionMode", mode: enabled ? "allow-all" : "manual" } }, success: `YOLO ${enabled ? "on" : "off"}` };
+  }
   if (["new", "status", "terminal", "help"].includes(name)) return argument ? usage(definition.usage) : { kind: "local", action: name as "new" | "status" | "terminal" | "help" };
   if (name === "interrupt") {
     if (argument) return usage(definition.usage);

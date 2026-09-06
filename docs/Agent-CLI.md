@@ -221,6 +221,17 @@ For example, a settings file can contain:
 {"harness":"codex","command":{"type":"setEffort","effort":"high"}}
 ```
 
+With framework 0.2.2 and a work host advertising `permissions.mode` version `v1`,
+the same route can set Copilot YOLO for one session:
+
+```json
+{"harness":"copilot","command":{"type":"setPermissionMode","mode":"allow-all"}}
+```
+
+Use `"manual"` to restore permission prompts. Read
+`harnessSettings.copilotPermissions.mode` for the host’s acknowledged state;
+permission changes do not change Plan/Interactive/Autopilot or answer questions.
+
 ## Images
 
 Upload PNG, JPEG, GIF, or WebP from a local regular file. Type comes from bytes,
