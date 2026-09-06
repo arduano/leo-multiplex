@@ -45,7 +45,7 @@ describe("authenticated mobile HTTP API", () => {
   it("protects every route with the configured owner and exact-origin rules", async () => {
     const f = await fixture();
     const wrongToken = await f.sign("other@example.test");
-    const routes = [["/api/mobile/config", "GET"], ["/api/mobile/state", "GET"], [`/api/mobile/devices/${deviceId}`, "PUT"], [`/api/mobile/devices/${deviceId}`, "DELETE"], [`/api/mobile/devices/${deviceId}/test`, "POST"], [`/api/mobile/watches/${sessionId}`, "PUT"]];
+    const routes = [["/api/mobile/config", "GET"], ["/api/mobile/state", "GET"], ["/api/mobile/activity", "GET"], [`/api/mobile/devices/${deviceId}`, "PUT"], [`/api/mobile/devices/${deviceId}`, "DELETE"], [`/api/mobile/devices/${deviceId}/test`, "POST"], [`/api/mobile/watches/${sessionId}`, "PUT"]];
     for (const [path, method] of routes) {
       expect((await fetch(`${f.url}${path}`, { method })).status).toBe(401);
       expect((await fetch(`${f.url}${path}`, { method, headers: { ...f.headers, "Cf-Access-Jwt-Assertion": wrongToken } })).status).toBe(401);
@@ -59,6 +59,10 @@ describe("authenticated mobile HTTP API", () => {
     expect(config).toMatchObject({ enabled: true, publicKey: "public-fixture-key", origin: access.publicOrigin });
     const auth = await (await f.fetch("/auth/session")).json(); expect(config.storageScope).toBe(auth.storageScope);
     expect((await (await f.fetch("/api/mobile/state")).json()).watchedSessionIds).toEqual([]);
+    const activity = await f.fetch("/api/mobile/activity");
+    expect(activity.status).toBe(200);
+    expect(activity.headers.get("cache-control")).toBe("no-store");
+    expect(await activity.json()).toEqual({ sessions: [] });
     const registered = await (await f.fetch(`/api/mobile/devices/${deviceId}`, "PUT", f.device)).json();
     expect(registered).toMatchObject({ id: deviceId, name: "Pixel", enabled: true });
     expect(JSON.stringify(registered)).not.toContain("subscription");

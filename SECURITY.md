@@ -165,6 +165,13 @@ never follows redirects, and bounds delivery bytes, retries, pending work and
 deduplication. Push failures do not interrupt domain-stream ingestion. Revoke
 lost devices from App settings. See [Android app](docs/Mobile-PWA.md).
 
+The authenticated activity endpoint exposes at most 500 latest observations,
+fenced to a session's complete native binding. Stored observations contain IDs,
+a timestamp and controlled status copy, never native text or paths. They remain
+operational hints; canonical catalog and native history stay on the host. Local
+review markers retain only scoped session/event IDs in browser storage. Reading
+or acknowledging activity does not change notification opt-in or host state.
+
 ## Windows current-user background task
 
 The optional Windows service add-on registers a Task Scheduler logon task for

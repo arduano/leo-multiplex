@@ -115,6 +115,7 @@ const watchedSessionIds = new Set();
 const watchChanges = [];
 await page.route("**/api/mobile/**", (route) => {
   const pathname = new URL(route.request().url()).pathname;
+  if (pathname === "/api/mobile/activity") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sessions: [] }) });
   if (pathname.startsWith("/api/mobile/watches/") && route.request().method() === "PUT") {
     const sessionId = decodeURIComponent(pathname.slice("/api/mobile/watches/".length));
     const { watched } = route.request().postDataJSON();
@@ -534,7 +535,7 @@ try {
   await filters.getByRole("button", { name: "Watched", exact: true }).click();
   await page.getByTestId("session-card").waitFor();
   assert.equal(await page.getByTestId("session-card").count(), 1);
-  await filters.getByRole("button", { name: "Needs input", exact: true }).click();
+  await filters.getByRole("button", { name: "Needs you", exact: true }).click();
   await page.getByText("No agents match this filter.", { exact: true }).waitFor();
   session.runtimeStatus = "waitingForInput";
   await page.evaluate(() => window.dispatchEvent(new Event("online")));

@@ -138,3 +138,11 @@ uses real IndexedDB to check scopes, quota rejection, conflict preservation and
 exact request/receipt recovery. Set `LEO_TEST_CHROMIUM` when Playwright's default
 Chromium is unavailable. Physical Android installation, OS keyboard/camera
 permissions and FCM background delivery remain operator device checks.
+
+`node tests/browser/session-status.mjs` qualifies the status sidebar with 100
+sessions across four hosts, isolated intercepted API/WS traffic and no model
+calls. It checks status/filter counts, unseen results through reload and new
+turns, visible-only acknowledgment, offline/stopped fences, desktop/mobile watch
+opt-in and six viewport layouts with axe. It also rejects native subscriptions
+or history fanout for background rows. Receipts with source and screenshot hashes
+live under `receipts/browser-session-status/`.

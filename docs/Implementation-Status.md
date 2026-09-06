@@ -1,5 +1,42 @@
 # Implementation status — 2026-09-06
 
+## Session status and review markers
+
+The sidebar now exposes All / Needs you / Working / Finished / Watched with
+counts on desktop and mobile. Stable rows show explicit icon/text status,
+activity time, host, harness and workspace folder. Attention and active work
+sort first, then unseen results. Successful native completion is distinct from
+idle, stopped, interrupted and offline. Opening a visible conversation clears
+its event-specific New marker in this browser; phone list navigation and hidden
+windows do not. Desktop and phone offer the same explicit watch opt-in.
+
+The existing accepted-event notification observer now retains up to 500 small
+binding-fenced observations, including for unwatched sessions, through appended
+SQLite migration `002-session-activity`. The foreground UI polls the authenticated
+activity endpoint every five seconds. There is no background history fanout or
+new native subscription. Push remains watched-only; new work and resolved input
+cancel obsolete queued alerts. Source synchronization respects each host's
+covered controls, and replay/snapshots retire disproved progress without claiming
+success. Codex child turns and Copilot child events cannot alter root outcomes;
+the selected Copilot error banner received the same child-event fence.
+The [mobile guide](Mobile-PWA.md) owns review, notification and replay semantics.
+
+Typecheck, all **471 tests**, and production build pass. Deterministic sidebar
+qualification uses 100 sessions/four hosts and passes 12 checks across all six
+viewports, with no serious/critical axe violations:
+`receipts/browser-session-status/2026-09-06T13-13-34.803Z/`.
+The complete UI regression suite passes at
+`receipts/browser/2026-09-06T13-15-15.559Z/`.
+The 50,000-turn/100,001-item production fixture passes its original timing and
+200-mounted-message bounds at `receipts/long-thread/2026-09-06T13-18-52.744Z/`:
+concurrent scroll/stream/type p95 frame interval 16.8 ms, input paint 13.8 ms,
+and no long tasks in that phase; full-history retained JS heap is 71.5 MiB.
+An earlier run overlapping the repository gates exceeded the frame threshold
+and remains diagnostics only; the passing rerun used unchanged browser source
+without those concurrent gates. No native agent prompt was sent. Source and
+screenshot inventories are checksummed, and gate output is retained under
+`receipts/session-status-gates/2026-09-06/`.
+
 ## Installed WSL work host
 
 The laptop's existing Ubuntu WSL2 distro now runs **work-wsl** as Linux account

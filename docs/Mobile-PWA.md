@@ -7,18 +7,36 @@ The Tailscale HTTP IP still works as a website; installation, offline launch and
 push require the HTTPS address. iPhone support and Android Share Target are
 outside this release.
 
-The phone opens to the agent list. All, Watched, Needs input and Working filters
-help find a session. Open a row for its conversation; Back returns to the list.
+The phone opens to the agent list. **All, Needs you, Working, Finished and
+Watched** filters, with counts, are available on both phone and desktop.
+Attention and working agents appear first, followed by new results. Each row
+shows an icon and status, recent activity, host, harness and workspace folder;
+search also matches the full path and host name. Open a row for its conversation;
+Back returns to the list.
 Back also dismisses details, model settings, images and terminal dialogs first.
 The composer respects the visible keyboard viewport and safe areas. Enter adds
 a newline on touch devices; tap Send to submit. Gallery and Camera add images;
 image previews open with zoom/pan. The terminal provides touch modifier/navigation
 keys and retains its existing exclusive input-lease checks.
 
+**Finished** means the latest observed native turn completed successfully.
+**Ready** means idle without that evidence; **Interrupted**, **Stopped** and
+**Offline** are separate states. Needs you includes pending questions, actionable
+errors (including capacity limits), and interruptions. Offline agents retain
+their place and watched setting but never count as working or finished.
+
+**New** marks an unseen completion or attention event. Opening its conversation
+in a visible window clears that event's marker; returning to the phone's agent
+list does not acknowledge its hidden conversation. Review markers survive reload
+and sync between tabs of the same browser. They remain local to each browser,
+origin and owner, with at most 500 opaque session/event pairs and no messages.
+Watching and reviewing are independent: opening an agent never enables push.
+
 ## Watched notifications
 
 Open App settings, name the phone and choose **Enable notifications**. Permission
-is requested only by this action. Use the bell in a conversation to watch that
+is requested only by this action. Use the bell in a conversation, or **Watch** in
+the desktop header, to watch that
 agent. Only explicitly watched agents send background notifications. Select
 Finished, Needs input and Failed independently for this device. Notifications
 contain an agent title and status, never transcript text or working paths. Use
@@ -32,7 +50,18 @@ retry/resume an agent. Automatic native retries suppress premature failure
 notifications. Reconnect replay is baselined until the source's first accepted
 heartbeat (normally about 15 seconds); events in this initial interval do not
 notify. Notifications are best effort and may be delayed by Android or FCM.
-Review the conversation for authoritative current state.
+Review the conversation for authoritative current state. New work or a resolved
+question cancels obsolete queued alerts. Later alerts replace the same session's
+OS notification; an already delivered notification cannot be remotely retracted.
+
+For in-app status, the same observer retains only the latest small observation
+for up to 500 sessions in an appended SQLite table. The authenticated
+`GET /api/mobile/activity` endpoint supplies these observations, with exact native
+binding fences. The foreground browser refreshes them every five seconds and
+after catalog changes. It does not subscribe to every session's native output
+or fetch background histories. Historical completions predating this observer,
+and new events during initial replay baselining, do not create Finished/New
+markers. Fresh snapshots and replay can retire obsolete progress or input hints.
 
 Only Chrome/Android FCM subscriptions are accepted. VAPID keys, device
 subscriptions, watches and a bounded delivery/deduplication ledger live privately

@@ -236,13 +236,13 @@ async function superviseSource(
   while (!signal.aborted) {
     try {
       await projection.refreshSource(source.sourceId);
-      try { mobile?.synchronize(source.sourceId, projection); }
-      catch { /* Optional operational state cannot make an accepted source unavailable. */ }
       const diagnostic = projection.diagnostics().find(
         (candidate) => candidate.sourceId === source.sourceId,
       );
       const manifest = diagnostic?.manifest;
       if (!manifest) throw new Error("source synchronized without a manifest");
+      try { mobile?.synchronize(source.sourceId, projection, manifest.coveredControlNodeIds); }
+      catch { /* Optional operational state cannot make an accepted source unavailable. */ }
       let cursor: StreamCursor = {
         feedId: manifest.feedId,
         controlCursor: manifest.controlCursor,

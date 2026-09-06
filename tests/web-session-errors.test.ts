@@ -8,6 +8,19 @@ function event(sequence: number, nativeType: string, payload: object = {}): Nati
 const failure = { message: "The model is at capacity.", codexErrorInfo: "serverOverloaded" };
 
 describe("selected session error observations", () => {
+  it("keeps Copilot child failures and recovery from changing the root banner", () => {
+    const state = new SessionErrorState();
+    const copilot = (sequence: number, type: string, payload: object) => ({ ...event(sequence, type, payload), harness: "copilot" }) as NativeEvent;
+    state.observe(copilot(1, "session.error", { agentId: "child", data: { message: "Child failed" } }), "root");
+    expect(state.snapshot()).toBeNull();
+    state.observe(copilot(2, "session.error", { data: { message: "Root failed" } }), "root");
+    const rootFailure = state.snapshot();
+    state.observe(copilot(3, "assistant.message", { agentId: "child", data: { content: "Child done" } }), "root");
+    state.observe(copilot(4, "session.error", { agentId: "child", data: { message: "Other child error" } }), "root");
+    expect(state.snapshot()).toBe(rootFailure);
+    state.observe(copilot(5, "assistant.message", { data: { content: "Root recovered" } }), "root");
+    expect(state.snapshot()).toBeNull();
+  });
   it("surfaces native systemError even when the catalog said idle, without inventing the missing message", () => {
     const state = new SessionErrorState();
     state.observeStatus({ type: "systemError" }, state.generation);

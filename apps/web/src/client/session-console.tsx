@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleStop,
+  Bell,
+  BellOff,
   Camera,
   CornerDownRight,
   ImagePlus,
@@ -49,6 +51,7 @@ import { errorMessage, useApi } from "./api.js";
 import { ImageSessionProvider, prepareImageFile, modelImageLimits } from "./image-media.js";
 import { pendingInteractionRefetchInterval } from "./interaction-refresh.js";
 import { InteractionCards } from "./interactions.js";
+import type { AgentStatus } from "./session-status.js";
 import { SessionErrorBanner } from "./session-error.js";
 import { sessionErrorState } from "./session-error-state.js";
 import {
@@ -81,10 +84,14 @@ interface CommandAction {
   readonly consumePrompt?: string;
 }
 
-export function SessionConsole({ session, terminalCapability, readOnly = false, onNewSession }: {
+export function SessionConsole({ session, terminalCapability, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly status?: AgentStatus | undefined;
+  readonly watched?: boolean | undefined;
+  readonly watchBusy?: boolean | undefined;
+  readonly onToggleWatched?: (() => void) | undefined;
   readonly onNewSession: () => void;
 }) {
   const { connectionKey } = useApi();
@@ -96,16 +103,21 @@ export function SessionConsole({ session, terminalCapability, readOnly = false, 
       bindingIdentity={bindingIdentity}
       terminalCapability={terminalCapability}
       readOnly={readOnly}
+      status={status} watched={watched} watchBusy={watchBusy} onToggleWatched={onToggleWatched}
       onNewSession={onNewSession}
     />
   );
 }
 
-function BoundSessionConsole({ session, bindingIdentity, terminalCapability, readOnly = false, onNewSession }: {
+function BoundSessionConsole({ session, bindingIdentity, terminalCapability, readOnly = false, status, watched, watchBusy, onToggleWatched, onNewSession }: {
   readonly session: SessionRecord | null;
   readonly bindingIdentity: string;
   readonly terminalCapability: TerminalSideChannelCapability | null | undefined;
   readonly readOnly?: boolean;
+  readonly status?: AgentStatus | undefined;
+  readonly watched?: boolean | undefined;
+  readonly watchBusy?: boolean | undefined;
+  readonly onToggleWatched?: (() => void) | undefined;
   readonly onNewSession: () => void;
 }) {
   const { client, connectionKey } = useApi();
@@ -669,7 +681,10 @@ function BoundSessionConsole({ session, bindingIdentity, terminalCapability, rea
               Terminal
             </Tabs.Trigger>
           </Tabs.List>
-          <span className="session-runtime-status"><StatusLabel tone={sessionFailure ? "bad" : runtimeTone(session.runtimeStatus)}>{sessionFailure ? "Error reported" : humanizeStatus(session.runtimeStatus)}</StatusLabel></span>
+          <span className="session-runtime-status"><StatusLabel tone={readOnly ? "neutral" : sessionFailure ? "bad" : status?.kind === "finished" ? "good" : status?.kind === "input" || status?.kind === "interrupted" ? "warn" : status?.kind === "error" ? "bad" : runtimeTone(session.runtimeStatus)}>{readOnly ? "Offline" : sessionFailure ? "Error reported" : status?.label ?? humanizeStatus(session.runtimeStatus)}</StatusLabel></span>
+          {onToggleWatched ? <button type="button" className="hidden min-h-9 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] min-[960px]:inline-flex" aria-label={watched ? "Stop watching this agent" : "Watch this agent"} title={watched ? "Watching: notify your enabled devices when this agent finishes or needs you" : "Watch: notify your enabled devices when this agent finishes or needs you"} aria-pressed={watched} disabled={watchBusy} onClick={onToggleWatched} data-testid="desktop-watch-agent-button">
+            {watched ? <Bell className="size-3.5" aria-hidden="true" /> : <BellOff className="size-3.5" aria-hidden="true" />}<span className="hidden min-[1440px]:inline">{watched ? "Watching" : "Watch"}</span>
+          </button> : null}
           <Popover.Root open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
             <Popover.Trigger asChild><button className="min-h-9 text-xs text-[var(--text-secondary)]" title="Connection and history details" data-testid="session-health">{readOnly ? "Offline" : streamState === "live" ? "Live" : "Connecting"}</button></Popover.Trigger>
             <Popover.Portal><Popover.Content sideOffset={8} collisionPadding={12} className="z-50 w-72 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-raised)] p-4 text-xs text-[var(--text-secondary)]">

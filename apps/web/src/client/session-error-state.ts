@@ -47,6 +47,7 @@ export class SessionErrorState {
     // Descendant notifications share the root's stream but must not overwrite
     // its failure or clear a root failure when a child completes successfully.
     if (event.harness === "codex" && typeof payload?.threadId === "string" && payload.threadId !== vendorSessionId) return;
+    if (event.harness === "copilot" && typeof payload?.agentId === "string") return;
     const turn = object(payload?.turn);
     if (event.nativeType === "turn/started") {
       this.activeTurn = typeof turn?.id === "string" ? turn.id : undefined;
