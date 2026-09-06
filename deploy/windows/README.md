@@ -15,12 +15,14 @@ patch release and this consumer's exact dependency update are required before
 these instructions become the installation handoff. Linux tests and browser
 fixtures alone do not establish Windows support.
 
-The source candidate passed [native Windows CI](https://github.com/arduano/agent-multiplex/actions/runs/34018354047):
-framework `2184ec56f242b334c3fc3a7afaceb6f3756c01b4` with personal host
-`c61f82a7537617f5ed55097a8ebcee5afd37897f`. The run checks private state, SQLite,
+The source candidate passed [native Windows CI](https://github.com/arduano/agent-multiplex/actions/runs/34021094217):
+framework `f2c0339404bb174c22d9dab11a83557f05858856` with personal host
+`38e796288440ae6cedf2bd0e4a91e3fcee1fdea2`. The run checks private state, SQLite,
 uploaded-image retention, SDK startup, full control/runtime registration, graceful
-stop, a restart with enrollment closed, and eight real disposable work-command
+stop, a restart with enrollment closed, and nine real disposable work-command
 executor checks including output, deduplication, cancellation and child cleanup.
+The unrestricted host uses private state on `D:\` and the command checks execute
+from both `C:` and `D:`; forward-slash `D:/...` input is explicitly checked.
 It uses no corporate credentials,
 creates no native conversation, and sends no prompts. Its checksummed receipts
 are attached to that run. This source overlay is CI-only; installation still
