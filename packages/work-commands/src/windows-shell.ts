@@ -10,6 +10,7 @@ export function windowsWorkCommandInvocation(commandFile: string, environment: N
   // Fail closed if corporate process restrictions prevent assignment to this job.
   const script = `
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = [Console]::OutputEncoding
 Add-Type -TypeDefinition @'
@@ -49,14 +50,15 @@ public static class LeoWorkCommandJob {
 [LeoWorkCommandJob]::Enter()
 $ErrorActionPreference = 'Continue'
 $global:LASTEXITCODE = $null
+$leoInitialErrorCount = $Error.Count
 & ([ScriptBlock]::Create([IO.File]::ReadAllText('${escapedFile}')))
 $leoCommandSucceeded = $?
 if ($null -ne $LASTEXITCODE) { exit $LASTEXITCODE }
-if (-not $leoCommandSucceeded) { exit 1 }
+if (-not $leoCommandSucceeded -or $Error.Count -gt $leoInitialErrorCount) { exit 1 }
 exit 0
 `;
   return {
     file: win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
   };
 }

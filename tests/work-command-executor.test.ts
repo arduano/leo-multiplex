@@ -251,7 +251,7 @@ describe("Windows command construction", () => {
   it("uses explicit system PowerShell, an encoded command and kernel kill-on-close job without policy bypass", () => {
     const invocation = windowsWorkCommandInvocation("C:\\Users\\Work Person\\Leo's state\\fixture.command", { SystemRoot: "C:\\Windows" });
     expect(invocation.file).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-    expect(invocation.args.slice(0, -1)).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+    expect(invocation.args.slice(0, -1)).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-EncodedCommand"]);
     const script = Buffer.from(invocation.args.at(-1)!, "base64").toString("utf16le");
     expect(script).toContain("Leo''s state");
     expect(script).toContain("AssignProcessToJobObject");
