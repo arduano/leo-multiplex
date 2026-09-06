@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { type GatewaySourceConfig } from "@arduano/agent-multiplex-gateway";
 import { sourceIdSchema } from "@arduano/agent-multiplex-protocol";
 import { OPERATOR_SCOPES, createAuthenticator } from "./auth.js";
-import { authenticationConfig, httpBindAddress } from "./auth-config.js";
+import { authenticationConfig, cloudflareSocketConfig, httpBindAddress } from "./auth-config.js";
 import { runPersonalGateway } from "./gateway.js";
 import { createPersonalHttpSurface } from "./http.js";
 
@@ -12,6 +12,11 @@ export async function runPersonalServer(environment: NodeJS.ProcessEnv, signal: 
   const state = resolve(environment.LEO_GATEWAY_STATE_DIR ?? "/data");
   const access = await authenticationConfig(environment);
   const authenticate = createAuthenticator(access);
+  const cloudflare = cloudflareSocketConfig(environment);
+  const authenticateCloudflare = cloudflare === undefined ? undefined : createAuthenticator(cloudflare.access);
+  const port = Number(environment.LEO_HTTP_PORT ?? "4318");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid LEO_HTTP_PORT");
+  const bindAddress = httpBindAddress(environment, access);
   const pairing = JSON.parse(await readFile(required(environment, "LEO_PAIRING_FILE"), "utf8")) as Record<string, unknown>;
   if (pairing.version !== 1 || typeof pairing.sharedSecret !== "string" || pairing.sharedSecret.length < 32 ||
       !Array.isArray(pairing.sources) || pairing.sources.length === 0) throw new Error("Invalid host pairing file");
@@ -25,15 +30,19 @@ export async function runPersonalServer(environment: NodeJS.ProcessEnv, signal: 
     };
   });
   await mkdir(state, { recursive: true, mode: 0o700 });
-  const port = Number(environment.LEO_HTTP_PORT ?? "4318");
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid LEO_HTTP_PORT");
   await runPersonalGateway({
     sharedSecret: pairing.sharedSecret, identityPath: join(state, "gateway.identity"),
     statePath: join(state, "gateway.sqlite"), sources,
     ...(environment.LEO_GATEWAY_P2P_BIND === undefined ? {} : { p2pBindAddress: environment.LEO_GATEWAY_P2P_BIND }),
-    bindAddress: httpBindAddress(environment, access), port, reconnectMaxMs: 30_000,
+    bindAddress, port, reconnectMaxMs: 30_000,
   }, signal, { httpSurface: { authentication: "external", create: (projection, instanceId) =>
-    createPersonalHttpSurface(projection, instanceId, access, authenticate) } });
+    createPersonalHttpSurface(projection, instanceId, access, authenticate) },
+    ...(cloudflare === undefined ? {} : { additionalHttpSurfaces: [{
+      socketPath: cloudflare.socketPath,
+      httpSurface: { authentication: "external", create: (projection, instanceId) =>
+        createPersonalHttpSurface(projection, instanceId, cloudflare.access, authenticateCloudflare) },
+    }] }),
+  });
 }
 
 function required(environment: NodeJS.ProcessEnv, key: string) {

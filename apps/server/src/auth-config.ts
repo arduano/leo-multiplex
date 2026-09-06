@@ -1,4 +1,5 @@
-import type { AuthenticationConfig } from "./auth.js";
+import { isAbsolute, resolve } from "node:path";
+import type { AccessConfig, AuthenticationConfig } from "./auth.js";
 
 function required(environment: NodeJS.ProcessEnv, key: string): string {
   const value = environment[key];
@@ -20,6 +21,34 @@ export async function authenticationConfig(environment: NodeJS.ProcessEnv): Prom
     teamDomain: required(environment, "LEO_ACCESS_TEAM_DOMAIN"),
     audience: required(environment, "LEO_ACCESS_AUDIENCE"),
   };
+}
+
+/** An optional public edge has its own fixed authentication and exact origin. */
+export function cloudflareSocketConfig(environment: NodeJS.ProcessEnv): { socketPath: string; access: AccessConfig } | undefined {
+  const socketPath = environment.LEO_CLOUDFLARE_SOCKET;
+  if (socketPath === undefined) {
+    if (environment.LEO_CLOUDFLARE_PUBLIC_ORIGIN !== undefined) throw new Error("LEO_CLOUDFLARE_SOCKET is required with LEO_CLOUDFLARE_PUBLIC_ORIGIN");
+    return undefined;
+  }
+  if (environment.LEO_AUTH_MODE !== "tailscale") throw new Error("The additional Cloudflare socket requires the primary Tailscale listener");
+  assertSocketPath(socketPath);
+  return {
+    socketPath,
+    access: {
+      mode: "cloudflare",
+      publicOrigin: required(environment, "LEO_CLOUDFLARE_PUBLIC_ORIGIN"),
+      teamDomain: required(environment, "LEO_ACCESS_TEAM_DOMAIN"),
+      audience: required(environment, "LEO_ACCESS_AUDIENCE"),
+      email: required(environment, "LEO_ACCESS_EMAIL"),
+    },
+  };
+}
+
+export function assertSocketPath(socketPath: string): void {
+  // Linux sockaddr_un reserves one byte of its 108-byte path for NUL.
+  if (!isAbsolute(socketPath) || resolve(socketPath) !== socketPath || socketPath.includes("\0") || Buffer.byteLength(socketPath) > 107) {
+    throw new Error("Cloudflare socket requires a canonical absolute path of at most 107 bytes");
+  }
 }
 
 export function httpBindAddress(environment: NodeJS.ProcessEnv, config: Pick<AuthenticationConfig, "mode">): string {

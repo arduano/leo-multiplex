@@ -11,5 +11,10 @@ in the dependency artifacts. Cloudflare integration uses the `jose` library for
 JWT verification and `smol-toml` for local configuration parsing; their package
 license files must remain in redistributed dependencies.
 
+The optional NAS Cloudflare Compose deployment references separately distributed
+cloudflare/cloudflared (Apache-2.0) and nginxinc/nginx-unprivileged images (Nginx
+uses its BSD-style license). Their pinned upstream images retain their component
+licenses. These images are deployment dependencies, not part of the Leo image.
+
 No runtime credentials or configuration from Leo's machines are distribution
 inputs. Nix and Docker builds consume code and immutable public artifacts only.

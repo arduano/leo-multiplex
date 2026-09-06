@@ -1,6 +1,9 @@
 // Adapted from Agent Multiplex's MIT-licensed reference gateway composition.
 // Copyright (c) 2026 Arduano. See THIRD_PARTY_NOTICES.md and LICENSE.
 // Domain authority, routing and transport remain in the published packages.
+import { chmod, lstat, realpath, unlink } from "node:fs/promises";
+import { connect } from "node:net";
+import { dirname } from "node:path";
 import { advanceAccessCursor } from "@arduano/agent-multiplex-client";
 import { P2PControlNodeSourceClient, createP2PAccessGatewayNode, type P2PAccessGatewayNodeHandle } from "@arduano/agent-multiplex-client-p2prpc";
 import { AccessGatewayProjection, GatewayOperationalStore, type GatewaySourceDefinition } from "@arduano/agent-multiplex-gateway-core";
@@ -8,17 +11,31 @@ import { loadOrCreateGatewaySecretKey, type GatewayAppConfig, type GatewayCompos
 import type { SourceId, StreamCursor } from "@arduano/agent-multiplex-protocol";
 import type { PinnedPeerTarget } from "@arduano/agent-multiplex-transport-p2prpc";
 import type { GatewaySourceConfig } from "@arduano/agent-multiplex-gateway";
+import { assertSocketPath } from "./auth-config.js";
+
+export type PersonalGatewayComposition = GatewayComposition & {
+  readonly additionalHttpSurfaces?: readonly {
+    readonly socketPath: string;
+    readonly httpSurface: NonNullable<GatewayComposition["httpSurface"]>;
+  }[];
+};
 
 export async function runPersonalGateway(
   config: GatewayAppConfig & { readonly p2pBindAddress?: string },
   signal: AbortSignal,
-  composition: GatewayComposition = {},
+  composition: PersonalGatewayComposition = {},
 ): Promise<void> {
-  if (composition.httpSurface?.authentication !== "external" ||
-    typeof composition.httpSurface.create !== "function" || config.auth !== undefined) {
+  const additional = composition.additionalHttpSurfaces ?? [];
+  if ([composition.httpSurface, ...additional.map((edge) => edge.httpSurface)].some(
+    (surface) => surface?.authentication !== "external" || typeof surface.create !== "function",
+  ) || config.auth !== undefined) {
     throw new TypeError("a custom gateway edge requires explicit external authentication and cannot combine bearer configuration");
   }
+  if (new Set(additional.map((edge) => edge.socketPath)).size !== additional.length) throw new TypeError("HTTP socket paths must be unique");
   if (signal.aborted) return;
+  // Validate every socket before acquiring the gateway identity or starting any
+  // transport/listener. Repeat immediately before binding to catch replacements.
+  for (const edge of additional) await inspectPrivateSocket(edge.socketPath);
   const lifetime = new AbortController();
   const stop = () => lifetime.abort();
   const callerSignal = signal;
@@ -27,7 +44,7 @@ export async function runPersonalGateway(
   const store = new GatewayOperationalStore(config.statePath);
   const persisted = new Map(store.listSources().map((source) => [source.sourceId, source]));
   let p2p: P2PAccessGatewayNodeHandle | undefined;
-  let http: GatewayHttpSurface | undefined;
+  const httpSurfaces: GatewayHttpSurface[] = [];
   const supervisors: Promise<void>[] = [];
   const closeTransport = (): void => {
     void p2p?.close().catch((error: unknown) => logError("closing p2prpc", error));
@@ -100,8 +117,15 @@ export async function runPersonalGateway(
       .map((source) => projection.refreshSource(source.sourceId)));
 
     if (signal.aborted) return;
-    http = composition.httpSurface.create(projection, p2p.localEndpointId);
+    const http = composition.httpSurface!.create(projection, p2p.localEndpointId);
+    httpSurfaces.push(http);
     await listen(http.server, config.port, config.bindAddress);
+    for (const edge of additional) {
+      if (signal.aborted) return;
+      const surface = edge.httpSurface.create(projection, p2p.localEndpointId);
+      httpSurfaces.push(surface);
+      await listenPrivateSocket(surface.server, edge.socketPath);
+    }
     const address = http.server.address();
     const port = typeof address === "object" && address ? address.port : config.port;
     console.log("Agent Multiplex access gateway");
@@ -133,11 +157,66 @@ export async function runPersonalGateway(
     lifetime.abort();
     callerSignal.removeEventListener("abort", stop);
     signal.removeEventListener("abort", closeTransport);
-    await http?.close().catch((error: unknown) => logError("closing HTTP edge", error));
+    await Promise.all(httpSurfaces.map((http) => http.close().catch((error: unknown) => logError("closing HTTP edge", error))));
     await p2p?.close().catch((error: unknown) => logError("closing p2prpc", error));
     await Promise.allSettled(supervisors);
     store.close();
   }
+}
+
+async function inspectPrivateSocket(socketPath: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  assertSocketPath(socketPath);
+  const directory = dirname(socketPath);
+  const owner = process.getuid?.();
+  const parent = await lstat(directory);
+  if (owner === undefined || !parent.isDirectory() || parent.uid !== owner ||
+      (parent.mode & 0o777) !== 0o700 || await realpath(directory) !== directory) {
+    throw new Error("Cloudflare socket directory must be private (0700), owned by this process, and contain no symlinks");
+  }
+  const previous = await lstat(socketPath).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (previous === undefined) return undefined;
+  if (!previous.isSocket() || previous.uid !== owner) throw new Error("Refusing to replace a non-socket or differently owned Cloudflare socket path");
+  // An active listener or an inconclusive probe is never treated as stale.
+  await new Promise<void>((resolveProbe, rejectProbe) => {
+    const socket = connect(socketPath);
+    const finish = (error?: Error) => {
+      socket.destroy();
+      if (error) rejectProbe(error); else resolveProbe();
+    };
+    socket.setTimeout(1_000, () => finish(new Error("Cloudflare socket liveness could not be established")));
+    socket.once("connect", () => finish(new Error("Cloudflare socket is already in use")));
+    socket.once("error", (error: NodeJS.ErrnoException) => finish(error.code === "ECONNREFUSED" ? undefined : error));
+  });
+  return previous;
+}
+
+async function listenPrivateSocket(server: import("node:http").Server, socketPath: string): Promise<void> {
+  const previous = await inspectPrivateSocket(socketPath);
+  if (previous !== undefined) {
+    const current = await lstat(socketPath);
+    if (!current.isSocket() || current.dev !== previous.dev || current.ino !== previous.ino) {
+      throw new Error("Cloudflare socket path changed during startup");
+    }
+    await unlink(socketPath);
+  }
+  await new Promise<void>((resolveListen, rejectListen) => {
+    const onError = (error: Error): void => {
+      server.off("listening", onListening);
+      rejectListen(error);
+    };
+    const onListening = (): void => {
+      server.off("error", onError);
+      resolveListen();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(socketPath);
+  });
+  // The 0700 parent already fences access during the bind/chmod interval.
+  await chmod(socketPath, 0o600);
 }
 
 async function superviseSource(

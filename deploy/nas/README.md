@@ -1,5 +1,71 @@
 # home-nas deployment
 
+## Cloudflare and Tailscale together
+
+Use `compose.cloudflare.yaml` as the standalone Compose entrypoint for both
+access paths. It extends the existing Tailscale service, preserving its image
+identity, state, host networking, loopback listener, and Tailscale transport bind.
+The additional containers use an ordinary Compose bridge:
+
+```text
+https://agents.arduano.io → Cloudflare Access → cloudflared
+  → http://multiplex-gatreway:8444 (Compose service-name DNS)
+  → private Unix socket → gateway Cloudflare JWT authentication
+
+http://100.82.173.47:8444 → Tailscale Serve
+  → 127.0.0.1:4328 → gateway Tailscale authentication
+```
+
+The spelling `multiplex-gatreway` matches the remotely configured tunnel.
+The origin proxy forwards only to `/run/leo-cloudflare/access.sock`, never to
+the Tailscale listener. It preserves WebSocket upgrades, Origin and assertion
+headers, and streaming responses. No extra host mappings, static Docker IPs,
+published Cloudflare ports, additional gateway enrollment, or host rebuild are
+needed. Both HTTP surfaces share one projection and gateway lifecycle.
+The NAS has exhausted Docker's default network pools, so this project's bridge
+uses `10.203.82.0/24`. Container IPs remain dynamically allocated. On another
+machine, set `LEO_CLOUDFLARE_SUBNET` to an unused private subnet after checking
+its Docker networks and LAN/tailnet routes.
+
+Copy `compose.cloudflare.yaml`, `compose.tailscale.yaml` and
+`cloudflare-origin.conf` into this project. Preserve the existing `.env`; use
+`.env.cloudflare.example` as the list of required settings. Add the Access
+team domain and this application's AUD. The existing allowed owner email is
+also required in signed Access assertions. The second listener has its own exact
+HTTPS origin; the primary listener retains its existing Tailscale origin.
+
+Create `secrets/` and `run/cloudflare/` as private directories owned by UID 1000,
+GID 100, mode 0700. Install the raw tunnel token as
+`secrets/cloudflare-token`, owned by the same user, mode 0600. Only cloudflared
+mounts the token. The gateway and origin proxy share the socket directory; the
+gateway requires private ownership and creates an owner-only socket. Never put
+tokens into Compose variables or print resolved production configuration.
+
+```sh
+docker compose -f compose.cloudflare.yaml config --quiet
+docker compose -f compose.cloudflare.yaml up -d
+docker compose -f compose.cloudflare.yaml ps
+```
+
+The gateway health check covers both surfaces, and the proxy checks the actual
+socket upstream. Confirm connector readiness locally, then sign in at the public
+URL and verify `/auth/session`, host availability, conversation/image reads and
+WebSocket connection. An unauthenticated request to the public URL should go to
+Access login; an unauthenticated request to the proxy must receive 401. Access
+expiry requires browser reauthentication and closes its WebSocket. The Tailscale
+URL and owner-authenticated agent CLI continue to work during a tunnel outage.
+Cloudflare service-token CLI authentication is not part of this deployment.
+CI runs `python3 scripts/cloudflare-proxy-smoke.py <built-image>` against the
+pinned proxy on an isolated Docker network, using only disposable signing keys.
+
+For an update, change `LEO_IMAGE` to the tested immutable digest and run the same
+combined Compose command. Back up the previous image reference and `.env`
+privately first. To roll back, stop only this project's `cloudflared` and
+`multiplex-gatreway` services, restore the prior `.env`, then run
+`docker compose -f compose.tailscale.yaml up -d --no-deps web`. Do not run two
+gateway processes against the same state. A gateway restart does not restart
+the host's control, runtime, or Codex sessions.
+
 ## Tailscale IP access
 
 Use `compose.tailscale.yaml` as the standalone Compose file. Copy
@@ -65,7 +131,8 @@ Install this Compose project at `/home/arduano/host/leo-multiplex`. Create priva
 Copy `.env.example` to `.env` and set an immutable image digest. For Tailscale,
 follow [the Serve/loopback authentication setup](../../docs/Tailscale-Authentication.md).
 It requires `LEO_AUTH_MODE=tailscale`, public origin, owner email, and the separate
-host-network Compose file; Cloudflare settings are not used in this mode.
+host-network Compose file. The combined recipe adds a separately authenticated
+Cloudflare socket without changing this primary listener's mode.
 
 For Cloudflare mode (`LEO_AUTH_MODE=cloudflare`, also the default), configure:
 
@@ -78,7 +145,8 @@ These are application settings. Create the Cloudflare Tunnel, DNS, Access app,
 and identity policy separately. A remembered MFA-protected identity-provider
 login provides low-friction access. Choose the Access session duration there.
 
-The origin is `http://web:4318` on Docker network `leo-multiplex-access`.
+For the alternative Cloudflare-only `compose.yaml`, the origin is
+`http://web:4318` on Docker network `leo-multiplex-access`.
 Cloudflared can join that network, or a host-level connector can use
 `http://127.0.0.1:4328`. No LAN/public wildcard host port is published.
 `GET /healthz` returns only `{ok:true}`; every other application route requires

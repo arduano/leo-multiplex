@@ -9,5 +9,10 @@ result-*
 .env.*
 !.env.example
 !.env.tailscale.example
+!.env.cloudflare.example
+deploy/nas/secrets/
+deploy/nas/run/
+deploy/nas/config/
+deploy/nas/state/
 *.sqlite*
 *.identity

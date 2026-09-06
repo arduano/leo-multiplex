@@ -5,9 +5,25 @@ operator can run Codex and use a managed terminal with the host account's access
 The host runs YOLO sessions by design. No application setting grants extra root
 privileges.
 
-Select exactly one authentication mode. In Cloudflare mode, Access assertions are
+Select exactly one authentication mode per listener. In Cloudflare mode, Access assertions are
 verified at the origin using RS256, the configured issuer, application audience,
 expiry, subject, and allowed email. WebSocket lifetime is limited by JWT expiry.
+
+The combined NAS deployment has two independently authenticated HTTP surfaces
+over one gateway projection, identity, store and transport. Tailscale remains on
+host loopback; Cloudflare uses an owner-only Unix socket in a private directory.
+A dedicated bridged Nginx origin exposes that socket to cloudflared using Compose
+service-name DNS. Neither container receives the Tailscale listener, pairing
+configuration or gateway state. No host port is published for Cloudflare.
+Authentication is selected by listener configuration, never by Host, forwarded
+headers, socket reachability, or falling back after another method rejects a
+request. The proxy preserves JWT and Origin headers, disables request logging
+and response buffering, and forwards WebSocket upgrades.
+
+The tunnel token is an owner-only file mounted read-only into cloudflared alone.
+The connector and proxy images are pinned by digest, run without root or Linux
+capabilities, and use read-only root filesystems. The socket directory is shared
+only between the gateway and proxy; access to it does not replace JWT validation.
 
 In Tailscale mode, the origin requires the allowed `Tailscale-User-Login` and a
 loopback socket peer. Tailscale Serve strips client-supplied identity headers and

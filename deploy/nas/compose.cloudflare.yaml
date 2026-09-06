@@ -1,0 +1,76 @@
+name: leo-multiplex
+services:
+  web:
+    extends:
+      file: compose.tailscale.yaml
+      service: web
+    environment:
+      LEO_CLOUDFLARE_SOCKET: /run/leo-cloudflare/access.sock
+      LEO_CLOUDFLARE_PUBLIC_ORIGIN: https://agents.arduano.io
+    volumes:
+      - ./run/cloudflare:/run/leo-cloudflare
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const http=require('node:http'); Promise.all([fetch('http://127.0.0.1:4328/healthz').then(r=>{if(!r.ok)throw Error()}),new Promise((resolve,reject)=>{const r=http.get({socketPath:'/run/leo-cloudflare/access.sock',path:'/healthz'},s=>{s.resume();s.statusCode===200?resolve():reject(Error())});r.on('error',reject);r.setTimeout(4000,()=>r.destroy(Error()))})]).then(()=>process.exit(0),()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Preserve the exact hostname configured in the remotely managed tunnel.
+  multiplex-gatreway:
+    image: nginxinc/nginx-unprivileged:stable-alpine@sha256:9b87ad3dd9f431c733f19dfb278c7eb3dba9dca381942c79818bb42f1a566a83
+    restart: unless-stopped
+    init: true
+    user: "1000:100"
+    entrypoint: [nginx, -g, "daemon off;"]
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [access]
+    volumes:
+      - ./cloudflare-origin.conf:/etc/nginx/nginx.conf:ro
+      - ./run/cloudflare:/run/leo-cloudflare:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8444/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    restart: unless-stopped
+    init: true
+    user: "1000:100"
+    command: [tunnel, --no-autoupdate, --metrics, "127.0.0.1:2000", run, --token-file, /run/secrets/cloudflare-token]
+    depends_on:
+      multiplex-gatreway:
+        condition: service_healthy
+    networks: [access]
+    volumes:
+      - ./secrets/cloudflare-token:/run/secrets/cloudflare-token:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+
+networks:
+  access:
+    name: leo-multiplex-cloudflare
+    # NAS has exhausted Docker's default pools. Containers still receive
+    # dynamic addresses and discover each other through service-name DNS.
+    ipam:
+      config:
+        - subnet: ${LEO_CLOUDFLARE_SUBNET:-10.203.82.0/24}

@@ -37,11 +37,13 @@ needs a separately reviewed authentication change. Override it with `--url` or `
 credentials, paths, query parameters, or fragments. Plain HTTP is accepted only
 for loopback or Tailscale IPv4 addresses; other gateways require HTTPS.
 
-For an existing Cloudflare Access route, `LEO_AGENTS_ACCESS_ASSERTION_FILE` can
-name a private, owner-only regular file containing the Access assertion. The CLI
-reads it for requests. Keep assertions out of command arguments, URLs, and logs;
-the CLI does not create or refresh them. The server retains its existing Access
-policy. See [Tailscale authentication](Tailscale-Authentication.md).
+`LEO_AGENTS_ACCESS_ASSERTION_FILE` can name a private, owner-only regular file
+containing an Access assertion for origin authentication. This sends the
+origin-facing assertion header; it does not acquire/refresh a login or implement
+Cloudflare edge cookie/service-token authentication. Public Cloudflare CLI access
+is not qualified. Use the preserved Tailscale route for this deployment. Keep
+assertions out of command arguments, URLs, and logs. See
+[Tailscale authentication](Tailscale-Authentication.md).
 
 Mutation envelopes are saved before dispatch in a private local ledger. Its
 default is `${XDG_STATE_HOME:-$HOME/.local/state}/leo-agents`; override it with

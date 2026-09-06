@@ -6,3 +6,7 @@ receipts
 result*
 .env*
 deploy/nas/.env
+deploy/nas/secrets
+deploy/nas/run
+deploy/nas/config
+deploy/nas/state

@@ -1,11 +1,12 @@
 # Implementation status — 2026-09-06
 
 The personal host, gateway, UI, deployment packaging, and runbooks are implemented.
-The NAS gateway is deployed at **http://100.82.173.47:8444/** through Tailscale
-Serve. MagicDNS and HTTPS certificates are unnecessary for this IP route. The
+The NAS gateway is deployed at **https://agents.arduano.io/** through Cloudflare
+Access and at **http://100.82.173.47:8444/** through Tailscale Serve. MagicDNS and
+HTTPS certificates are unnecessary for the IP route. The
 operator's NixOS rebuild completed, and the permanent main-pc control and runtime
 services are active. Initial runtime pairing is complete; enrollment is closed.
-Cloudflare is postponed until the Tailscale trial works.
+Both access paths share the existing gateway identity and host connection.
 Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 
 ## Implemented boundary
@@ -15,8 +16,8 @@ Existing Codex and tmux sessions have not been adopted, modified, or stopped.
 - The personal existing-workdir provider applies full access and no approvals on
   launch and resume. Its private managed Codex home reuses the selected provider
   and auth-helper reference from the original read-only CLI configuration.
-- The origin supports Tailscale Serve on an enforced host-loopback listener, or
-  Cloudflare Access JWT verification. Both enforce owner email and mutation/WS
+- The origin supports Tailscale Serve on an enforced host-loopback listener and
+  separately configured Cloudflare Access JWT verification. Both enforce owner email and mutation/WS
   origin. Tailscale identity headers from non-loopback socket peers are rejected.
 - The personal React UI supports new managed sessions, native conversations,
   images, questions, model/mode controls, and terminals. Unavailable-host rows
@@ -530,7 +531,7 @@ transfer failed the import-task bound; a profiled run and the ordinary rerun
 passed with identical source hashes. Timings qualify the recorded machine and
 workload; no thresholds were relaxed or unrelated agents stopped.
 
-The current NAS UI image is
+That rollout used NAS UI image
 `sha256:0b13337b82ea7cc06c0e1d39f82b3ffe941958bea3800439b6462fe1105d1a9f`,
 built from source `f1c63f3afc671b239e123b2bcb9cdf2242235cb7`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/34001367380) passed.
@@ -542,3 +543,39 @@ Only the NAS web/gateway container was recreated; control/runtime process IDs
 and start times are unchanged. No native session mutations or model calls were
 issued. Checksummed rollout evidence is
 `receipts/thread-scroll-deployment/2026-09-06T00-34-00Z`.
+
+## Cloudflare deployment — 2026-09-06
+
+The public route **https://agents.arduano.io/** is connected through the owner's
+existing Access application and a dedicated cloudflared container in
+`~/host/leo-multiplex` on NAS. Compose service-name DNS preserves the configured
+origin `http://multiplex-gatreway:8444`. That small Nginx origin forwards to an
+owner-only Unix socket on the existing gateway, with separate Cloudflare JWT
+validation. The Tailscale listener, URL, CLI, enrolled gateway identity, state,
+and explicit P2P bind remain in use. Host control/runtime process IDs and start
+times are unchanged; no host rebuild or native agent mutation was performed.
+
+Use `compose.cloudflare.yaml` for future updates. The NAS exhausted Docker's
+default subnet pools; the isolated project bridge uses the verified unused
+`10.203.82.0/24`, with dynamic container addresses and normal service-name DNS.
+The first Compose attempt failed before replacing the running gateway; the
+successful retry added only this project's network and containers. The prior
+environment is preserved privately as `.env.before-cloudflare` for rollback.
+See the [NAS runbook](../deploy/nas/README.md#cloudflare-and-tailscale-together).
+
+The deployed Leo image is
+`sha256:d21b2758612f8eff66e183d1f24f5d818e36251e4733e46efc005f12ffde1cb7`.
+Typecheck, all 302 tests, production build, shipped-image smoke and the pinned
+Docker proxy test passed. The proxy test exercises actual Compose-name DNS,
+Unix HTTP, built assets, JWT/Tailscale isolation, mutation origins, WebSocket
+upgrades and expiration while the Tailscale connection remains active. CI now
+runs that proxy regression. All signing keys in tests are disposable; production
+has no fixture-key configuration.
+
+Live checks confirm the connector is ready, its configured public hostname and
+upstream match, both gateway/proxy health checks pass, unsigned/forged-Tailscale
+requests to the Cloudflare origin fail, and the original CLI reports main-pc
+online and reachable. The public UI and API paths redirect anonymous requests
+to the owner's Access login. The operator's interactive Access login remains a
+manual final browser check; no real owner JWT was obtained or retained during
+deployment. The tunnel token and Unix socket are both 0600 in private directories.
