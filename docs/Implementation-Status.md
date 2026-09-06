@@ -467,7 +467,7 @@ messages mounted. This run took 45.97 seconds; typing during import measured
 Cancellation, explicit single-page reads, switching away, and reselection pass.
 The final-source receipt is `receipts/long-thread/2026-09-05T23-50-02.865Z`.
 
-The current NAS UI image is
+The preceding NAS UI image was
 `sha256:755d0a5ebbfc8b432a54d0a3b6e102f05739290c57b34d2400398bc3a268c75a`,
 built from source `0db7ad957365446d20bf0d68b9197ca18a7064b6`.
 [CI](https://github.com/arduano/leo-multiplex/actions/runs/33999804190) passed.
@@ -519,3 +519,26 @@ including 360 frame samples and upward scrolling while new output arrives.
 All six viewport screenshots were inspected. Source-matched receipts are
 `receipts/browser/2026-09-06T00-25-39.783Z` and
 `receipts/transcript-layout/2026-09-06T00-25-02.526Z`.
+
+The final-source 50,000-turn / 100,001-item stress run passes with 200 messages
+mounted. Automatic import took 39.70 seconds; import input-to-paint p95 was
+11.1 ms, with no task above 65 ms. Concurrent scrolling, streaming, and typing
+measured 12.8 ms p95 input-to-paint (31.7 ms maximum) and 33.4 ms p95 frame
+interval. The passing receipt is
+`receipts/long-thread/2026-09-06T00-32-44.376Z`. An earlier run overlapping image
+transfer failed the import-task bound; a profiled run and the ordinary rerun
+passed with identical source hashes. Timings qualify the recorded machine and
+workload; no thresholds were relaxed or unrelated agents stopped.
+
+The current NAS UI image is
+`sha256:0b13337b82ea7cc06c0e1d39f82b3ffe941958bea3800439b6462fe1105d1a9f`,
+built from source `f1c63f3afc671b239e123b2bcb9cdf2242235cb7`.
+[CI](https://github.com/arduano/leo-multiplex/actions/runs/34001367380) passed.
+Deployed entry/dynamic assets match the tested build. Read-only desktop, reload,
+mobile, and return-from-subagent checks load all 519 parent items, mount 200,
+show only the parent thread in Chat, and reach the latest messages without
+errors. The Subagents view labels partial history and has no parent composer.
+Only the NAS web/gateway container was recreated; control/runtime process IDs
+and start times are unchanged. No native session mutations or model calls were
+issued. Checksummed rollout evidence is
+`receipts/thread-scroll-deployment/2026-09-06T00-34-00Z`.
