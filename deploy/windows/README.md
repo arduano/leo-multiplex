@@ -15,6 +15,15 @@ patch release and this consumer's exact dependency update are required before
 these instructions become the installation handoff. Linux tests and browser
 fixtures alone do not establish Windows support.
 
+The source candidate passed [native Windows CI](https://github.com/arduano/agent-multiplex/actions/runs/34011570520):
+framework `96e2d3e165d7448dbf9cca41658a8467893fd5e7` with personal host
+`b1b31996f1dff9eba024d14491258c081dd6db1d`. The run checks private state, SQLite,
+uploaded-image retention, SDK startup, full control/runtime registration, graceful
+stop and a restart with enrollment closed. It uses no corporate credentials,
+creates no native conversation, and sends no prompts. Its checksummed receipts
+are attached to that run. This source overlay is CI-only; installation still
+requires published framework artifacts.
+
 The first target is Windows x64, Node 24, a local NTFS state directory, and an
 interactive standard-user login. Windows ARM64 has no pinned Iroh binary. The
 Windows PowerShell/.NET ACL check must be allowed by corporate policy. It never
@@ -135,6 +144,9 @@ works. Cloudflare Access protects the browser edge, not this host transport.
 Keep enrollment testing on approved networks. If the laptop cannot reach the
 NAS directly or approved Iroh relays, retain the doctor report and resolve the
 network requirement before treating the host as usable.
+Keep the normal P2P bind (`0.0.0.0:49117`) for initial Windows testing. A
+loopback-only P2P bind failed the combined-host Windows test; the default bind
+passed. The control HTTP listener remains loopback-only in both cases.
 
 ## Diagnose and recover
 

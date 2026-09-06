@@ -16,7 +16,18 @@ The consumer keeps its published framework `0.2.0` pin and refuses native Window
 state initialization without the framework ACL update. Framework source now has
 passing native Windows tests for protected DACLs, SQLite writer ownership/reopen,
 retained image uploads, Iroh startup and unauthenticated Copilot SDK startup.
-The complete personal control/runtime Windows lifecycle is qualified separately;
+The complete personal control/runtime Windows lifecycle also passes
+[the native Windows run](https://github.com/arduano/agent-multiplex/actions/runs/34011570520)
+for framework `96e2d3e165d7448dbf9cca41658a8467893fd5e7` and consumer
+`b1b31996f1dff9eba024d14491258c081dd6db1d`, including registration, graceful
+shutdown and a restart with enrollment closed. Its consumer receipt SHA-256 is
+`00a1e8dbc7d3d3db93adbb5d43e3176568a6b4f90f501104fb3fc4f87e59d9c6`;
+the framework startup receipt SHA-256 is
+`fdf3eece8ef55ab4d4fa28c2870a048d7c788fa814346681ded909b7f1ea0a2a`.
+Both downloaded receipt inventories were independently rehashed. Earlier failed
+Windows runs remain diagnostics, including the loopback-only P2P bind attempt;
+the passing composition uses the host's default all-interface P2P bind. These
+are source-candidate checks, not a published-release or corporate-laptop claim;
 the [Windows runbook](../deploy/windows/README.md) owns installation readiness,
 pairing, local diagnostics and remaining laptop acceptance checks.
 
